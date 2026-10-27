@@ -91,7 +91,11 @@ jobs:
           brew install autoconf
           brew install automake
           brew install libtool
-          python -m pip install meson==1.4.2
+          python -m pip install --break-system-packages --user meson==1.4.2
+          meson_bin="$(python -m site --user-base)/bin"
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
           brew install ninja
           brew install rename
 

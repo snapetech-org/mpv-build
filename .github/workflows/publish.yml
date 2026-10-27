@@ -385,8 +385,23 @@ jobs:
       # keg from 20261021), and an image may drop it.
       - name: Install dependencies
         run: |
-          brew install autoconf automake libtool ninja rustup
-          python -m pip install meson==1.4.2
+          brew install autoconf automake libtool ninja
+          # Homebrew rustup is keg-only. Its postinstall can fail while
+          # cleaning up an old rustup-init link even though the keg is usable.
+          if ! brew install rustup; then
+            echo "::warning::Homebrew rustup install returned nonzero; validating the keg binary"
+          fi
+          rustup_bin="$(brew --prefix rustup)/bin"
+          test -x "$rustup_bin/rustup"
+          echo "$rustup_bin" >> "$GITHUB_PATH"
+          export PATH="$rustup_bin:$PATH"
+          rustup --version
+
+          python -m pip install --break-system-packages --user meson==1.4.2
+          meson_bin="$(python -m site --user-base)/bin"
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
 
       # Only the stale libraries are compiled; the rest are restored from their
       # published per-platform zips. No version= argument: the URLs the build
@@ -725,7 +740,10 @@ jobs:
             libgmp-dev libmpfr-dev libmpc-dev libgcrypt-dev gperf ragel \
             texinfo autopoint re2c asciidoc rst2pdf python3-docutils \
             python3-mako python3-jsonschema p7zip-full ccache
-          python3 -m pip install --break-system-packages meson
+          python3 -m pip install --break-system-packages --user meson
+          meson_bin="$(python3 -m site --user-base)/bin"
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
           meson --version
 
       # pin_packages.py is the one place that resolves the windows pin, so the
