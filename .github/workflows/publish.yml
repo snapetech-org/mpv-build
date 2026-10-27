@@ -193,6 +193,10 @@ jobs:
         run: bash ./scripts/test_tcp_family_lookup.sh
 
       - name: Install native regression dependencies
+        working-directory: /Users/keith
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          NONINTERACTIVE: '1'
         run: brew install cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak
 
       # The mpv-android AAR's JNI glue (platforms/android/lib/src/main/cpp)
