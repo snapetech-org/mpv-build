@@ -269,7 +269,7 @@ GROUPS = {
     "apple": Group(
         self_built=("libass", "FFmpeg", "libmpv"),
         platforms=("ios", "isimulator", "maccatalyst", "macos", "tvos", "tvsimulator"),
-        asset_base="https://github.com/edde746/mpv-build/releases/download/binaries-apple",
+        asset_base="https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple",
         driver_sources=(
             Path("Sources/BuildScripts/Package.swift"),
             Path("Sources/BuildScripts/XCFrameworkBuild/base.swift"),
@@ -665,7 +665,7 @@ def load_manifest(root: Path) -> dict:
 
 def group_section(manifest: dict, group: Group) -> dict:
     section = manifest["platforms"].setdefault(group.name, {})
-    section.setdefault("assetBase", group.asset_base)
+    section["assetBase"] = group.asset_base
     section.setdefault("libraries", {})
     return section
 
@@ -1106,6 +1106,24 @@ def cmd_render(args, root: Path, group: Group) -> int:
     return 0
 
 
+def cmd_sync_asset_bases(args, root: Path, group: Group | None) -> int:
+    """Retarget manifest URLs to this repository without rebuilding binary bytes."""
+    manifest = load_manifest(root)
+    changed = False
+    for current in GROUPS.values():
+        section = manifest["platforms"].setdefault(current.name, {})
+        if section.get("assetBase") != current.asset_base:
+            section["assetBase"] = current.asset_base
+            changed = True
+            print(f"updated platforms.{current.name}.assetBase")
+        section.setdefault("libraries", {})
+    if changed:
+        save_manifest(root, manifest)
+    else:
+        print("all artifact asset bases already target this repository")
+    return cmd_render(args, root, GROUPS["apple"])
+
+
 # ---- queries and gate -----------------------------------------------------
 
 
@@ -1397,6 +1415,12 @@ def main(argv: list[str]) -> int:
         "render", parents=[common], help="point Package.swift at the manifest's assets"
     )
     render.set_defaults(func=cmd_render)
+
+    sync_asset_bases = subparsers.add_parser(
+        "sync-asset-bases",
+        help="retarget every published asset URL to this repository without rebuilding binaries",
+    )
+    sync_asset_bases.set_defaults(func=cmd_sync_asset_bases)
 
     verify = subparsers.add_parser(
         "verify",

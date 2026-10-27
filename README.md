@@ -2,7 +2,7 @@
 
 [![mpv](https://img.shields.io/badge/mpv-v0.41.0-blue.svg)](https://github.com/mpv-player/mpv)
 [![ffmpeg](https://img.shields.io/badge/ffmpeg-n9.0.2-blue.svg)](https://github.com/FFmpeg/FFmpeg)
-[![license](https://img.shields.io/github/license/edde746/mpv-build)](https://github.com/edde746/mpv-build/blob/main/LICENSE)
+[![license](https://img.shields.io/github/license/snapetech-org/mpv-build)](https://github.com/snapetech-org/mpv-build/blob/main/LICENSE)
 
 One repository for every mpv supply chain Plezy ships: the upstream pins, the
 patch series, and the build drivers that turn them into `libmpv` binaries for
@@ -38,7 +38,7 @@ Development history up to the unification lives in those repositories.
 ### Swift Package Manager
 
 ```
-https://github.com/edde746/mpv-build.git
+https://github.com/snapetech-org/mpv-build.git
 ```
 
 SwiftPM consumers moving from `edde746/MPVKit` change the package URL and pin a
@@ -62,7 +62,7 @@ from the component's pins in `versions.json`, its resolved patch series, the
 build flags, the platform tuple, the build driver and the toolchain generation.
 Assets are therefore immutable, and each platform group publishes to its own
 rolling prerelease:
-[`binaries-apple`](https://github.com/edde746/mpv-build/releases/tag/binaries-apple),
+[`binaries-apple`](https://github.com/snapetech-org/mpv-build/releases/tag/binaries-apple),
 `binaries-android`, `binaries-linux` and `binaries-windows`. A semver release
 is a tag plus notes and carries no assets of its
 own. `artifacts.json` records which asset belongs to which library in which
@@ -881,7 +881,7 @@ the key as the version, no authentication:
 dependencyResolutionManagement {
     repositories {
         ivy {
-            url = uri("https://github.com/edde746/mpv-build/releases/download")
+            url = uri("https://github.com/snapetech-org/mpv-build/releases/download")
             patternLayout { artifact("binaries-android/[artifact]-[revision].[ext]") }
             metadataSources { artifact() }
             content { includeModule("edde746", "mpv-android") }

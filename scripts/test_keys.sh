@@ -58,7 +58,7 @@ def run(repo, *args, expect=0, env=None):
 LIBRARIES = {"libass": ["libass"], "FFmpeg": ["libavcodec", "libavutil"], "libmpv": ["libmpv"]}
 COMPONENTS = {"libass": "libass", "FFmpeg": "ffmpeg", "libmpv": "mpv"}
 PLATFORMS = ("ios", "isimulator", "maccatalyst", "macos", "tvos", "tvsimulator")
-ASSET_BASE = "https://github.com/edde746/mpv-build/releases/download/binaries-apple"
+ASSET_BASE = "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple"
 
 VERSIONS = {
     "formatVersion": 1,
@@ -603,7 +603,7 @@ with tempfile.TemporaryDirectory() as tmp:
 #     group; keys are multi-component; recording is per variant with
 #     checksums; there are no frameworks and nothing to render.
 GROUP_JSON = {
-    "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-android",
+    "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
     "toolchain": "toolchain/android.txt",
     "driver": ["platforms/android/build.sh", "platforms/android/package.sh"],
     "artifacts": {

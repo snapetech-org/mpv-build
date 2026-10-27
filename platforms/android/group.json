@@ -1,5 +1,5 @@
 {
-  "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-android",
+  "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
   "toolchain": "toolchain/android.txt",
   "driver": [
     "platforms/android/build.sh",

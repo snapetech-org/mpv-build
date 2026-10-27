@@ -1,5 +1,5 @@
 {
-  "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-linux",
+  "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
   "toolchain": "toolchain/linux.txt",
   "driver": [
     "platforms/linux/build.sh",
