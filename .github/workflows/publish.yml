@@ -196,20 +196,37 @@ jobs:
         working-directory: /Users/keith
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
+          # Homebrew's formula metadata, post-install locks, and logs can block
+          # on SMB open() calls. Keep this small test-only install on local APFS;
+          # the large native build caches remain on the shared storage above.
+          HOMEBREW_CACHE: /private/tmp/plezyng-homebrew-cache-${{ github.run_id }}-${{ github.run_attempt }}
+          HOMEBREW_LOGS: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
           HOMEBREW_TEMP: /private/tmp/plezyng-homebrew-${{ github.run_id }}-${{ github.run_attempt }}
           TMPDIR: /private/tmp/plezyng-native-tmp-${{ github.run_id }}-${{ github.run_attempt }}
           NONINTERACTIVE: '1'
+        timeout-minutes: 20
         run: |
-          mkdir -p "$HOMEBREW_TEMP" "$TMPDIR"
+          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$TMPDIR"
           brew install cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak
 
+      - name: Preserve native regression dependency logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-regression-homebrew-logs
+          path: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Clean native regression dependency temp files
-        if: success()
+        if: always()
         working-directory: /Users/keith
         env:
+          HOMEBREW_CACHE: /private/tmp/plezyng-homebrew-cache-${{ github.run_id }}-${{ github.run_attempt }}
+          HOMEBREW_LOGS: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
           HOMEBREW_TEMP: /private/tmp/plezyng-homebrew-${{ github.run_id }}-${{ github.run_attempt }}
           TMPDIR: /private/tmp/plezyng-native-tmp-${{ github.run_id }}-${{ github.run_attempt }}
-        run: rm -rf "$HOMEBREW_TEMP" "$TMPDIR"
+        run: rm -rf "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$TMPDIR"
 
       # The mpv-android AAR's JNI glue (platforms/android/lib/src/main/cpp)
       # against fakes, compiled with the patched mpv and FFmpeg headers.
