@@ -58,7 +58,19 @@ jobs:
     # strict ISO mode (gcc 13 on ubuntu-24.04: "'M_PI' undeclared"), while
     # Apple libc exposes it. Keep them on the compiler they are written for.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
+    env:
+      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
+      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
+      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
+      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
+      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
+      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare NFS build caches
+        shell: bash
+        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -280,6 +292,15 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
+    env:
+      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
+      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
+      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
+      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
+      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
+      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -304,6 +325,9 @@ jobs:
             platforms: tvos-simulator
             platform_type: tvsimulator
     steps:
+      - name: Prepare NFS build caches
+        shell: bash
+        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -381,7 +405,19 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
+    env:
+      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
+      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
+      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
+      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
+      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
+      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare NFS build caches
+        shell: bash
+        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -502,7 +538,11 @@ jobs:
       COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
       DOCKER_CONFIG: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
       LIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare NFS temporary directory
+        shell: bash
+        run: mkdir -p "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

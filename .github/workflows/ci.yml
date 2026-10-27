@@ -215,7 +215,19 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-spatial"]}}', github.run_id)) }}
+    env:
+      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
+      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
+      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
+      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
+      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
+      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare NFS build caches
+        shell: bash
+        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -246,7 +258,19 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
+    env:
+      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
+      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
+      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
+      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
+      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
+      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
+      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare NFS build caches
+        shell: bash
+        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -260,12 +284,16 @@ jobs:
       - name: Build macOS
         run: |
           xcodebuild -resolvePackageDependencies \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             -project Demo/Demo-macOS/Demo-macOS.xcodeproj \
             -scheme Demo-macOS
 
           xcodebuild -project Demo/Demo-macOS/Demo-macOS.xcodeproj \
             -scheme Demo-macOS \
             -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -274,12 +302,16 @@ jobs:
       - name: Build iOS
         run: |
           xcodebuild -resolvePackageDependencies \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             -project Demo/Demo-iOS/Demo-iOS.xcodeproj \
             -scheme Demo-iOS
 
           xcodebuild -project Demo/Demo-iOS/Demo-iOS.xcodeproj \
             -scheme Demo-iOS \
             -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
