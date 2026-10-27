@@ -59,18 +59,23 @@ jobs:
     # Apple libc exposes it. Keep them on the compiler they are written for.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
-      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
-      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
-      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
-      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
-      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
-      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
+      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
+      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
+      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
+      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
+      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
+      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Prepare NFS build caches
+      - name: Prepare shared build caches
         shell: bash
-        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
+        run: |
+          set -euo pipefail
+          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
+          test -d "$storage_root"
+          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
+          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -293,14 +298,14 @@ jobs:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
     env:
-      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
-      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
-      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
-      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
-      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
-      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
-      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
+      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
+      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
+      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
+      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
+      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
+      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -325,9 +330,14 @@ jobs:
             platforms: tvos-simulator
             platform_type: tvsimulator
     steps:
-      - name: Prepare NFS build caches
+      - name: Prepare shared build caches
         shell: bash
-        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
+        run: |
+          set -euo pipefail
+          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
+          test -d "$storage_root"
+          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
+          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -406,18 +416,23 @@ jobs:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Volumes/plezyng-native-build/cache/homebrew
-      HOMEBREW_LOGS: /Volumes/plezyng-native-build/cache/homebrew/logs
-      HOMEBREW_TEMP: /Volumes/plezyng-native-build/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Volumes/plezyng-native-build/cache/pip
-      CARGO_HOME: /Volumes/plezyng-native-build/cache/cargo
-      RUSTUP_HOME: /Volumes/plezyng-native-build/cache/rustup
-      XDG_CACHE_HOME: /Volumes/plezyng-native-build/cache/xdg
-      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
+      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
+      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
+      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
+      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
+      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
+      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Prepare NFS build caches
+      - name: Prepare shared build caches
         shell: bash
-        run: mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
+        run: |
+          set -euo pipefail
+          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
+          test -d "$storage_root"
+          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
+          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -528,31 +543,36 @@ jobs:
       contents: read
     # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
     # Colima and its virtual disk, checkout copy, and all build outputs live on
-    # the task-specific NFS workspace so the Mac's local disk stays clear.
+    # the task-specific SMB workspace so the Mac's local disk stays clear.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      BUILD_ROOT: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}
-      COLIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
-      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
+      BUILD_ROOT: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      COLIMA_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
+      COLIMA_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
       COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
-      DOCKER_CONFIG: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      LIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
-      TMPDIR: /Volumes/plezyng-native-build/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      DOCKER_CONFIG: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
+      LIMA_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Prepare NFS temporary directory
+      - name: Prepare shared temporary directory
         shell: bash
-        run: mkdir -p "$TMPDIR"
+        run: |
+          set -euo pipefail
+          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
+          test -d "$storage_root"
+          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
+          mkdir -p "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Prepare the NFS-backed workspace
+      - name: Prepare the SMB-backed workspace
         shell: bash
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Volumes/plezyng-native-build/runs/*) ;;
+            /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
           rm -rf "$BUILD_ROOT"
@@ -564,7 +584,7 @@ jobs:
         run: |
           set -euo pipefail
           colima start --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 512 \
-            --mount /Volumes/plezyng-native-build:w
+            --mount /Users/keith/Network/kspls0/plezyng-native-build-20261027:w
           for attempt in $(seq 1 36); do
             if docker info >/dev/null 2>&1; then
               docker info --format '{{.OSType}}/{{.Architecture}}'
@@ -608,7 +628,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Volumes/plezyng-native-build/runs/*) ;;
+            /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
           colima stop || true
