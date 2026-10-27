@@ -74,9 +74,9 @@ VERSIONS = {
         },
         "ffmpeg": {
             "kind": "git",
-            "version": "n8.0.1",
+            "version": "n9.0.2",
             "url": "https://github.com/FFmpeg/FFmpeg",
-            "ref": "n8.0.1",
+            "ref": "n9.0.2",
             "provenance": "test fixture",
             "platforms": ["apple", "android", "linux", "windows"],
         },

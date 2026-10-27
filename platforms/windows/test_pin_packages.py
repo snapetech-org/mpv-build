@@ -395,10 +395,10 @@ class PinPackagesTest(unittest.TestCase):
         versions = {
             "components": {
                 "ffmpeg": {
-                    "version": "n8.0.1",
+                    "version": "n9.0.2",
                     "url": "https://github.com/FFmpeg/FFmpeg",
-                    "ref": "n8.0.1",
-                    "commit": "894da5ca7d742e4429ffb2af534fcda0103ef593",
+                    "ref": "n9.0.2",
+                    "commit": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
                     "overrides": {"windows": {"commit": "f" * 40, "ref": "windows-branch"}},
                 }
             }

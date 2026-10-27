@@ -86,7 +86,8 @@ COMPONENTS = ("mpv", "ffmpeg", "libass")
 #     release ffmpeg still sets unguarded, so the master tip cannot build
 #     with a release ffmpeg.
 #   nv-codec-headers: same shape; the 13.1 in-dev tip reshapes
-#     NV_ENC_CLOCK_TIMESTAMP_SET, which n8.0.1's nvenc wrapper still uses.
+#     NV_ENC_CLOCK_TIMESTAMP_SET, which the prior n8.0.1 wrapper used. Keep
+#     the pin until a Windows build verifies another header set with n9.0.2.
 #   openssl: winbuild pins an unreleased master snapshot (GIT_RESET, which
 #     the rewrite replaces). Its 4.1-dev TLS defaults offer 34 signature
 #     algorithms, and LibreSSL servers reject a ClientHello with more than

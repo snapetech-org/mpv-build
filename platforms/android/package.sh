@@ -57,7 +57,7 @@ release_dir="$root/dist/release"
 mkdir -p "$release_dir"
 
 # No libpostproc: FFmpeg 8.0 removed it upstream (the fork's AAR-era symlink
-# list predates that and would dangle against the n8.0.1 pin).
+# list predates that and would dangle against the n9.0.2 pin).
 libs=(libmpv.so libavcodec.so libavdevice.so libavfilter.so libavformat.so
       libavutil.so libswresample.so libswscale.so)
 headers=(client.h render.h render_gl.h stream_cb.h)

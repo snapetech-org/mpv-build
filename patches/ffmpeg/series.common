@@ -1,8 +1,7 @@
 # Patches applied on every platform, before series.<platform>, to the one
-# n8.0.1 pin all four groups build. Promote a per-platform patch here once a
-# second platform needs the same pool file, instead of copying it into another
-# series -- the pool entry stays the single source of truth and the resolved
-# order stays series.common first.
+# shared n9.0.2 source pin. Promote a per-platform patch here once another
+# platform needs the same pool file, instead of copying it into another series.
+# The pool entry stays the single source of truth and common patches apply first.
 #
 # The libdovi profile 7 to 8.1 conversion helper the MediaCodec and the
 # VideoToolbox paths both call. It only builds where one of them is enabled,
@@ -21,3 +20,13 @@
 # OpenSSL is the TLS backend on apple, android and windows. Linux configures
 # GnuTLS, so tls_openssl.c is not compiled there and this changes nothing.
 0035-tls-openssl-read-ahead.patch
+# CVE-2026-107676 (HDR10+), 107677 (DASH), 107678 (MOV PSSH), and 107696 (RTSP).
+# Backports are from FFmpeg upstream; the HDR10+ regression test is included.
+0040-hdr-dynamic-metadata-saturation.patch
+0041-hdr-dynamic-metadata-regression-test.patch
+0042-avstring-empty-search-string.patch
+0043-dash-byte-range-eof.patch
+0044-encryption-info-iterative-free.patch
+0045-encryption-info-append-side-data.patch
+0046-mov-append-pssh-init-info.patch
+0047-rtsp-limit-redirects.patch
