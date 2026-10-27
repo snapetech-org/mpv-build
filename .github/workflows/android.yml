@@ -61,6 +61,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # sdkmanager is a Java program, even though the native cross-build no
+      # longer uses Gradle or the Android platform/build-tools packages.
+      - name: Set up Java for Android SDK manager
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       # Host build tools from apt plus the exact NDK pinned in
       # toolchain/android.txt (part of every android content key).
       - name: Install host toolchain and pinned NDK

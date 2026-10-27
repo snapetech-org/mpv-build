@@ -7,9 +7,9 @@
 # pinned NDK (e.g. ~/Library/Android/sdk), the whole bootstrap is skipped and
 # path.sh uses that root directly.
 #
-# The Gradle/AAR era's platform, build-tools, cmake and JDK requirements are
-# gone: only the NDK (plus meson/ninja/autotools/nasm on the host) is needed
-# to cross-compile the native trees.
+# The Gradle/AAR-era platform, build-tools, CMake and Gradle requirements are
+# gone. sdkmanager still needs Java to install the pinned NDK; CI provides
+# Temurin 17, and local callers need a JDK available to sdkmanager.
 set -euo pipefail
 
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
