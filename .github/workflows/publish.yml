@@ -191,6 +191,9 @@ jobs:
       - name: Test TCP hostname lookup by address family
         run: bash ./scripts/test_tcp_family_lookup.sh
 
+      - name: Install native regression dependencies
+        run: brew install cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak
+
       # The mpv-android AAR's JNI glue (platforms/android/lib/src/main/cpp)
       # against fakes, compiled with the patched mpv and FFmpeg headers.
       - name: Test the android JNI glue
@@ -201,9 +204,6 @@ jobs:
 
       # The one harness that builds a dependency: the libass series' layout
       # cache is only observable through ass_render_frame itself.
-      - name: Install libass host dependencies
-        run: brew install autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak
-
       - name: Test libass series harnesses
         run: bash ./scripts/test_libass_series.sh
 
