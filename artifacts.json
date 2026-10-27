@@ -1,7 +1,7 @@
 {
   "platforms": {
     "android": {
-      "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-android",
+      "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
           "key": "5b7e6b31ab13",
@@ -50,7 +50,7 @@
       }
     },
     "apple": {
-      "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-apple",
+      "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple",
       "libraries": {
         "FFmpeg": {
           "frameworks": {
@@ -130,7 +130,7 @@
       }
     },
     "linux": {
-      "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-linux",
+      "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
           "key": "52b991183e5f",
@@ -158,7 +158,7 @@
       }
     },
     "windows": {
-      "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-windows",
+      "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-windows",
       "libraries": {
         "libmpv-windows": {
           "key": "8dbcea0c526c",
