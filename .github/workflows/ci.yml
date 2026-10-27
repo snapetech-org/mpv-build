@@ -216,26 +216,23 @@ jobs:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-spatial"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Verify Apple spatial-test toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tool in clang clang++ swift python3 xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing Apple spatial-test tool: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          test -d "$(xcrun --sdk macosx --show-sdk-path)"
+          test -d "$(xcrun --sdk appletvos --show-sdk-path)"
 
       - name: Test spatial audio output
         run: bash scripts/test_ao_spatial.sh
@@ -264,23 +261,9 @@ jobs:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -290,6 +273,16 @@ jobs:
 
       - name: Show available SDKs
         run: xcodebuild -showsdks
+
+      - name: Verify demo app SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          for sdk in macosx iphoneos iphonesimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            test -d "$sdk_path" || { echo "missing Xcode SDK: $sdk" >&2; exit 1; }
+          done
 
       - name: Build macOS
         run: |

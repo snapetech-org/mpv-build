@@ -24,26 +24,31 @@ jobs:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Verify and install pinned Apple build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tool in make clang clang++ autoconf automake glibtool ninja python3 xcodebuild xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing Apple build tool: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          for sdk in macosx iphoneos iphonesimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            test -d "$sdk_path" || { echo "missing Xcode SDK: $sdk" >&2; exit 1; }
+          done
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          meson_bin="$RUNNER_TEMP/meson-venv/bin"
+          "$meson_bin/python" -m pip install --disable-pip-version-check meson==1.4.2
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
 
       - name: Check version to release
         uses: jannekem/run-python-script-action@v1
@@ -57,22 +62,10 @@ jobs:
               components = json.load(file)['components']
 
             mpvVersion = components['mpv']['version']
-            ffmpegVersion = components['ffmpeg']['version']
-            libplaceboVersion = components['libplacebo']['version']
-            vulkanVersion = components['vulkan']['version']
 
             print(f'mpv version: {mpvVersion}')
             print(f'ffmpeg version: {ffmpegVersion}')
             set_env('BUILD_VERSION', mpvVersion)
-
-            with open('/tmp/RELEASE_NOTE.txt', 'w', encoding='utf-8') as file:
-              file.write(f'''
-              * mpv version: {mpvVersion} ([changelog](https://github.com/mpv-player/mpv/releases/tag/{mpvVersion}))
-              * ffmpeg version: {ffmpegVersion} ([changelog](https://github.com/FFmpeg/FFmpeg/blob/{ffmpegVersion}/Changelog))
-              * placebo version: v{libplaceboVersion}
-              * MoltenVK version: v{vulkanVersion}
-              ''')
-
 
       - name: Test AO PCM lookahead
         run: ./scripts/test_ao_pcm_lookahead.sh
@@ -86,24 +79,26 @@ jobs:
       - name: Test AVFoundation PiP frame-space OSD
         run: ./scripts/test_avf_pip_frame_space_osd.sh
 
-      - name: Install dependencies
-        run: |
-          brew install autoconf
-          brew install automake
-          brew install libtool
-          python -m pip install --break-system-packages --user meson==1.4.2
-          meson_bin="$(python -m site --user-base)/bin"
-          echo "$meson_bin" >> "$GITHUB_PATH"
-          export PATH="$meson_bin:$PATH"
-          meson --version
-          brew install ninja
-          brew install rename
-
       - name: Build GPL version
         run: |
           make build platform=maccatalyst,ios,macos
 
           cd ./dist/release
-          rename 's/-all\.zip/-GPL-all\.zip/' *-all.zip
-          rename 's/\.xcframework\.zip/-GPL\.xcframework\.zip/' *.xcframework.zip
-          rename 's/\.xcframework\.checksum\.txt/-GPL\.xcframework\.checksum\.txt/' *.xcframework.checksum.txt
+          python3 - <<'PY'
+          from pathlib import Path
+
+          rules = (
+              ("*-all.zip", "-all.zip", "-GPL-all.zip"),
+              ("*.xcframework.zip", ".xcframework.zip", "-GPL.xcframework.zip"),
+              ("*.xcframework.checksum.txt", ".xcframework.checksum.txt", "-GPL.xcframework.checksum.txt"),
+          )
+          for pattern, suffix, replacement in rules:
+              matches = sorted(Path(".").glob(pattern))
+              if not matches:
+                  raise SystemExit(f"expected GPL output matching {pattern}")
+              for source in matches:
+                  destination = source.with_name(source.name[:-len(suffix)] + replacement)
+                  if destination.exists():
+                      raise SystemExit(f"refusing to overwrite {destination}")
+                  source.rename(destination)
+          PY

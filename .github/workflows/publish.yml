@@ -59,27 +59,27 @@ jobs:
     # Apple libc exposes it. Keep them on the compiler they are written for.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
     env:
-      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Verify Apple SDK and native regression toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for formula in cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak python@3.12; do
+            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
+          done
+          for tool in cmake autoconf automake glibtool pkg-config clang clang++ xcodebuild xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing native regression tool: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          pkg-config --exists freetype2 fribidi harfbuzz libunibreak
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path >/dev/null
 
       - name: Test AO PCM lookahead
         run: ./scripts/test_ao_pcm_lookahead.sh
@@ -192,42 +192,6 @@ jobs:
       - name: Test TCP hostname lookup by address family
         run: bash ./scripts/test_tcp_family_lookup.sh
 
-      - name: Install native regression dependencies
-        working-directory: /Users/keith
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          # Homebrew's formula metadata, post-install locks, and logs can block
-          # on SMB open() calls. Keep this small test-only install on local APFS;
-          # the large native build caches remain on the shared storage above.
-          HOMEBREW_CACHE: /private/tmp/plezyng-homebrew-cache-${{ github.run_id }}-${{ github.run_attempt }}
-          HOMEBREW_LOGS: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          HOMEBREW_TEMP: /private/tmp/plezyng-homebrew-${{ github.run_id }}-${{ github.run_attempt }}
-          TMPDIR: /private/tmp/plezyng-native-tmp-${{ github.run_id }}-${{ github.run_attempt }}
-          NONINTERACTIVE: '1'
-        timeout-minutes: 20
-        run: |
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$TMPDIR"
-          brew install cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak
-
-      - name: Preserve native regression dependency logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-regression-homebrew-logs
-          path: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Clean native regression dependency temp files
-        if: always()
-        working-directory: /Users/keith
-        env:
-          HOMEBREW_CACHE: /private/tmp/plezyng-homebrew-cache-${{ github.run_id }}-${{ github.run_attempt }}
-          HOMEBREW_LOGS: /private/tmp/plezyng-homebrew-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          HOMEBREW_TEMP: /private/tmp/plezyng-homebrew-${{ github.run_id }}-${{ github.run_attempt }}
-          TMPDIR: /private/tmp/plezyng-native-tmp-${{ github.run_id }}-${{ github.run_attempt }}
-        run: rm -rf "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$TMPDIR"
-
       # The mpv-android AAR's JNI glue (platforms/android/lib/src/main/cpp)
       # against fakes, compiled with the patched mpv and FFmpeg headers.
       - name: Test the android JNI glue
@@ -335,15 +299,9 @@ jobs:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
     env:
-      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      RUSTUP_AUTO_INSTALL: '0'
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -368,37 +326,28 @@ jobs:
             platforms: tvos-simulator
             platform_type: tvsimulator
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      # rustup is named rather than assumed: macos-26 images have changed how
-      # they ship it (rustup-init's ~/.cargo/bin until 20261013, Homebrew's
-      # keg from 20261021), and an image may drop it.
-      - name: Install dependencies
+      - name: Verify Apple toolchain and install pinned Meson
+        shell: bash
         run: |
-          brew install autoconf automake libtool ninja
-          # Homebrew rustup is keg-only. Its postinstall can fail while
-          # cleaning up an old rustup-init link even though the keg is usable.
-          if ! brew install rustup; then
-            echo "::warning::Homebrew rustup install returned nonzero; validating the keg binary"
-          fi
-          rustup_bin="$(brew --prefix rustup)/bin"
-          test -x "$rustup_bin/rustup"
-          echo "$rustup_bin" >> "$GITHUB_PATH"
-          export PATH="$rustup_bin:$PATH"
-          rustup --version
-
-          python -m pip install --break-system-packages --user meson==1.4.2
-          meson_bin="$(python -m site --user-base)/bin"
+          set -euo pipefail
+          for formula in autoconf automake libtool ninja rustup python@3.12; do
+            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
+          done
+          for tool in autoconf automake glibtool ninja rustup python3 xcodebuild xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          for sdk in macosx iphoneos iphonesimulator appletvos appletvsimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            test -d "$sdk_path" || { echo "missing Xcode SDK: $sdk" >&2; exit 1; }
+          done
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          meson_bin="$RUNNER_TEMP/meson-venv/bin"
+          "$meson_bin/python" -m pip install --disable-pip-version-check meson==1.4.2
           echo "$meson_bin" >> "$GITHUB_PATH"
           export PATH="$meson_bin:$PATH"
           meson --version
@@ -469,23 +418,8 @@ jobs:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
     env:
-      HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
-      HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
-      HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-      PIP_CACHE_DIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/pip
-      CARGO_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/cargo
-      RUSTUP_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/rustup
-      XDG_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/xdg
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - name: Prepare shared build caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$HOMEBREW_CACHE" "$HOMEBREW_LOGS" "$HOMEBREW_TEMP" "$PIP_CACHE_DIR" "$CARGO_HOME" "$RUSTUP_HOME" "$XDG_CACHE_HOME" "$TMPDIR"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -595,37 +529,40 @@ jobs:
     permissions:
       contents: read
     # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
-    # Colima and its virtual disk, checkout copy, and all build outputs live on
-    # the task-specific SMB workspace so the Mac's local disk stays clear.
+    # The checkout, build outputs, and Colima VM data use the task-specific NFS
+    # workspace so large native builds do not fill the Mac's local disk.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
     env:
-      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      BUILD_ROOT: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}
-      COLIMA_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
-      COLIMA_CACHE_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      BUILD_ROOT: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      COLIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
+      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
       COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
-      DOCKER_CONFIG: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      LIMA_HOME: /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
-      TMPDIR: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      DOCKER_CONFIG: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
+      LIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
     steps:
       - name: Prepare shared temporary directory
         shell: bash
         run: |
           set -euo pipefail
-          storage_root=/Users/keith/Network/kspls0/plezyng-native-build-20261027
+          storage_root=/Volumes/plezyng-native-build
           test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Users/keith/Network/kspls0 (smbfs,'
-          mkdir -p "$TMPDIR"
+          /sbin/mount | /usr/bin/grep -Fq 'on /Volumes/plezyng-native-build (nfs,'
+          command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
+          command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          colima --version
+          docker --version
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Prepare the SMB-backed workspace
+      - name: Prepare the NFS-backed workspace
         shell: bash
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/*) ;;
+            /Volumes/plezyng-native-build/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
           rm -rf "$BUILD_ROOT"
@@ -636,12 +573,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v colima >/dev/null 2>&1; then
-            brew install colima
-          fi
+          command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
+          command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           colima --version
-          colima start --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 512 \
-            --mount /Users/keith/Network/kspls0/plezyng-native-build-20261027:w
+          docker --version
+          colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 512 \
+            --mount /Volumes/plezyng-native-build:w
           for attempt in $(seq 1 36); do
             if docker info >/dev/null 2>&1; then
               docker info --format '{{.OSType}}/{{.Architecture}}'
@@ -649,7 +586,7 @@ jobs:
             fi
             sleep 5
           done
-          colima status
+          colima status "$COLIMA_PROFILE"
           docker info
 
       - name: Build and package in the pinned container
@@ -685,10 +622,10 @@ jobs:
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Users/keith/Network/kspls0/plezyng-native-build-20261027/runs/*) ;;
+            /Volumes/plezyng-native-build/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
-          colima stop || true
+          colima stop "$COLIMA_PROFILE" || true
           rm -rf "$BUILD_ROOT"
 
   build-windows:
