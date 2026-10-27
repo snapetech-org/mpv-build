@@ -59,6 +59,7 @@ jobs:
     # Apple libc exposes it. Keep them on the compiler they are written for.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
     env:
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       HOMEBREW_CACHE: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew
       HOMEBREW_LOGS: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/logs
       HOMEBREW_TEMP: /Users/keith/Network/kspls0/plezyng-native-build-20261027/cache/homebrew/tmp/${{ github.run_id }}-${{ github.run_attempt }}
