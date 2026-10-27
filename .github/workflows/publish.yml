@@ -534,20 +534,34 @@ jobs:
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
     env:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      BUILD_ROOT: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}
-      COLIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
-      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
+      BUILD_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      COLIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
+      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
       COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
-      DOCKER_CONFIG: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      LIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+      DOCKER_CONFIG: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
+      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+      NFS_STORAGE_ROOT: /Volumes/plezyng-native-build-kspld0
+      NFS_STORAGE_SOURCE: kspld0.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
     steps:
       - name: Prepare shared temporary directory
         shell: bash
         run: |
           set -euo pipefail
-          storage_root=/Volumes/plezyng-native-build
-          test -d "$storage_root"
-          /sbin/mount | /usr/bin/grep -Fq 'on /Volumes/plezyng-native-build (nfs,'
+          storage_root="${NFS_STORAGE_ROOT:?missing NFS storage root}"
+          expected_source="${NFS_STORAGE_SOURCE:?missing NFS storage source}"
+          test -d "$storage_root" || { echo "missing NFS mountpoint: $storage_root" >&2; exit 1; }
+          expected_mount="${expected_source} on ${storage_root} (nfs,"
+          if ! /sbin/mount | /usr/bin/grep -Fq "$expected_mount"; then
+            echo "expected NFS source '$expected_source' at '$storage_root' is not mounted" >&2
+            /sbin/mount | /usr/bin/grep -F 'plezyng-native-build' || true
+            exit 1
+          fi
+          probe_dir="$(/usr/bin/mktemp -d "${storage_root}/.gha-mount-probe.XXXXXX")"
+          cleanup_probe() { /bin/rm -rf "$probe_dir"; }
+          trap cleanup_probe EXIT
+          probe_content="${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$probe_content" > "$probe_dir/probe"
+          test "$(/bin/cat "$probe_dir/probe")" = "$probe_content"
           command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
           command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
@@ -562,7 +576,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Volumes/plezyng-native-build/runs/*) ;;
+            /Volumes/plezyng-native-build-kspld0/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
           rm -rf "$BUILD_ROOT"
@@ -577,8 +591,8 @@ jobs:
           command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           colima --version
           docker --version
-          colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 512 \
-            --mount /Volumes/plezyng-native-build:w
+          colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 200 \
+            --mount "$NFS_STORAGE_ROOT":w
           for attempt in $(seq 1 36); do
             if docker info >/dev/null 2>&1; then
               docker info --format '{{.OSType}}/{{.Architecture}}'
@@ -622,7 +636,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$BUILD_ROOT" in
-            /Volumes/plezyng-native-build/runs/*) ;;
+            /Volumes/plezyng-native-build-kspld0/runs/*) ;;
             *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
           esac
           colima stop "$COLIMA_PROFILE" || true
