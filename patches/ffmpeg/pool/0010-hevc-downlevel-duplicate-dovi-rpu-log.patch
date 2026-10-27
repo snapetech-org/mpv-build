@@ -11,15 +11,15 @@ normal playback.
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/libavcodec/hevc/hevcdec.c b/libavcodec/hevc/hevcdec.c
-index 8a845f5..8ec2c20 100644
+index a3be41a41e..ccd4479bc3 100644
 --- a/libavcodec/hevc/hevcdec.c
 +++ b/libavcodec/hevc/hevcdec.c
-@@ -3743,7 +3743,7 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
-         H2645NAL *nal = &s->pkt.nals[s->pkt.nb_nals - 1];
+@@ -3749,7 +3749,7 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
+     if (rpu_nal) {
          if (s->rpu_buf) {
              av_buffer_unref(&s->rpu_buf);
 -            av_log(s->avctx, AV_LOG_WARNING, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
 +            av_log(s->avctx, AV_LOG_VERBOSE, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
          }
  
-         s->rpu_buf = av_buffer_alloc(nal->raw_size - 2);
+         s->rpu_buf = av_buffer_alloc(rpu_nal->raw_size - 2);

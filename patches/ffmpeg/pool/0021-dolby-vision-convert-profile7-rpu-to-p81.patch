@@ -27,30 +27,30 @@ the helper without enabling the library would build the stub below and fail
 every profile 7 conversion at runtime.
 
 diff --git a/configure b/configure
-index a0eed36..539747c 100755
+index 374bd5c151..3dcb683fc1 100755
 --- a/configure
 +++ b/configure
-@@ -1934,6 +1934,7 @@ EXTERNAL_LIBRARY_LIST="
-     libcelt
+@@ -2083,6 +2083,7 @@ EXTERNAL_LIBRARY_LIST="
+     libcaca
      libcodec2
      libdav1d
 +    libdovi
      libdc1394
      libflite
      libfontconfig
-@@ -7034,6 +7035,7 @@ enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&
+@@ -7332,6 +7333,7 @@ enabled libbs2b           && require_pkg_config libbs2b libbs2b bs2b.h bs2b_open
  enabled libcaca           && require_pkg_config libcaca caca caca.h caca_create_canvas
  enabled libcodec2         && require libcodec2 codec2/codec2.h codec2_create -lcodec2
- enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 0.5.0" "dav1d/dav1d.h" dav1d_version
+ enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 1.0.0" "dav1d/dav1d.h" dav1d_version
 +enabled libdovi           && require libdovi libdovi/rpu_parser.h dovi_parse_unspec62_nalu -ldovi
  enabled libdavs2          && require_pkg_config libdavs2 "davs2 >= 1.6.0" davs2.h davs2_decoder_open
  enabled libdc1394         && require_pkg_config libdc1394 libdc1394-2 dc1394/dc1394.h dc1394_new
  enabled libdrm            && check_pkg_config libdrm libdrm xf86drm.h drmGetVersion
 diff --git a/libavcodec/Makefile b/libavcodec/Makefile
-index fb22541..c6d8108 100644
+index 95ba308504..e6a851676a 100644
 --- a/libavcodec/Makefile
 +++ b/libavcodec/Makefile
-@@ -98,6 +98,8 @@ OBJS-$(CONFIG_D3D12VA_ENCODE)          += d3d12va_encode.o hw_base_encode.o
+@@ -101,6 +101,8 @@ OBJS-$(CONFIG_D3D12VA_ENCODE)          += d3d12va_encode.o hw_base_encode.o
  OBJS-$(CONFIG_DEFLATE_WRAPPER)         += zlib_wrapper.o
  OBJS-$(CONFIG_DOVI_RPUDEC)             += dovi_rpu.o dovi_rpudec.o
  OBJS-$(CONFIG_DOVI_RPUENC)             += dovi_rpu.o dovi_rpuenc.o
@@ -58,8 +58,8 @@ index fb22541..c6d8108 100644
 +OBJS-$(CONFIG_VIDEOTOOLBOX)            += dovi_convert.o
  OBJS-$(CONFIG_ERROR_RESILIENCE)        += error_resilience.o
  OBJS-$(CONFIG_EVCPARSE)                += evc_parse.o evc_ps.o
- OBJS-$(CONFIG_EXIF)                    += exif.o tiff_common.o
-@@ -1336,6 +1338,8 @@ SKIPHEADERS-$(CONFIG_VULKAN)           += ffv1_vulkan.h vulkan_video.h \
+ OBJS-$(CONFIG_FAANDCT)                 += faandct.o
+@@ -1358,6 +1360,8 @@ SKIPHEADERS-$(CONFIG_VULKAN)           += ffv1_vulkan.h prores_vulkan.h vulkan_v
                                            vulkan_encode.h vulkan_decode.h
  SKIPHEADERS-$(CONFIG_V4L2_M2M)         += v4l2_buffers.h v4l2_context.h v4l2_m2m.h
  SKIPHEADERS-$(CONFIG_ZLIB)             += zlib_wrapper.h
@@ -70,7 +70,7 @@ index fb22541..c6d8108 100644
              avpacket                                                    \
 diff --git a/libavcodec/dovi_convert.c b/libavcodec/dovi_convert.c
 new file mode 100644
-index 0000000..33e2744
+index 0000000000..33e27449dd
 --- /dev/null
 +++ b/libavcodec/dovi_convert.c
 @@ -0,0 +1,132 @@
@@ -208,7 +208,7 @@ index 0000000..33e2744
 +// --- end dovi p7 conversion core
 diff --git a/libavcodec/dovi_convert.h b/libavcodec/dovi_convert.h
 new file mode 100644
-index 0000000..3517718
+index 0000000000..35177185d4
 --- /dev/null
 +++ b/libavcodec/dovi_convert.h
 @@ -0,0 +1,47 @@

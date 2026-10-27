@@ -21,18 +21,18 @@ one until more data arrives. The unread rest of a record already waited
 in OpenSSL the same way before.
 
 diff --git a/libavformat/tls_openssl.c b/libavformat/tls_openssl.c
-index 75229ea..16783e3 100644
+index 48b4a2226a..38d5dc9eee 100644
 --- a/libavformat/tls_openssl.c
 +++ b/libavformat/tls_openssl.c
-@@ -947,6 +947,11 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
+@@ -836,6 +836,11 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
          goto fail;
      }
-     SSL_set_ex_data(p->ssl, 0, p);
+     SSL_set_ex_data(c->ssl, 0, c);
 +    // Without read-ahead OpenSSL reads each record off the socket in two
 +    // reads through the TCP protocol, the 5-byte header and then the body.
 +    // With it, one read takes whatever records have arrived, up to 64 KiB.
-+    SSL_set_read_ahead(p->ssl, 1);
-+    SSL_set_default_read_buffer_len(p->ssl, 64 * 1024);
-     SSL_CTX_set_info_callback(p->ctx, openssl_info_callback);
-     init_bio_method(h);
-     if (!c->listen && !c->numerichost) {
++    SSL_set_read_ahead(c->ssl, 1);
++    SSL_set_default_read_buffer_len(c->ssl, 64 * 1024);
+     SSL_CTX_set_info_callback(c->ctx, openssl_info_callback);
+ 
+     if (s->is_dtls) {

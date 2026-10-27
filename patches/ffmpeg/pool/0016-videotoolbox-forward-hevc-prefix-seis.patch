@@ -1,54 +1,24 @@
-From: edde746 <86283021+edde746@users.noreply.github.com>
-Date: Sun, 20 Sep 2026 23:50:00 +0200
-Subject: [PATCH] videotoolbox: forward HEVC prefix SEIs so HDR10+ reaches the sink
+Subject: [PATCH] videotoolbox: forward HEVC prefix SEIs for HDR metadata
 
-A plain-HEVC HDR10+ file played on an Apple TV 4K into an HDR10+ panel
-(Samsung S90D) is signalled as HDR10: the panel's input banner reads
-"HDR", not the HDR10+ wordmark. Dolby Vision profile 8 + HDR10+ hybrids
-and AVPlayer playing the same stream both light HDR10+ (plezy#2404).
+Forward HEVC prefix SEI NALs to VideoToolbox for plain HEVC sessions so
+container and per-frame HDR metadata can reach the display. Keep the Dolby
+Vision session path unchanged, because its dynamic metadata comes from the RPU.
+Also add the static HDR extensions from stream metadata to the format
+description.
 
-The HEVC hwaccel hands VideoToolbox the parameter sets and the VCL slices
-of an access unit and nothing else, so the decoder never sees the prefix
-SEI messages carrying the HDR signalling - mastering display colour
-volume, content light level, and the per-frame HDR10+ (SMPTE ST 2094-40)
-T.35 payload. VideoToolbox propagates exactly that per-frame display
-metadata from the compressed bitstream onto its output pixel buffers, and
-AVSampleBufferDisplayLayer signals HDR10+ to the sink from there - the
-same private-attachment route the Dolby Vision RPUs already take through
-videotoolbox_hevc_decode_dovi_p81_rpu. The DV session derives its dynamic
-metadata from the RPU, which is why hybrids were fine.
-
-Three changes, all confined to the plain HEVC session:
-
-- Append every prefix SEI NAL of the access unit to the VT sample after
-  the parameter sets and before the first slice. Suffix SEIs (picture
-  hashes) stay out. The Dolby Vision session is left alone: feeding it
-  the SEIs on top of the RPU stopped HDR10+ output from DV + HDR10+
-  hybrids on the same panel.
-- Enable kVTDecompressionPropertyKey_PropagatePerFrameHDRDisplayMetadata
-  and, on tvOS 17+, GeneratePerFrameHDRDisplayMetadata on every session,
-  not only the Dolby Vision one.
-- Mirror the container's colr/mdcv/clli into the HEVC format description.
-  Without them VideoToolbox "guesses" the colour info from the SPS and
-  treats the stream as a plain 10-bit decode.
-
-Validated A/B on the Apple TV 4K (3rd gen, tvOS 26) + S90D: HEVC HDR10+
-now reads HDR10+ on the panel, plain HEVC HDR10 still reads HDR, and DV
-profile 8 + HDR10+ still reads HDR10+.
----
 diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
-index 82c01b5..2d2f7a2 100644
+index 2c9c276bc1..4e51517542 100644
 --- a/libavcodec/videotoolbox.c
 +++ b/libavcodec/videotoolbox.c
-@@ -28,6 +28,7 @@
- #include "libavutil/hwcontext_videotoolbox.h"
+@@ -29,6 +29,7 @@
  #include "dovi_convert.h"
+ #include "libavutil/hwcontext_videotoolbox.h"
  #include "libavutil/dovi_meta.h"
 +#include "libavutil/mastering_display_metadata.h"
  #include "libavutil/mem.h"
  #include "vt_internal.h"
  #include "libavutil/avutil.h"
-@@ -1032,6 +1033,68 @@ static CFDataRef videotoolbox_dovi_extradata_create(const AVDOVIDecoderConfigura
+@@ -1034,6 +1035,68 @@ static CFDataRef videotoolbox_dovi_extradata_create(const AVDOVIDecoderConfigura
      return CFDataCreate(kCFAllocatorDefault, buf, sizeof(buf));
  }
  
@@ -117,7 +87,7 @@ index 82c01b5..2d2f7a2 100644
  static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec_type,
                                                            AVCodecContext *avctx)
  {
-@@ -1066,6 +1129,8 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+@@ -1069,6 +1132,8 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
                                   kCMFormatDescriptionYCbCrMatrix_ITU_R_2020);
          }
      }
@@ -126,7 +96,7 @@ index 82c01b5..2d2f7a2 100644
  
      avc_info = CFDictionaryCreateMutable(kCFAllocatorDefault,
                                           1,
-@@ -1292,7 +1357,13 @@ static int videotoolbox_start(AVCodecContext *avctx)
+@@ -1298,7 +1363,13 @@ static int videotoolbox_start(AVCodecContext *avctx)
          return -1;
      }
  
@@ -141,7 +111,7 @@ index 82c01b5..2d2f7a2 100644
          OSStatus property_status;
  
  #if AV_HAS_BUILTIN(__builtin_available)
-@@ -1406,6 +1477,46 @@ static int videotoolbox_h264_end_frame(AVCodecContext *avctx)
+@@ -1412,6 +1483,46 @@ static int videotoolbox_h264_end_frame(AVCodecContext *avctx)
      return ret;
  }
  
@@ -188,7 +158,7 @@ index 82c01b5..2d2f7a2 100644
  static int videotoolbox_hevc_start_frame(AVCodecContext *avctx,
                                           const AVBufferRef *buffer_ref,
                                           const uint8_t *buffer,
-@@ -1419,7 +1530,7 @@ static int videotoolbox_hevc_start_frame(AVCodecContext *avctx,
+@@ -1425,7 +1536,7 @@ static int videotoolbox_hevc_start_frame(AVCodecContext *avctx,
      frame->crop_top    = 0;
      frame->crop_bottom = 0;
  

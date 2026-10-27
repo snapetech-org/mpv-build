@@ -1,29 +1,25 @@
-From 4f5d75f4f0df0f8b4d5c2e6aa5d8d116908783d8 Mon Sep 17 00:00:00 2001
-From: edde746 <86283021+edde746@users.noreply.github.com>
-Date: Thu, 7 May 2026 14:00:00 +0200
 Subject: [PATCH] videotoolbox: use Dolby Vision HEVC descriptions when safe
 
-Create VideoToolbox sessions with a Dolby Vision HEVC sample description
-for Apple-supported single-layer HEVC Dolby Vision profiles. This lets
-VideoToolbox see the compressed Dolby Vision configuration before decode
-instead of receiving only a plain HEVC hvcC description.
----
- libavcodec/videotoolbox.c | 79 ++++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 78 insertions(+), 1 deletion(-)
+Create VideoToolbox sessions with a Dolby Vision HEVC sample description for
+Apple-supported single-layer HEVC Dolby Vision profiles. This gives
+VideoToolbox the compressed Dolby Vision configuration before decode instead
+of passing only a plain HEVC hvcC description. FFmpeg n9.0.2 already enables
+hardware decoding for HEVC codec IDs, so no extra decoder-specification branch
+is needed for the `dvh1` codec type.
 
 diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
-index 79fb501..4b01c8a 100644
+index 69ab7bf300..a0db3cbd8c 100644
 --- a/libavcodec/videotoolbox.c
 +++ b/libavcodec/videotoolbox.c
-@@ -24,6 +24,7 @@
- #include "config_components.h"
+@@ -25,6 +25,7 @@
  #include "videotoolbox.h"
+ #include "libavutil/attributes.h"
  #include "libavutil/hwcontext_videotoolbox.h"
 +#include "libavutil/dovi_meta.h"
  #include "libavutil/mem.h"
  #include "vt_internal.h"
  #include "libavutil/avutil.h"
-@@ -62,6 +63,8 @@ enum { kCMVideoCodecType_AV1 = 'av01' };
+@@ -64,6 +65,8 @@ enum { kCMVideoCodecType_AV1 = 'av01' };
  
  #define VIDEOTOOLBOX_ESDS_EXTRADATA_PADDING  12
  
@@ -32,7 +28,7 @@ index 79fb501..4b01c8a 100644
  typedef struct VTHWFrame {
      CVPixelBufferRef pixbuf;
      AVBufferRef *hw_frames_ctx;
-@@ -831,11 +834,62 @@ static CFDictionaryRef videotoolbox_buffer_attributes_create(int width,
+@@ -833,11 +836,62 @@ static CFDictionaryRef videotoolbox_buffer_attributes_create(int width,
      return buffer_attributes;
  }
  
@@ -95,16 +91,7 @@ index 79fb501..4b01c8a 100644
  
      CFMutableDictionaryRef config_info = CFDictionaryCreateMutable(kCFAllocatorDefault,
                                                                     0,
-@@ -845,6 +899,8 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
-     CFDictionarySetValue(config_info,
-                          codec_type == kCMVideoCodecType_HEVC ?
-                             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder :
-+                         codec_type == kCMVideoCodecType_DolbyVisionHEVC_FF ?
-+                            kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder :
-                             kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
-                          kCFBooleanTrue);
- 
-@@ -865,10 +921,17 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+@@ -870,10 +924,17 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
          if (data)
              CFDictionarySetValue(avc_info, CFSTR("avcC"), data);
          break;
@@ -122,7 +109,7 @@ index 79fb501..4b01c8a 100644
          break;
  #if CONFIG_VP9_VIDEOTOOLBOX_HWACCEL
      case kCMVideoCodecType_VP9 :
-@@ -894,6 +957,8 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+@@ -899,6 +960,8 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
  
      if (data)
          CFRelease(data);
@@ -131,7 +118,7 @@ index 79fb501..4b01c8a 100644
  
      CFRelease(avc_info);
      return config_info;
-@@ -920,7 +985,19 @@ static int videotoolbox_start(AVCodecContext *avctx)
+@@ -925,7 +988,19 @@ static int videotoolbox_start(AVCodecContext *avctx)
          videotoolbox->cm_codec_type = kCMVideoCodecType_H264;
          break;
      case AV_CODEC_ID_HEVC :

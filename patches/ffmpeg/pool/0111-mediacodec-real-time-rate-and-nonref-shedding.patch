@@ -2,14 +2,10 @@ diff --git a/configure b/configure
 index 539747c..f40b86e 100755
 --- a/configure
 +++ b/configure
-@@ -3399,6 +3399,7 @@ av1_amf_encoder_deps="amf"
- av1_amf_decoder_deps="amf"
- av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
+@@ -3614,2 +3614,3 @@
  av1_mediacodec_decoder_deps="mediacodec"
 +av1_mediacodec_decoder_select="cbs_av1"
  av1_mediacodec_encoder_deps="mediacodec"
- av1_mediacodec_encoder_select="extract_extradata_bsf"
- av1_mf_encoder_deps="mediafoundation"
 diff --git a/libavcodec/Makefile b/libavcodec/Makefile
 index c6d8108..e048f23 100644
 --- a/libavcodec/Makefile
