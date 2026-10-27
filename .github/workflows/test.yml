@@ -1,19 +1,32 @@
+# ng-runner-policy: private-jit-only-v1
 name: Test Build
 
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
+
 on:
-  push:
-    branches:
-      - ci
-      - test
   workflow_dispatch:
+    inputs:
+      action_tag:
+        description: Explicit CI action
+        required: true
+        type: choice
+        options: [ci]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
 
 jobs:
   build:
     permissions:
-      contents: write
-    runs-on: macos-15
+      contents: read
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check version to release
         uses: jannekem/run-python-script-action@v1

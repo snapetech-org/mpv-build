@@ -1,3 +1,4 @@
+# ng-runner-policy: private-jit-only-v1
 # Manual debugging for the windows build-state cache.
 #
 # winbuild runs its ExternalProject steps with LOG 1, so a failing step's
@@ -8,9 +9,22 @@
 # without burning a build cycle.
 name: Debug windows cache
 
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
+
 on:
   workflow_dispatch:
     inputs:
+      action_tag:
+        description: Explicit CI action
+        required: true
+        type: choice
+        options: [ci]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
       arch:
         description: target arch
         type: choice
@@ -27,7 +41,7 @@ jobs:
   dump:
     name: Dump ${{ inputs.arch }} logs (${{ inputs.pattern }})
     # The host the cached windows tree was built on (publish.yml build-windows).
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-dump"]}}', github.run_id)) }}
     steps:
       - name: Restore newest build state cache
         uses: actions/cache/restore@v4

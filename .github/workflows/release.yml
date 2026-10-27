@@ -1,4 +1,8 @@
+# ng-runner-policy: private-jit-only-v1
 name: Release
+
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
 
 # A release is a label on a commit, nothing more. The binaries a tag ships were
 # already published by "Publish binaries" and are pinned by content-addressed
@@ -6,6 +10,16 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      action_tag:
+        description: Explicit release action
+        required: true
+        type: choice
+        options: [release]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
       version:
         description: "Release tag name (default mpv version)"
         default: ""
@@ -22,9 +36,11 @@ jobs:
     name: Tag and release
     permissions:
       contents: write
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-release"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # Refuse to tag a commit whose Package.swift does not match the binaries
       # published for it: the tag would ship URLs nobody can resolve.

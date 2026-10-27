@@ -1,10 +1,12 @@
+# ng-runner-policy: private-jit-only-v1
 name: Publish binaries
 
-# Every push to main publishes the binaries that commit needs, so any commit on
-# main is pinnable. Asset names are content-addressed (they carry a key derived
-# from the sources that produced them), which makes them immutable: an asset
-# that already exists on a rolling prerelease is byte-identical to the one this
-# run would upload, so it is skipped instead of clobbered.
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
+
+# Publish binaries only after an explicit private build dispatch. Asset names
+# are content-addressed, so an existing artifact is skipped instead of
+# clobbered.
 #
 # Binaries are sharded per platform group. Each group builds independently,
 # uploads to its own `binaries-<group>` rolling prerelease and contributes only
@@ -16,18 +18,26 @@ name: Publish binaries
 # Those two are not derived from the group list: the matrix row names the group
 # and the uploaded-artifact prefix its build job uploads, and the build job
 # itself is per platform, so a new group is a group.json, its build job, and a
-# row in the record matrix below. The android build lives in android.yml,
-# which ci.yml runs for pull requests too.
+# row in the record matrix below. The Android build lives in android.yml,
+# called from the trusted publish and manual CI workflows.
 #
-# Only main publishes: a dispatch on any other branch builds, records and
-# verifies everything stale, then uploads no asset and pushes no manifest.
+# Only main publishes. Runner-group workflow restrictions admit this workflow
+# only from its reviewed main ref.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      action_tag:
+        description: Explicit build action
+        required: true
+        type: choice
+        options: [build]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
 
-# Two pushes must never interleave asset uploads or commits to main, and a
+# Two runs must never interleave asset uploads or commits to main, and a
 # cancelled run could leave the manifest committed without its assets.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,9 +49,6 @@ permissions:
 jobs:
   tests:
     name: Patch regression tests
-    # The marker sits on this workflow's own commit, so the run it triggers
-    # stops here instead of looping.
-    if: ${{ !contains(github.event.head_commit.message, '[skip binaries]') }}
     permissions:
       contents: read
     # The harnesses need only bash, python3 and cc (plus libass's host
@@ -50,9 +57,11 @@ jobs:
     # test_avf_timebase_servo.c uses M_PI under -std=c11, which glibc hides in
     # strict ISO mode (gcc 13 on ubuntu-24.04: "'M_PI' undeclared"), while
     # Apple libc exposes it. Keep them on the compiler they are written for.
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Test AO PCM lookahead
         run: ./scripts/test_ao_pcm_lookahead.sh
@@ -201,7 +210,7 @@ jobs:
     needs: tests
     permissions:
       contents: read
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-plan"]}}', github.run_id)) }}
     outputs:
       # The stale libraries of the apple group, comma-separated: the `libs=`
       # argument the apple build legs need.
@@ -218,6 +227,8 @@ jobs:
       stale_groups: ${{ steps.stale.outputs.stale_groups }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Validate patch series
         run: python3 scripts/patches.py check
@@ -268,9 +279,10 @@ jobs:
     if: contains(needs.plan.outputs.stale_groups, ',apple,')
     permissions:
       contents: read
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: macos
@@ -293,6 +305,8 @@ jobs:
             platform_type: tvsimulator
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # rustup is named rather than assumed: macos-26 images have changed how
       # they ship it (rustup-init's ~/.cargo/bin until 20261013, Homebrew's
@@ -362,12 +376,15 @@ jobs:
 
   publish-apple:
     name: Publish apple
-    needs: build-apple
+    needs: [build-apple, build-linux-arm64]
+    if: always() && !cancelled() && needs.build-apple.result == 'success'
     permissions:
       contents: write
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download platform builds
         uses: actions/download-artifact@v4
@@ -430,58 +447,132 @@ jobs:
     with:
       natives: ${{ contains(needs.plan.outputs.stale_android, ',libmpv-android,') }}
 
-  build-linux:
-    name: Build linux ${{ matrix.arch }}
+  build-linux-x64:
+    name: Build linux x86_64
     needs: plan
     if: contains(needs.plan.outputs.stale_groups, ',linux,')
     permissions:
       contents: read
-    # The aarch64 leg runs on GitHub's native arm runner: toolchain/linux.txt
-    # pins the container image by multi-arch index digest, so the same
-    # container-build.sh invocation resolves the arm64 image natively -- no
-    # qemu, and the glibc floor is identical to the x86_64 leg's. The hosts
-    # are pinned as well, so a rebuild that has to reproduce a published key
-    # runs where that key was built: ubuntu-latest moved the x86_64 leg to
-    # ubuntu-26.04 in October 2026, and it stays there.
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-26.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-x64"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      # KEY makes container-build.sh run package.sh inside the container, so
-      # the tarball comes out already named by content; ARCH pins the name's
-      # architecture tag to the runner this leg was scheduled on. package.sh
-      # also leaves the unkeyed debug-symbols zip
-      # (libmpv-linux-<arch>-symbols.zip) that record-platform names by content.
-      - name: Build and package in the pinned container (${{ matrix.arch }})
+      # The image digest pins the same container toolchain used for the
+      # published x86_64 artifacts. This leg runs on the private Linux x64 JIT.
+      - name: Build and package in the pinned container
         run: |
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
-          KEY="${KEY}" ARCH=${{ matrix.arch }} bash platforms/linux/container-build.sh
+          KEY="${KEY}" ARCH=x86_64 bash platforms/linux/container-build.sh
 
-      # A rebuild of a published key has to reproduce its bytes (publish-assets
-      # refuses anything else), so no file may carry a build's clock. Naming
-      # the symbols zip also fails the leg when packaging did not write it.
-      - name: Check the tarball and symbols for a build date (${{ matrix.arch }})
+      - name: Check the tarball and symbols for a build date
         run: |
           bash scripts/test_build_date.sh dist/release/*.tar.zst \
-            dist/release/libmpv-linux-${{ matrix.arch }}-symbols.zip
+            dist/release/libmpv-linux-x86_64-symbols.zip
 
-      - name: Upload platform build (${{ matrix.arch }})
+      - name: Upload platform build
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch }}
+          name: linux-x86_64
           path: |
             ./dist/release/*.tar.zst
-            ./dist/release/libmpv-linux-*-symbols.zip
+            ./dist/release/libmpv-linux-x86_64-symbols.zip
           if-no-files-found: error
+
+  build-linux-arm64:
+    name: Build linux aarch64
+    needs: [plan, build-apple]
+    if: >-
+      always() && !cancelled() &&
+      needs.plan.result == 'success' &&
+      contains(needs.plan.outputs.stale_groups, ',linux,')
+    permissions:
+      contents: read
+    # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
+    # Colima and its virtual disk, checkout copy, and all build outputs live on
+    # the task-specific NFS workspace so the Mac's local disk stays clear.
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
+    env:
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      BUILD_ROOT: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      COLIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
+      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
+      COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
+      DOCKER_CONFIG: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
+      LIMA_HOME: /Volumes/plezyng-native-build/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare the NFS-backed workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BUILD_ROOT" in
+            /Volumes/plezyng-native-build/runs/*) ;;
+            *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
+          esac
+          rm -rf "$BUILD_ROOT"
+          mkdir -p "$BUILD_ROOT/src" "$COLIMA_HOME" "$COLIMA_CACHE_HOME" "$DOCKER_CONFIG"
+          rsync -a --delete "$GITHUB_WORKSPACE/" "$BUILD_ROOT/src/"
+
+      - name: Start private Linux ARM64 container runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          colima start --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 512 \
+            --mount /Volumes/plezyng-native-build:w
+          for attempt in $(seq 1 36); do
+            if docker info >/dev/null 2>&1; then
+              docker info --format '{{.OSType}}/{{.Architecture}}'
+              exit 0
+            fi
+            sleep 5
+          done
+          colima status
+          docker info
+
+      - name: Build and package in the pinned container
+        shell: bash
+        working-directory: ${{ env.BUILD_ROOT }}/src
+        env:
+          JOBS: '4'
+        run: |
+          set -euo pipefail
+          KEY="$(python3 scripts/keys.py keys --platform-group linux \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
+          KEY="${KEY}" ARCH=aarch64 bash platforms/linux/container-build.sh
+
+      - name: Check the tarball and symbols for a build date
+        shell: bash
+        working-directory: ${{ env.BUILD_ROOT }}/src
+        run: |
+          bash scripts/test_build_date.sh dist/release/*.tar.zst \
+            dist/release/libmpv-linux-aarch64-symbols.zip
+
+      - name: Upload platform build
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: |
+            ${{ env.BUILD_ROOT }}/src/dist/release/*.tar.zst
+            ${{ env.BUILD_ROOT }}/src/dist/release/libmpv-linux-aarch64-symbols.zip
+          if-no-files-found: error
+
+      - name: Stop the container runtime and remove task workspace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BUILD_ROOT" in
+            /Volumes/plezyng-native-build/runs/*) ;;
+            *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
+          esac
+          colima stop || true
+          rm -rf "$BUILD_ROOT"
 
   build-windows:
     name: Build windows ${{ matrix.arch }}
@@ -500,13 +591,15 @@ jobs:
     # file" and meson reports "Unknown compiler(s)". The cache key does not
     # name the host, so moving this runner means a new cache epoch
     # (windows-ep3) and a cold, hours-long toolchain bootstrap.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-windows"]}}', github.run_id, strategy.job-index)) }}
     strategy:
       fail-fast: false
       matrix:
         arch: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # Core set validated through the pinned configure (git..libtool;
       # unzip+patch are hard configure requirements, zip is for package.sh),
@@ -617,7 +710,7 @@ jobs:
     # the group name and its artifact glob, both of which come from the group's
     # own group.json (via `keys.py groups`/`variants`) rather than being
     # restated here.
-    needs: [plan, build-android, build-linux, build-windows]
+    needs: [plan, build-android, build-linux-x64, build-linux-arm64, build-windows]
     # always(): a group with nothing stale has a *skipped* build job, and a
     # skipped need would otherwise skip this job -- silently publishing nothing
     # and leaving the commit unpinnable. The per-row gate below decides which
@@ -625,7 +718,7 @@ jobs:
     if: always() && !cancelled() && needs.plan.outputs.stale_groups != ''
     permissions:
       contents: write
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-publish"]}}', github.run_id, strategy.job-index)) }}
     strategy:
       fail-fast: false
       matrix:
@@ -638,6 +731,8 @@ jobs:
             artifacts: windows-*
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # A group with nothing stale keeps its committed section and is skipped
       # rather than published; the manifest job's gate below is what proves
@@ -734,7 +829,7 @@ jobs:
     if: always() && !cancelled() && needs.plan.outputs.stale_groups != ''
     permissions:
       contents: write
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-manifest"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
 

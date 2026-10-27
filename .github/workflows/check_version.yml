@@ -1,4 +1,8 @@
+# ng-runner-policy: private-jit-only-v1
 name: Check new version
+
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
 
 # Proposes a dependency bump by rewriting the pins in versions.json -- the single
 # source of truth every driver reads -- and opening a PR. The PR is deliberately
@@ -7,17 +11,28 @@ name: Check new version
 # pins change, which is a human step.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 1'
+    inputs:
+      action_tag:
+        description: Explicit CI action
+        required: true
+        type: choice
+        options: [ci]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
 
 jobs:
   check:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-check"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Resolve the latest upstream tags
         id: latest
@@ -211,9 +226,11 @@ jobs:
           - repository: "mpvkit/libdovi-build"
             branch: libdovi-build
             components: "libdovi"
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-check-deps"]}}', github.run_id, strategy.job-index)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Resolve the latest release tag
         id: latest

@@ -1,24 +1,35 @@
+# ng-runner-policy: private-jit-only-v1
+# Public pull requests stay off trusted runners until a disposable,
+# secret-free JIT route is available.
 name: CI
 
+run-name: >-
+  ${{ format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
+
 on:
-  push:
-    branches:
-      - develop
-    tags:
-      - '*'
-  # Version-bump PRs (check_version.yml) change versions.json pins; the
-  # patches job proves the series still apply to the new sources before merge.
-  pull_request:
   workflow_dispatch:
+    inputs:
+      action_tag:
+        description: Explicit CI action
+        required: true
+        type: choice
+        options: [ci]
+      runner_pool_tag:
+        description: Explicit private runner pool
+        required: true
+        type: choice
+        options: [private]
 
 jobs:
   patches:
     name: Patch series
     permissions:
       contents: read
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-patches"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Validate patch series
         run: python3 scripts/patches.py check
@@ -164,11 +175,13 @@ jobs:
     name: Android plan
     permissions:
       contents: read
-    runs-on: ubuntu-26.04
+    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-android-plan"]}}', github.run_id)) }}
     outputs:
       natives: ${{ steps.stale.outputs.natives }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # The tarballs are built only when this tree moves their key (a pin,
       # patch, driver or toolchain change): the AAR must build against the
@@ -201,9 +214,11 @@ jobs:
     # The harnesses compile Objective-C and Swift against Apple's frameworks.
     permissions:
       contents: read
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-spatial"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Test spatial audio output
         run: bash scripts/test_ao_spatial.sh
@@ -227,14 +242,14 @@ jobs:
 
   build:
     name: Demo apps
-    # The demo builds are expensive; keep them on the pushes they always ran
-    # on, and off the version-bump PRs the patches job exists for.
-    if: github.event_name != 'pull_request'
+    # The demo builds are expensive; run them only through explicit dispatch.
     permissions:
       contents: write
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Show Xcode version
         run: xcodebuild -version
