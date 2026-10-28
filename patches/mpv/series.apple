@@ -24,3 +24,4 @@
 0040-ao-decode-the-playing-track-to-pcm-when-passthrough-fails.patch
 0041-avfoundation-say-when-avplayer-never-asked-for-the-stream.patch
 0042-avfoundation-anchor-the-passthrough-clock-to-the-playhead.patch
+0153-avfoundation-videotoolbox-motion-interpolation.patch
