@@ -42,8 +42,10 @@ not rerun an old workflow revision to validate newer source fixes.
 ## Packaging and publishing prerequisites
 
 The plan, AAR and Linux publishing jobs run `scripts/prepare_linux_artifacts.sh`
-before doing their work. Each ephemeral guest installs ZIP/Unzip, Zstandard,
-XZ, ELF inspection tools and a checksum-pinned GitHub CLI. A successful compiler
+before doing their work. The runner bootstrap installs ZIP/Unzip, Zstandard,
+XZ, ELF inspection tools and a checksum-pinned GitHub CLI before accepting the job.
+The workflow helper only verifies that contract: metadata jobs deliberately lack
+sudo, so package installation must never happen in the plan or publish job. A successful compiler
 job cannot supply tools to a later guest. The AAR driver also checks its host
 commands before Gradle, so missing symbol archivers fail immediately.
 

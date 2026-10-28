@@ -89,7 +89,8 @@ for job_name, operation in (("plan", "Compute stale libraries per group"),
 artifact_tools = (ROOT / "scripts/prepare_linux_artifacts.sh").read_text()
 for tool in ("zip", "unzip", "zstd", "gh"):
     assert tool in artifact_tools, f"fresh artifact guests require {tool}"
-assert "sha256sum -c -" in artifact_tools, "the publishing CLI download must be verified"
+assert "sudo -n" not in artifact_tools, "metadata jobs must never require elevation"
+assert 'version=2.103.3' in artifact_tools, "the verified runner CLI contract must stay explicit"
 aar_script = (ROOT / "platforms/android/lib/build-aar.sh").read_text()
 assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
 
