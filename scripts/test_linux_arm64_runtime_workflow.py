@@ -47,6 +47,7 @@ workspace = job[workspace_start:runtime_end]
 assert 'umask 077' in workspace
 assert 'case "$RUN_ROOT" in' in workspace
 assert 'rm -rf "$RUN_ROOT"' in workspace
+assert '"$LIMA_HOME"' in workspace
 
 runtime_end = job.find("\n      - name: ", runtime_start + len(runtime_name))
 if runtime_end == -1:
@@ -74,11 +75,19 @@ for run_id, attempt in (("40644233186", "1"), ("18446744073709551615", "9999")):
     lima = env_value("LIMA_HOME", run_id, attempt)
     colima = env_value("COLIMA_HOME", run_id, attempt)
     for socket_path in (
-        f"{lima}/colima-{profile}/ssh.sock.1234567890123456",
+        f"{lima}/colima/ssh.sock.1234567890123456",
         f"{colima}/{profile}/docker.sock",
     ):
         assert len(socket_path.encode()) < 104, socket_path
+    assert profile == "default"
+    assert lima == env_value("RUN_ROOT", run_id, attempt) + "/l", (
+        "Lima must not mistake workspace/cache directories for VM instances"
+    )
 assert '${#socket_path}' in runtime, "runtime must check socket paths before VM startup"
 assert 'colima stop "$COLIMA_PROFILE" || true' not in job, (
     "never delete VM storage if stopping its consumer failed"
 )
+stop = job.index('colima stop "$COLIMA_PROFILE"')
+delete = job.index('colima delete --force --data "$COLIMA_PROFILE"')
+remove = job.index('rm -rf "$RUN_ROOT"', stop)
+assert stop < delete < remove, "stop and tear down the scoped VM before deleting its storage"

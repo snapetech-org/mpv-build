@@ -12,13 +12,16 @@ set -euo pipefail
 #   KEY       when set, package.sh runs after the build and names the tarball
 #             (and leaves the debug-symbols zip next to it)
 #   PLATFORM  docker --platform (e.g. linux/amd64); defaults to the host arch
-#   PREFIX    in-container install prefix (default /work/libmpv-prefix); give
-#             concurrent runs of different architectures distinct prefixes
+#   PREFIX    in-container install prefix (default /tmp/libmpv-prefix when
+#             packaging, /work/libmpv-prefix otherwise)
 #   OUT_DIR   in-container tarball and symbols zip directory (default
 #             /work/dist/release)
 #
-# The repo is mounted at /work and the build writes the prefix and, when
-# packaging, the tarball directory into it (both gitignored).
+# The repo is mounted at /work. Packaged builds keep their install prefix on
+# the guest's Linux filesystem: a Mac-hosted virtiofs/NFS mount creates
+# AppleDouble metadata files, whose permissions cannot be copied into the
+# package stage. Only finished archives need to cross that mount. Development
+# builds without KEY still leave their unarchived prefix under /work.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
@@ -65,6 +68,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -o Acquire::Retries=3 -qq
 # shellcheck disable=SC2086
 apt-get install -y -o Acquire::Retries=3 -qq --no-install-recommends '"$(echo $DEPS)"'
+if [ -n "${KEY:-}" ] && [ -z "${PREFIX:-}" ]; then
+  export PREFIX=/tmp/libmpv-prefix
+fi
 SRCDIR=/tmp/libmpv-src bash platforms/linux/build.sh
 if [ -n "${KEY:-}" ]; then
   bash platforms/linux/package.sh

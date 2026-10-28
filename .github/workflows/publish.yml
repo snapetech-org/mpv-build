@@ -552,9 +552,11 @@ jobs:
       COLIMA_CACHE_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
       # The run directory supplies isolation. Short names keep Lima's SSH
       # control socket below Darwin's 104-byte Unix socket path limit.
-      COLIMA_PROFILE: b
+      COLIMA_PROFILE: default
       DOCKER_CONFIG: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      # Lima treats non-hidden children as instances. Give it a dedicated
+      # directory so workspace/cache folders cannot prevent network teardown.
+      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/l
       NFS_STORAGE_ROOT: /Volumes/plezyng-native-build-kspld0
       NFS_STORAGE_SOURCE: kspld0.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
     steps:
@@ -602,7 +604,7 @@ jobs:
           esac
           umask 077
           rm -rf "$RUN_ROOT"
-          mkdir -p "$BUILD_ROOT/src" "$COLIMA_HOME" "$COLIMA_CACHE_HOME" "$DOCKER_CONFIG"
+          mkdir -p "$BUILD_ROOT/src" "$COLIMA_HOME" "$COLIMA_CACHE_HOME" "$DOCKER_CONFIG" "$LIMA_HOME"
           rsync -a --delete "$GITHUB_WORKSPACE/" "$BUILD_ROOT/src/"
 
       - name: Start private Linux ARM64 container runtime
@@ -613,7 +615,8 @@ jobs:
           command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           colima --version
           docker --version
-          for socket_path in "$LIMA_HOME/colima-$COLIMA_PROFILE/ssh.sock.1234567890123456" "$COLIMA_HOME/$COLIMA_PROFILE/docker.sock"; do
+          # Colima's default profile uses the short Lima instance name colima.
+          for socket_path in "$LIMA_HOME/colima/ssh.sock.1234567890123456" "$COLIMA_HOME/$COLIMA_PROFILE/docker.sock"; do
             test "${#socket_path}" -lt 104 || { echo "Colima socket path exceeds Darwin limit: $socket_path" >&2; exit 1; }
           done
           colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 200 \
@@ -665,6 +668,7 @@ jobs:
             *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
           esac
           colima stop "$COLIMA_PROFILE"
+          colima delete --force --data "$COLIMA_PROFILE"
           rm -rf "$RUN_ROOT"
 
   build-windows:
