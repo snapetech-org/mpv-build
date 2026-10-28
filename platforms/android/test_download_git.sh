@@ -5,6 +5,29 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$root/platforms/android/include/fetch-git.sh"
 
+# Keep the Android-only freetype pin on the upstream GitHub mirror while
+# preserving a full commit check. The private runner proxy rejects its primary
+# GitLab host, so the generic fallback test below must not drift away from the
+# real pinned dependency that exposed the outage.
+python3 - "$root" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts"))
+import keys
+
+pins = keys.resolved_pins(keys.load_versions(root), "freetype", "android")
+if pins["url"] != "https://gitlab.freedesktop.org/freetype/freetype":
+    raise SystemExit("freetype primary URL changed; review the Android transport fallback")
+if pins.get("mirror") != "https://github.com/freetype/freetype.git":
+    raise SystemExit("freetype must retain the official GitHub source mirror")
+if not re.fullmatch(r"[0-9a-f]{40}", pins.get("commit", "")):
+    raise SystemExit("freetype fallback requires a full pinned commit")
+print("freetype uses the official mirror and a full commit pin")
+PY
+
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 

@@ -158,9 +158,10 @@
       "kind": "git",
       "version": "2.14.1",
       "url": "https://gitlab.freedesktop.org/freetype/freetype",
+      "mirror": "https://github.com/freetype/freetype.git",
       "ref": "VER-2-14-1",
       "commit": "526ec5c47b9ebccc4754c85ac0c0cdf7c85a5e9b",
-      "provenance": "Official freedesktop GitLab annotated tag object 3bd82b5f543bc84ccf2b1d0cdb63b95218099ee6 (VER-2-14-1) dereferences to this root commit; the pinned version is carried over from libmpv-android's depinfo.",
+      "provenance": "Official freedesktop GitLab and upstream GitHub mirror annotated tag object 3bd82b5f543bc84ccf2b1d0cdb63b95218099ee6 (VER-2-14-1) both dereference to this root commit. The GitHub mirror is used only if GitLab is unavailable, and the exact commit is verified after clone. The pinned version is carried over from libmpv-android's depinfo; tags cross-checked 2026-10-28.",
       "platforms": [
         "android"
       ],
