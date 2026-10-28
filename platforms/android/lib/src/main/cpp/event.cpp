@@ -132,6 +132,18 @@ struct HeldEvent {
 // Forwards one event, advancing [source] at START_FILE. The live loop and the
 // replay of events held behind an error end-file share it, so both attribute
 // events to the same entry.
+// Cached presentation time for the optional native PCM consumer. Called at
+// event dequeue, before diagnostic holding/replay can lose reply_userdata.
+static void observeVisualizationEvent(Session* session, const mpv_event* event) {
+  if (event->event_id == MPV_EVENT_START_FILE || event->event_id == MPV_EVENT_END_FILE || event->event_id == MPV_EVENT_SEEK)
+    session->visualization_pts.store(std::numeric_limits<double>::quiet_NaN());
+  if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->reply_userdata == UINT64_MAX-2) {
+    const auto* property = static_cast<const mpv_event_property*>(event->data);
+    session->visualization_pts.store(property && property->format == MPV_FORMAT_DOUBLE && property->data
+        ? *static_cast<const double*>(property->data) : std::numeric_limits<double>::quiet_NaN());
+  }
+}
+
 static void dispatchEvent(JNIEnv* env, jlong jsession, mpv_handle* mpv, const mpv_event* event, SourceState& source) {
   switch (event->event_id) {
     case MPV_EVENT_LOG_MESSAGE:
@@ -293,6 +305,8 @@ static void forwardErrorEndFile(
   std::vector<HeldEvent> held;
   for (int n = 0; n < kEndFileDrainLimit && !session->event_thread_exit; ++n) {
     mpv_event* next = mpv_wait_event(session->handle, 0);
+    observeVisualizationEvent(session, next);
+    if (next->event_id == MPV_EVENT_PROPERTY_CHANGE && next->reply_userdata == UINT64_MAX-2) continue;
     if (next->event_id == MPV_EVENT_NONE) break;
     if (next->event_id == MPV_EVENT_LOG_MESSAGE) {
       sendLogMessageToJava(env, jsession, (mpv_event_log_message*)next->data);
@@ -322,6 +336,8 @@ void* event_thread(void* arg) {
   // it would never return.
   while (!session->event_thread_exit) {
     mpv_event* event = mpv_wait_event(mpv, -1.0);
+    observeVisualizationEvent(session, event);
+    if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->reply_userdata == UINT64_MAX-2) continue;
 
     if (session->event_thread_exit) break;
 
