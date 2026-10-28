@@ -1249,11 +1249,24 @@ enum Utility {
     @discardableResult
     static func launch(path: String, arguments: [String], isOutput: Bool = false, currentDirectoryURL: URL? = nil, environment: [String: String] = [:]) throws -> String {
         if !path.hasPrefix("/") {
-            let execPath = Utility.shell("which \(path)", isOutput: true)!
-            if execPath.isEmpty {
-                throw NSError(domain: "[\(path)] not found", code: 1)
+            let searchPath = environment["PATH"]
+                ?? ProcessInfo.processInfo.environment["PATH"]
+                ?? BaseBuild.defaultPath
+            let executable = searchPath
+                .split(separator: ":", omittingEmptySubsequences: false)
+                .map { component -> String in
+                    let directory = component.isEmpty
+                        ? FileManager.default.currentDirectoryPath
+                        : String(component)
+                    return URL(fileURLWithPath: directory, isDirectory: true)
+                        .appendingPathComponent(path)
+                        .standardizedFileURL.path
+                }
+                .first { FileManager.default.isExecutableFile(atPath: $0) }
+            guard let executable else {
+                throw NSError(domain: "[\(path)] not found on PATH: \(searchPath)", code: 1)
             }
-            return try launch(executableURL: URL(fileURLWithPath: execPath), arguments: arguments, isOutput: isOutput, currentDirectoryURL: currentDirectoryURL, environment: environment)
+            return try launch(executableURL: URL(fileURLWithPath: executable), arguments: arguments, isOutput: isOutput, currentDirectoryURL: currentDirectoryURL, environment: environment)
         } else {
             return try launch(executableURL: URL(fileURLWithPath: path), arguments: arguments, isOutput: isOutput, currentDirectoryURL: currentDirectoryURL, environment: environment)
         }
@@ -1268,7 +1281,7 @@ enum Utility {
             environment["HOME"] = ProcessInfo.processInfo.environment["HOME"]
         }
         if !environment.keys.contains("PATH") {
-            environment["PATH"] = BaseBuild.defaultPath
+            environment["PATH"] = ProcessInfo.processInfo.environment["PATH"] ?? BaseBuild.defaultPath
         }
         task.environment = environment
 
