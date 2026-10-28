@@ -57,4 +57,4 @@ target_include_directories(player PRIVATE "${MPV_NATIVE_INCLUDE_DIR}")
 # The prefix map keeps the checkout path out of the binary, so the same sources
 # build to the same bytes wherever they are checked out.
 target_compile_options(player PRIVATE -Wall -Werror "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.")
-target_link_libraries(player PRIVATE mpv avcodec log)
+target_link_libraries(player PRIVATE mpv avcodec log dl)
