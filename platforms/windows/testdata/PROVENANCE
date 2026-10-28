@@ -19,6 +19,7 @@
 # raw.githubusercontent.com at the new commit and hash as listed below.
 #
 # sha256 of each fixture as fetched:
+#   26b46bc1f08f35d7fda6f2bab349224e39a3972942ccad7aca3b8b768954fa87  highway.cmake
 #   359c9c7da360f57d3a438e6fe117af6169cbd9aa3672751fd2bfc31e02be8fff  ffmpeg.cmake
 #   41ec0c08160e4d0a31b2d9dc214985056ad9b61d77530c526ee77b0acc9c84b6  libass.cmake
 #   c43469d77f50652718044e792b10f7db4ee378cb81949cdd3020e78b414083d6  mbedtls.cmake
@@ -48,6 +49,9 @@
 # custom_steps.cmake carries the check-git step whose injection
 # pin_packages.neutralize_check_git suppresses for warm-cache correctness; the
 # tests assert the audited idiom still matches and that the rewrite converges.
+# highway.cmake was read from the same 87e22100 checkout on 2026-10-28 and
+# exercises the standalone-test option that avoids GoogleTest resolution when
+# release builds already disable Highway tests, examples, and contrib.
 # davs2.cmake carries the configure step that pin_davs2_build_time extends
 # with a rewrite of the build time davs2's version.sh reads from `date`.
 #

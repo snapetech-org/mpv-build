@@ -320,6 +320,22 @@ def neutralize_check_git(text):
     return text.replace(CHECK_GIT_ORIGINAL, CHECK_GIT_NEUTRALIZED, 1)
 
 
+# Highway resolves GoogleTest even when tests are disabled unless its separate
+# standalone-test option is enabled. Neither test dependency is part of libhwy;
+# avoid fetching/building it in the release dependency graph on both CPUs.
+HIGHWAY_TESTS_DISABLED = "        -Dtests=disabled\n"
+HIGHWAY_TESTS_STANDALONE = HIGHWAY_TESTS_DISABLED + "        -Dtest_standalone=true\n"
+
+
+def disable_highway_gtest(text):
+    """Keep Highway's existing release options without resolving GoogleTest."""
+    if text.count(HIGHWAY_TESTS_STANDALONE) == 1 and text.count("-Dtest_standalone=") == 1:
+        return text
+    if text.count(HIGHWAY_TESTS_DISABLED) != 1 or "-Dtest_standalone=" in text:
+        fail("packages/highway.cmake: test options no longer match the audited recipe")
+    return text.replace(HIGHWAY_TESTS_DISABLED, HIGHWAY_TESTS_STANDALONE, 1)
+
+
 # winbuild enables cuda for every arch (2026-08-04, "ffmpeg: enable cuda for
 # aarch64") against ffmpeg master. Under the pinned release ffmpeg the
 # aarch64-w64-mingw32 ffnvcodec probe fails and configure aborts, so the
@@ -543,6 +559,15 @@ def main(argv):
     if pinned != davs2_text:
         davs2.write_text(pinned, encoding="utf-8")
     print("pinned davs2's generated build time to the epoch in packages/davs2.cmake")
+
+    highway = packages_dir / "highway.cmake"
+    if not highway.is_file():
+        fail(f"{highway}: missing")
+    highway_text = highway.read_text(encoding="utf-8")
+    configured = disable_highway_gtest(highway_text)
+    if configured != highway_text:
+        highway.write_text(configured, encoding="utf-8")
+    print("disabled Highway's unused GoogleTest dependency")
 
     custom_steps = winbuild / "cmake" / "custom_steps.cmake"
     if not custom_steps.is_file():

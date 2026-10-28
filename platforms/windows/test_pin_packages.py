@@ -32,6 +32,7 @@ CHECKOUT_FILES = {f"{c}.cmake": f"packages/{c}.cmake" for c in pin_packages.COMP
 CHECKOUT_FILES.update({Path(r).name: r for r in pin_packages.EXTRA_COMPONENTS.values()})
 CHECKOUT_FILES["custom_steps.cmake"] = "cmake/custom_steps.cmake"
 CHECKOUT_FILES["davs2.cmake"] = "packages/davs2.cmake"
+CHECKOUT_FILES["highway.cmake"] = "packages/highway.cmake"
 COMPONENT_FILES = {c: f"{c}.cmake" for c in pin_packages.COMPONENTS}
 COMPONENT_FILES.update({c: Path(r).name for c, r in pin_packages.EXTRA_COMPONENTS.items()})
 IDIOM_FIXTURE = "mbedtls.cmake"
@@ -225,6 +226,8 @@ class PinPackagesTest(unittest.TestCase):
         self.assertIn(pin_packages.CHECK_GIT_NEUTRALIZED, steps)
         davs2 = (self.winbuild / "packages/davs2.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.DAVS2_BUILD_TIME, davs2)
+        highway = (self.winbuild / "packages/highway.cmake").read_text(encoding="utf-8")
+        self.assertIn(pin_packages.HIGHWAY_TESTS_STANDALONE, highway)
 
     def test_main_converges_on_a_second_run(self):
         self.run_main()
@@ -373,6 +376,17 @@ class PinPackagesTest(unittest.TestCase):
         self.assertEqual(pin_packages.pin_davs2_build_time(pinned), pinned)
         with self.assertRaises(SystemExit):
             pin_packages.pin_davs2_build_time(text.replace("${disable_asm}", "--enable-asm"))
+
+    def test_highway_does_not_resolve_gtest_for_disabled_tests(self):
+        text = (TESTDATA / "highway.cmake").read_text(encoding="utf-8")
+        fixed = pin_packages.disable_highway_gtest(text)
+        self.assertIn("-Dtest_standalone=true", fixed)
+        self.assertEqual(fixed.replace("        -Dtest_standalone=true\n", ""), text)
+        self.assertEqual(pin_packages.disable_highway_gtest(fixed), fixed)
+        for changed in (text.replace("-Dtests=disabled", "-Dtests=enabled"),
+                        text + "        -Dtest_standalone=false\n", text + text):
+            with self.subTest(changed=changed), self.assertRaises(SystemExit):
+                pin_packages.disable_highway_gtest(changed)
 
     def test_neutralize_check_git_suppresses_and_converges(self):
         text = (TESTDATA / "custom_steps.cmake").read_text(encoding="utf-8")
