@@ -1,0 +1,303 @@
+From: PlezyNG
+Subject: [PATCH] Android ANVIL: govern missed frame deadlines
+
+Suppress late synthesized frames, step back to MPV smoothing after a deadline storm, and permit one recovery probe after the cooldown. Report the active governor and cumulative fallback counters through filter metadata.
+
+diff --git a/video/filter/vf_anvil.c b/video/filter/vf_anvil.c
+--- a/video/filter/vf_anvil.c
++++ b/video/filter/vf_anvil.c
+@@ -2219,6 +2219,14 @@
+     unsigned int inference_sample_count;
+     unsigned int inference_sample_next;
+     unsigned long long deadline_misses;
++    double recent_deadline_misses[3];
++    unsigned int recent_deadline_miss_count;
++    unsigned int recent_deadline_miss_next;
++    double neural_bypass_until_ms;
++    bool neural_probe_pending;
++    bool neural_probe_in_flight;
++    unsigned long long neural_backoffs;
++    unsigned long long deadline_bypass_frames;
+     enum anvil_state state;
+     int frame_count;
+     int log_interval;  // 30=default (1/s), change to 1 for full-frame paper bench
+@@ -2289,6 +2297,7 @@
+         double t_p1a;                 // Phase 1a timing
+         double t_gpu;                 // GPU timing
+         double t_copy;                // copy timing
++        bool neural_probe;            // this pair is the single recovery probe
+     } pend[2];
+     int pend_cur;                     // slot that start_interpolation writes to (0 or 1)
+ 
+@@ -2333,16 +2342,61 @@
+ 
+ static double get_time_ms(void);
+ 
+-static void record_deadline_miss(struct priv *p, double started_ms,
+-                                 double previous_pts, double current_pts)
++static void start_neural_bypass(struct priv *p, struct mp_filter *f,
++                                double now_ms, const char *reason)
++{
++    p->neural_bypass_until_ms = now_ms + 10000.0;
++    p->neural_probe_pending = true;
++    p->neural_probe_in_flight = false;
++    p->neural_backoffs++;
++    p->recent_deadline_miss_count = 0;
++    p->recent_deadline_miss_next = 0;
++    MP_WARN(f, "ANVIL: %s; using MPV smoothing for 10 seconds before a Neural recovery probe\n",
++            reason);
++}
++
++static bool record_deadline_miss(struct priv *p, struct mp_filter *f,
++                                 double started_ms, double previous_pts,
++                                 double current_pts, bool neural_probe)
+ {
+     if (!isfinite(previous_pts) || !isfinite(current_pts) ||
+         previous_pts == MP_NOPTS_VALUE || current_pts == MP_NOPTS_VALUE ||
+         current_pts <= previous_pts)
++        return false;
++    double budget_ms = (current_pts - previous_pts) * 1000.0 - 2.0;
++    const double now_ms = get_time_ms();
++    if (budget_ms <= 0.0 || now_ms - started_ms <= budget_ms)
++        return false;
++
++    p->deadline_misses++;
++    p->recent_deadline_misses[p->recent_deadline_miss_next] = now_ms;
++    p->recent_deadline_miss_next = (p->recent_deadline_miss_next + 1) % 3;
++    if (p->recent_deadline_miss_count < 3)
++        p->recent_deadline_miss_count++;
++
++    const bool miss_storm = p->recent_deadline_miss_count == 3 &&
++        now_ms - p->recent_deadline_misses[p->recent_deadline_miss_next] <= 2000.0;
++    if (neural_probe || miss_storm)
++        start_neural_bypass(p, f, now_ms,
++                            neural_probe ? "Neural recovery probe missed its deadline" :
++                                           "three Neural deadlines were missed within two seconds");
++    return true;
++}
++
++static void finish_neural_probe(struct priv *p, struct mp_filter *f, bool succeeded)
++{
++    if (!p->neural_probe_in_flight)
+         return;
+-    double budget_ms = (current_pts - previous_pts) * 1000.0 - 2.0;
+-    if (budget_ms > 0.0 && get_time_ms() - started_ms > budget_ms)
+-        p->deadline_misses++;
++
++    p->neural_probe_in_flight = false;
++    if (!succeeded) {
++        start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
++        return;
++    }
++
++    p->neural_probe_pending = false;
++    p->neural_bypass_until_ms = 0.0;
++    MP_INFO(f, "ANVIL: Neural recovery probe met its frame deadline; resuming Neural output\n");
+ }
+ 
+ // Context creation may include model loading and graph finalization. Run it
+@@ -2638,6 +2692,11 @@
+     // ---- Flip to the other buffer for the next frame ----
+     qnn_switch_buffer(&p->qnn, 1 - p->qnn.buf_idx);
+ 
++    p->pend[p->pend_cur].neural_probe = p->neural_probe_pending;
++    if (p->pend[p->pend_cur].neural_probe) {
++        p->neural_probe_pending = false;
++        p->neural_probe_in_flight = true;
++    }
+     p->pend[p->pend_cur].active = 1;
+ }
+ 
+@@ -2741,8 +2800,18 @@
+     out->pts = (p->pend[slot].pts_prev + p->pend[slot].pts_curr) / 2.0;
+     double t_p4 = get_time_ms() - t_phase;
+     double t_all = get_time_ms() - p->pend[slot].t_total;
+-    record_deadline_miss(p, p->pend[slot].t_total,
+-                         p->pend[slot].pts_prev, p->pend[slot].pts_curr);
++    const bool missed_deadline = record_deadline_miss(
++        p, f, p->pend[slot].t_total,
++        p->pend[slot].pts_prev, p->pend[slot].pts_curr,
++        p->pend[slot].neural_probe);
++    if (missed_deadline || p->neural_bypass_until_ms > get_time_ms()) {
++        p->last_qnn_success = false;
++        mp_image_unrefp(&out);
++    }
++    if (p->pend[slot].neural_probe) {
++        finish_neural_probe(p, f, p->last_qnn_success && out != NULL);
++        p->pend[slot].neural_probe = false;
++    }
+ 
+     if (p->frame_count % p->log_interval == 0)
+         MP_INFO(f, "ANVIL[GPU/async]: total=%.1fms  P1a=%.1f  GPU=%.1f  copy=%.1f  P3=%.1f  P4%s=%.1f\n",
+@@ -2986,7 +3055,13 @@
+         out->pts = (prev->pts + curr->pts) / 2.0;
+         double t_p4 = get_time_ms() - t_phase;
+         double t_all = get_time_ms() - t_total;
+-        record_deadline_miss(p, t_total, prev->pts, curr->pts);
++        const bool missed_deadline = record_deadline_miss(
++            p, f, t_total, prev->pts, curr->pts, p->neural_probe_in_flight);
++        if (missed_deadline || p->neural_bypass_until_ms > get_time_ms()) {
++            p->last_qnn_success = false;
++            mp_image_unrefp(&out);
++            return NULL;
++        }
+ 
+         if (p->frame_count % p->log_interval == 0)
+             MP_INFO(f, "ANVIL[GPU%s]: total=%.1fms  P1a=%.1f  GPU=%.1f  copy=%.1f  P3=%.1f  P4%s=%.1f\n",
+@@ -3116,7 +3191,13 @@
+         out->pts = (prev->pts + curr->pts) / 2.0;
+         double t_p4 = get_time_ms() - t_phase;
+         double t_all = get_time_ms() - t_total;
+-        record_deadline_miss(p, t_total, prev->pts, curr->pts);
++        const bool missed_deadline = record_deadline_miss(
++            p, f, t_total, prev->pts, curr->pts, p->neural_probe_in_flight);
++        if (missed_deadline || p->neural_bypass_until_ms > get_time_ms()) {
++            p->last_qnn_success = false;
++            mp_image_unrefp(&out);
++            return NULL;
++        }
+ 
+         if (p->frame_count % p->log_interval == 0)
+             MP_INFO(f, "ANVIL[CPU]: total=%.1fms  P1=%.1f  P2=%.1f  P3=%.1f  P4=%.1f\n",
+@@ -3177,6 +3258,37 @@
+     return mean_difference >= 44 && changed_samples * 100 >= total_samples * 68;
+ }
+ 
++static void bypass_current_frame(struct mp_filter *f, struct priv *p,
++                                 struct mp_frame frame, struct mp_image *mpi)
++{
++    for (int slot = 0; slot < 2; slot++) {
++        if (p->pend[slot].active) {
++            struct mp_image *orphan = finish_interpolation(p, f, slot);
++            mp_image_unrefp(&orphan);
++        }
++    }
++
++    p->pend_cur = 0;
++    p->last_qnn_success = false;
++    p->last_frame_generated = false;
++    p->overlap_active = 0;
++    p->deadline_bypass_frames++;
++    mp_image_unrefp(&p->prev);
++    p->prev = mp_image_new_ref(mpi);
++
++    if (p->stored_curr.type == MP_FRAME_VIDEO) {
++        mp_pin_in_write(f->ppins[1], p->stored_curr);
++        p->stored_curr = (struct mp_frame){0};
++        p->overlap_curr = frame;
++        p->overlap_active = 1;
++        p->state = STATE_HAVE_CURR;
++        mp_filter_internal_mark_progress(f);
++        return;
++    }
++
++    mp_pin_in_write(f->ppins[1], frame);
++}
++
+ static void f_process(struct mp_filter *f)
+ {
+     struct priv *p = f->priv;
+@@ -3194,7 +3306,7 @@
+             out = p->interp;
+             p->interp = NULL;
+         }
+-        if (p->opts->require_neural && !p->last_qnn_success) {
++        if (!out || (p->opts->require_neural && !p->last_qnn_success)) {
+             mp_image_unrefp(&out);
+             p->last_frame_generated = false;
+             mp_pin_in_write(f->ppins[1], p->stored_curr);
+@@ -3256,6 +3368,17 @@
+     struct mp_image *mpi = frame.data;
+     p->frame_count++;
+     int W = mpi->w, H = mpi->h;
++
++    const double now_ms = get_time_ms();
++    if (p->neural_bypass_until_ms > now_ms) {
++        bypass_current_frame(f, p, frame, mpi);
++        return;
++    }
++    if (p->neural_bypass_until_ms > 0.0) {
++        p->neural_bypass_until_ms = 0.0;
++        p->neural_probe_pending = true;
++        MP_INFO(f, "ANVIL: Neural cooldown ended; probing one pair before resuming interpolation\n");
++    }
+ 
+     // Qualcomm contexts are generated at either 1280x720 or 1920x1080. The
+     // shader/CPU stages consume planar YUV420 at the selected shape. Do not
+@@ -3410,14 +3533,25 @@
+             // Step 2: Finish PREVIOUS interpolation (wait for its accelerator job).
+             struct mp_image *prev_interp = finish_interpolation(p, f, prev_slot);
+ 
+-            // Submit the prepared pair after the worker has released the prior
+-            // slot. Its inference now overlaps output of the previous pair.
+-            htp_kick_async(p, new_slot);
++            // A deadline storm may have armed the governor while the new pair
++            // was being prepared. Do not launch accelerator work after that
++            // transition; the following source frame will continue through
++            // the normal MPV fallback path.
++            if (p->neural_bypass_until_ms > get_time_ms()) {
++                p->deadline_bypass_frames++;
++                mp_image_unrefp(&p->pend[new_slot].out);
++                p->pend[new_slot].active = 0;
++                p->pend[new_slot].neural_probe = false;
++            } else {
++                // Submit after the worker has released the prior slot. Its
++                // inference now overlaps output of the previous pair.
++                htp_kick_async(p, new_slot);
++            }
+ 
+             // Step 3: Output the previous pair. A failed HTP inference is a
+             // passthrough, not a classical MV-blend substitute.
+             bool inference_ok = p->last_qnn_success;
+-            if (p->opts->require_neural && !inference_ok) {
++            if (!prev_interp || (p->opts->require_neural && !inference_ok)) {
+                 mp_image_unrefp(&prev_interp);
+                 p->last_frame_generated = false;
+                 mp_pin_in_write(f->ppins[1], p->stored_curr);
+@@ -3456,7 +3590,9 @@
+     } else {
+         // Synchronous path (unchanged)
+         p->interp = compute_interpolated(p, f, p->prev, mpi, mvs, n_mvs);
+-        if (p->opts->require_neural && !p->last_qnn_success) {
++        if (p->neural_probe_in_flight)
++            finish_neural_probe(p, f, p->last_qnn_success && p->interp != NULL);
++        if (!p->interp || (p->opts->require_neural && !p->last_qnn_success)) {
+             mp_image_unrefp(&p->interp);
+             mp_image_unrefp(&p->prev);
+             p->prev = mp_image_new_ref(mpi);
+@@ -3487,6 +3623,7 @@
+             mp_image_unrefp(&orphan);
+         }
+         mp_image_unrefp(&p->pend[s].out);
++        p->pend[s].neural_probe = false;
+     }
+     mp_image_unrefp(&p->prev);
+     mp_image_unrefp(&p->interp);
+@@ -3496,6 +3633,11 @@
+     p->pend_cur = 0;
+     p->last_qnn_success = false;
+     p->last_frame_generated = false;
++    p->recent_deadline_miss_count = 0;
++    p->recent_deadline_miss_next = 0;
++    p->neural_bypass_until_ms = 0.0;
++    p->neural_probe_pending = false;
++    p->neural_probe_in_flight = false;
+     p->state = STATE_NEED_INPUT;
+ }
+ 
+@@ -3577,6 +3719,15 @@
+                     mp_tprintf(32, "%llu", p->scene_cut_bypasses));
+     mp_tags_set_str(tags, "deadline-misses",
+                     mp_tprintf(32, "%llu", p->deadline_misses));
++    const char *deadline_governor =
++        p->neural_bypass_until_ms > get_time_ms() ? "mpv-bypass" :
++        (p->neural_probe_pending || p->neural_probe_in_flight) ? "recovery-probe" :
++        "neural";
++    mp_tags_set_str(tags, "deadline-governor", deadline_governor);
++    mp_tags_set_str(tags, "deadline-backoffs",
++                    mp_tprintf(32, "%llu", p->neural_backoffs));
++    mp_tags_set_str(tags, "deadline-bypass-frames",
++                    mp_tprintf(32, "%llu", p->deadline_bypass_frames));
+     mp_tags_set_str(tags, "requires-neural", p->opts->require_neural ? "yes" : "no");
+     mp_tags_set_str(tags, "requires-qnn",
+                     p->opts->require_neural && !p->opts->litert_model &&

@@ -1,0 +1,37 @@
+From: PlezyNG
+Subject: [PATCH] Android ANVIL: report LiteRT NPU provider identity
+
+Expose the LiteRT NPU backend in ANVIL filter metadata only after an NPU
+session opens. Tensor target names require an exact AOT model target. Generic
+JIT models and LiteRT GPU fallback keep their own provider labels.
+
+diff --git a/video/filter/vf_anvil.c b/video/filter/vf_anvil.c
+--- a/video/filter/vf_anvil.c
++++ b/video/filter/vf_anvil.c
+@@ -1653,4 +1653,26 @@
+         }
+ 
+         q->in_elems = (uint32_t)W * (uint32_t)H * 6;
++        if (!q->litert_provider_vendor[0] &&
++            strcmp(q->litert_provider, "litert-npu") == 0 &&
++            litert_npu_backend) {
++            const char *provider_vendor = NULL;
++            if (strcmp(litert_npu_backend, "google-tensor") == 0 &&
++                litert_npu_execution && strcmp(litert_npu_execution, "aot") == 0 &&
++                litert_npu_target) {
++                if (strcmp(litert_npu_target, "Tensor_G5") == 0)
++                    provider_vendor = "Google Tensor G5 (LiteRT AOT)";
++                else if (strcmp(litert_npu_target, "Tensor_G6") == 0)
++                    provider_vendor = "Google Tensor G6 (LiteRT AOT)";
++            } else if (strcmp(litert_npu_backend, "qualcomm") == 0) {
++                provider_vendor = "Qualcomm AI Engine Direct (LiteRT)";
++            } else if (strcmp(litert_npu_backend, "mediatek") == 0) {
++                provider_vendor = "MediaTek NeuroPilot (LiteRT)";
++            } else if (strcmp(litert_npu_backend, "intel-openvino") == 0) {
++                provider_vendor = "Intel OpenVINO NPU (LiteRT)";
++            }
++            if (provider_vendor)
++                snprintf(q->litert_provider_vendor, sizeof(q->litert_provider_vendor),
++                         "%s", provider_vendor);
++        }
+         q->out_elems = (uint32_t)W * (uint32_t)H * 3;
