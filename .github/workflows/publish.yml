@@ -211,6 +211,9 @@ jobs:
       - name: Test Linux ARM64 container runtime bootstrap
         run: python3 scripts/test_linux_arm64_runtime_workflow.py
 
+      - name: Test private platform toolchain contracts
+        run: python3 scripts/test_ci_toolchain_workflows.py
+
       - name: Test shared extractor
         run: ./scripts/test_extract.sh
 
@@ -340,9 +343,12 @@ jobs:
           for formula in autoconf automake libtool ninja python@3.12; do
             test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
           done
-          for tool in autoconf automake glibtool ninja python3 xcodebuild xcrun; do
+          for tool in autoconf automake glibtool ninja cmake pkg-config wget nasm sdl2-config glslang python3 xcodebuild xcrun; do
             command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
           done
+          glslang_version="$(sed -n 's/^glslang=//p' toolchain/apple.txt)"
+          test -n "$glslang_version"
+          glslang --version | grep -F "Glslang Version:" | grep -F ":${glslang_version}"
           python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
           for sdk in macosx iphoneos iphonesimulator appletvos appletvsimulator; do
             sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
@@ -540,11 +546,13 @@ jobs:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       RUN_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
       BUILD_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/workspace
-      COLIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
+      COLIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/c
       COLIMA_CACHE_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
-      COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
+      # The run directory supplies isolation. Short names keep Lima's SSH
+      # control socket below Darwin's 104-byte Unix socket path limit.
+      COLIMA_PROFILE: b
       DOCKER_CONFIG: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima/_lima
+      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
       NFS_STORAGE_ROOT: /Volumes/plezyng-native-build-kspld0
       NFS_STORAGE_SOURCE: kspld0.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
     steps:
@@ -603,6 +611,9 @@ jobs:
           command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           colima --version
           docker --version
+          for socket_path in "$LIMA_HOME/colima-$COLIMA_PROFILE/ssh.sock.1234567890123456" "$COLIMA_HOME/$COLIMA_PROFILE/docker.sock"; do
+            test "${#socket_path}" -lt 104 || { echo "Colima socket path exceeds Darwin limit: $socket_path" >&2; exit 1; }
+          done
           colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 200 \
             --mount "$BUILD_ROOT":w
           for attempt in $(seq 1 36); do
@@ -651,7 +662,7 @@ jobs:
             /Volumes/plezyng-native-build-kspld0/runs/*) ;;
             *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
           esac
-          colima stop "$COLIMA_PROFILE" || true
+          colima stop "$COLIMA_PROFILE"
           rm -rf "$RUN_ROOT"
 
   build-windows:

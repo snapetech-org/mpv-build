@@ -75,6 +75,22 @@ assert '"group":"private-apple-builds"' in apple
 assert '"macOS","ARM64"' in apple
 apple_preflight = named_step(apple, "Verify Apple toolchain and install pinned Meson")
 assert "rustup" not in apple_preflight, "Apple preflight must not depend on Homebrew rustup"
+for tool in ("wget", "nasm", "sdl2-config", "pkg-config", "glslang", "cmake"):
+    assert tool in apple_preflight, f"Apple preflight must check {tool} before building"
+assert "glslang --version" in apple_preflight
+assert "toolchain/apple.txt" in apple_preflight
+swift_base = (ROOT / "Sources/BuildScripts/XCFrameworkBuild/base.swift").read_text()
+swift_main = (ROOT / "Sources/BuildScripts/XCFrameworkBuild/main.swift").read_text()
+assert 'Utility.shell("brew install' not in swift_base + swift_main, (
+    "build jobs must not attempt to mutate the shared Homebrew installation"
+)
+assert '"PATH": ProcessInfo.processInfo.environment["PATH"] ?? BaseBuild.defaultPath' in swift_base, (
+    "compiler subprocesses must retain the pinned Meson venv and Rust toolchain PATH"
+)
+ffmpeg_dependencies = swift_main.split("let dependencyLibrary = [", 1)[1].split("]", 1)[0]
+assert ".libshaderc" not in ffmpeg_dependencies, (
+    "FFmpeg 9 removed --enable-libshaderc; its Vulkan shaders use the host glslang compiler"
+)
 rust_step = named_step(apple, "Bootstrap pinned rustup and install pinned Rust toolchain")
 assert "bash scripts/install_pinned_rustup_macos.sh" in rust_step
 assert rust_step.index("install_pinned_rustup_macos.sh") < rust_step.index(
@@ -106,5 +122,6 @@ assert "if-no-files-found: error" in upload
 
 assert "python3 scripts/test_ci_toolchain_workflows.py" in CI
 assert "python3 scripts/test_linux_arm64_runtime_workflow.py" in CI
+assert "python3 scripts/test_ci_toolchain_workflows.py" in PUBLISH
 
 print("Private Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")

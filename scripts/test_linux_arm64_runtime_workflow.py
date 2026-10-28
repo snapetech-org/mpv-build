@@ -2,6 +2,7 @@
 """Keep the private Linux ARM64 runner's NFS and Colima setup in its workflow."""
 
 from pathlib import Path
+import re
 
 
 workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
@@ -56,4 +57,28 @@ assert '--mount "$BUILD_ROOT":w' in runtime
 assert '--mount "$NFS_STORAGE_ROOT":w' not in runtime
 assert job.count(f"{storage_root}/runs/*") == 2, (
     "workspace creation and cleanup must both be confined to the new NFS root"
+)
+
+# Exercise the actual declared paths with today's run identifier and a full
+# 64-bit identifier. Lima appends a temporary suffix to its SSH control socket.
+def env_value(name: str, run_id: str, attempt: str) -> str:
+    match = re.search(rf"^      {name}: (.+)$", job, re.MULTILINE)
+    assert match, f"missing {name}"
+    return match.group(1).replace("${{ github.run_id }}", run_id).replace(
+        "${{ github.run_attempt }}", attempt
+    )
+
+
+for run_id, attempt in (("40644233186", "1"), ("18446744073709551615", "9999")):
+    profile = env_value("COLIMA_PROFILE", run_id, attempt)
+    lima = env_value("LIMA_HOME", run_id, attempt)
+    colima = env_value("COLIMA_HOME", run_id, attempt)
+    for socket_path in (
+        f"{lima}/colima-{profile}/ssh.sock.1234567890123456",
+        f"{colima}/{profile}/docker.sock",
+    ):
+        assert len(socket_path.encode()) < 104, socket_path
+assert '${#socket_path}' in runtime, "runtime must check socket paths before VM startup"
+assert 'colima stop "$COLIMA_PROFILE" || true' not in job, (
+    "never delete VM storage if stopping its consumer failed"
 )

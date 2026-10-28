@@ -357,13 +357,6 @@ private class BuildFFMPEG: BaseBuild {
     override func beforeBuild() throws {
         try super.beforeBuild()
 
-        if Utility.shell("which nasm") == nil {
-            Utility.shell("brew install nasm")
-        }
-        if Utility.shell("which sdl2-config") == nil {
-            Utility.shell("brew install sdl2")
-        }
-
         let lldbFile = URL.currentDirectory + "LLDBInitFile"
         try? FileManager.default.removeItem(at: lldbFile)
         FileManager.default.createFile(atPath: lldbFile.path, contents: nil, attributes: nil)
@@ -503,9 +496,12 @@ private class BuildFFMPEG: BaseBuild {
         // patch 0021 registers it with configure and #if CONFIG_LIBDOVI guards
         // the real conversion, so without --enable-libdovi the VideoToolbox
         // path keeps asking for profile 8.1 and always gets ENOSYS back.
+        // FFmpeg 9 compiles Vulkan shaders with the host glslang executable;
+        // it no longer accepts --enable-libshaderc. Keep the packaged shaderc
+        // library for libplacebo/mpv, without passing it as an FFmpeg option.
         let dependencyLibrary = [
             Library.libfreetype, .libharfbuzz, .libfribidi, .libass, .vulkan,
-            .libshaderc, .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d,
+            .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d,
             .openssl,
         ]
         for library in dependencyLibrary {

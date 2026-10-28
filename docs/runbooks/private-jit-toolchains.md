@@ -20,6 +20,13 @@ not rerun an old workflow revision to validate newer source fixes.
   pinned rustup-init 1.29.2 binary from the official Rust distribution. The
   installer is SHA-256 checked before execution; the Rust compiler version and
   Apple targets remain pinned by `toolchain/apple.txt`.
+  Provision `wget`, `nasm`, SDL2 (`sdl2-config`), `pkg-config`, CMake, Ninja,
+  Autoconf, Automake, GNU Libtool, Python 3.12 and `glslang` before admitting
+  jobs. SDL2 may be installed as Homebrew's `sdl2-compat` formula; verify its
+  command rather than assuming a Cellar directory name. FFmpeg 9 no longer
+  accepts `--enable-libshaderc`: Vulkan shaders are compiled by the host
+  `glslang`, whose version is recorded in `toolchain/apple.txt`. The builder
+  preserves the job's PATH and never installs Homebrew packages itself.
 - **Linux x86_64:** The private Linux x64 JIT builds and packages the archive
   in the pinned container, verifies build-date-free outputs, then uploads both
   the archive and symbol file as a run artifact.
@@ -27,6 +34,10 @@ not rerun an old workflow revision to validate newer source fixes.
   workspace is mounted from the `gamespool0` NFS share at
   `/Volumes/plezyng-native-build-kspld0`; the preflight checks the expected
   export and performs a write/read probe before checkout or Colima startup.
+  A run-scoped Colima `c` directory, Lima at the run root, and profile `b` keep Docker and Lima's
+  control socket paths below Darwin's 104-byte limit. The runtime checks the
+  complete socket paths before starting the VM. Cleanup must stop the VM
+  successfully before removing its storage.
 
 ## Source guards
 

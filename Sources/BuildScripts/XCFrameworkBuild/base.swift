@@ -2,18 +2,12 @@ import Foundation
 
 enum Build {
     static func performCommand(_ options: ArgumentOptions) throws {
-        if Utility.shell("which brew") == nil {
-            print("""
-            You need to run the script first
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            """)
-            return
-        }
-        if Utility.shell("which pkg-config") == nil {
-            Utility.shell("brew install pkg-config")
-        }
-        if Utility.shell("which wget") == nil {
-            Utility.shell("brew install wget")
+        // A JIT job cannot mutate the shared Homebrew installation. Check the
+        // complete toolchain before downloading or compiling any dependencies.
+        for tool in ["pkg-config", "wget", "nasm", "sdl2-config", "glslang", "meson", "ninja", "cmake"] {
+            guard Utility.shell("command -v \(tool)") != nil else {
+                throw NSError(domain: "Missing Apple build tool: \(tool). Provision the toolchain described in docs/runbooks/private-jit-toolchains.md", code: 1)
+            }
         }
         let path = URL.currentDirectory + "dist"
         if !FileManager.default.fileExists(atPath: path.path) {
@@ -413,14 +407,6 @@ class BaseBuild {
         try? FileManager.default.createDirectory(at: buildURL, withIntermediateDirectories: true, attributes: nil)
         let environ = environment(platform: platform, arch: arch)
         if FileManager.default.fileExists(atPath: (directoryURL + "meson.build").path) {
-            if Utility.shell("which meson") == nil {
-                Utility.shell("brew install meson")
-            }
-            if Utility.shell("which ninja") == nil {
-                Utility.shell("brew install ninja")
-            }
-            
-
             let crossFile = createMesonCrossFile(platform: platform, arch: arch)
             let meson = Utility.shell("which meson", isOutput: true)!
             try Utility.launch(path: meson, arguments: ["setup", buildURL.path, "--cross-file=\(crossFile.path)"] + arguments(platform: platform, arch: arch), currentDirectoryURL: directoryURL, environment: environ)
@@ -463,7 +449,7 @@ class BaseBuild {
             "ASMFLAGS": cFlags,
             "LDFLAGS": ldFlags,
             "PKG_CONFIG_LIBDIR": pkgConfigPath + pkgConfigPathDefault,
-            "PATH": BaseBuild.defaultPath,
+            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? BaseBuild.defaultPath,
             // Apple's ar, ranlib and libtool stamp each member's mtime (and the
             // symbol table's) into a static archive unless this is set; a
             // rebuild of a published content key has to reproduce its bytes.

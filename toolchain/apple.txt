@@ -13,3 +13,5 @@
 # miscompile).
 generation=1
 rust=1.99.0
+# FFmpeg 9 compiles its Vulkan shaders at build time with this host compiler.
+glslang=16.6.0
