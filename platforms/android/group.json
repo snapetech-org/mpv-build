@@ -7,6 +7,7 @@
     "platforms/android/package.sh",
     "platforms/android/include/depinfo.sh",
     "platforms/android/include/download-sdk.sh",
+    "platforms/android/include/fetch-git.sh",
     "platforms/android/include/libdovi/rpu_parser.h",
     "platforms/android/include/loadarch.sh",
     "platforms/android/include/path.sh",

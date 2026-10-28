@@ -338,6 +338,30 @@ with tempfile.TemporaryDirectory() as tmp:
     repo = make_repo(tmp)
     before = keys(repo)
 
+    # A mirror changes only where a pinned tree is fetched, not the tree's
+    # identity. Resolvers must expose it to platform fetchers without putting
+    # it into the content key.
+    versions = json.loads(json.dumps(VERSIONS))
+    versions["components"]["libass"]["mirror"] = "https://mirror.example/libass.git"
+    write_versions(repo, versions)
+    check(keys(repo) == before, "a source mirror must not move the content key")
+    resolved = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); import keys; "
+            "print(keys.resolved_pins(keys.load_versions(keys.repo_root()), 'libass', 'apple').get('mirror', ''))",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    check(
+        resolved.stdout.strip() == "https://mirror.example/libass.git",
+        "resolved_pins must expose the source mirror to download drivers",
+    )
+
     # Another group's override is not apple's business.
     versions = json.loads(json.dumps(VERSIONS))
     versions["components"]["libass"]["overrides"]["android"]["version"] = "changed"

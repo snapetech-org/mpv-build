@@ -217,6 +217,9 @@ jobs:
       - name: Test content keys
         run: ./scripts/test_keys.sh
 
+      - name: Test Android Git source fallback
+        run: bash platforms/android/test_download_git.sh
+
       - name: Test debug symbols
         run: bash ./scripts/test_symbols.sh
 

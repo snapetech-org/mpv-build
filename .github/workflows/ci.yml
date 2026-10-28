@@ -53,6 +53,9 @@ jobs:
       - name: Test content keys
         run: bash scripts/test_keys.sh
 
+      - name: Test Android Git source fallback
+        run: bash platforms/android/test_download_git.sh
+
       # The runner's cc, readelf and objcopy add a real linked ELF to the
       # synthetic ELF/PE/PDB fixtures.
       - name: Test debug symbols

@@ -434,10 +434,10 @@ def resolved_kind(versions: dict, component: str, group: str) -> str:
 def resolved_pins(versions: dict, component: str, group: str) -> dict[str, str]:
     """The component's pin fields with the group's overrides folded in."""
     entry = _component_entry(versions, component)
-    fields = ("version", "url", "ref", "sha256", "commit")
+    fields = ("version", "url", "ref", "sha256", "commit", "mirror")
     pins = {field: entry[field] for field in fields if field in entry}
     for field, value in (entry.get("overrides", {}).get(group) or {}).items():
-        if field in ("version", "url", "ref", "sha256", "commit"):
+        if field in ("version", "url", "ref", "sha256", "commit", "mirror"):
             pins[field] = value
     # An archive pin's identity is its sha256; ref and commit only mean
     # something for a git pin. Folding an override in must not carry the base
@@ -449,6 +449,7 @@ def resolved_pins(versions: dict, component: str, group: str) -> dict[str, str]:
     if resolved_kind(versions, component, group) != "git":
         pins.pop("commit", None)
         pins.pop("ref", None)
+        pins.pop("mirror", None)
     for field in ("version", "url"):
         if field not in pins:
             raise SystemExit(f"{VERSIONS_PATH}: {component} has no {field}")
