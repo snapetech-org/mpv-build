@@ -59,7 +59,6 @@ def main() -> int:
             print(f"verified {SYMBOL}: {binary}")
             return 0
         failures.append(f"{command[0]} found no exported {SYMBOL}")
-        break
 
     details = "; ".join(item for item in failures if item)
     print(
