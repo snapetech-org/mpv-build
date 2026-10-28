@@ -212,7 +212,9 @@ jobs:
         run: python3 scripts/test_linux_arm64_runtime_workflow.py
 
       - name: Test private platform toolchain contracts
-        run: python3 scripts/test_ci_toolchain_workflows.py
+        run: |
+          python3 scripts/test_ci_toolchain_workflows.py
+          python3 scripts/test_prepare_android_java.py
 
       - name: Test shared extractor
         run: ./scripts/test_extract.sh

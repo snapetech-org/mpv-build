@@ -36,8 +36,9 @@ if [ "$os" = "linux" ]; then
 	fi
 	if apt-get -v &>/dev/null; then
 		sudo apt-get update
-		sudo apt-get install -y autoconf pkg-config libtool ninja-build nasm \
-			python3-pip python3-setuptools unzip meson python3-jinja2
+		sudo apt-get install -y build-essential autoconf automake pkg-config libtool \
+			ninja-build nasm cmake git curl patch zip unzip xz-utils wget \
+			python3-pip python3-setuptools meson python3-jinja2 python3-jsonschema
 	fi
 elif [ "$os" = "mac" ]; then
 	if ! hash brew 2>/dev/null; then

@@ -900,7 +900,7 @@ libmpv-android is stale) and then the AAR (`platforms/android/lib/build-aar.sh`,
 with the JVM tests), from that run's tarballs or the published ones
 `artifacts.json` pins. `publish.yml` runs it for main, records the AAR and its
 symbols zips with `keys.py record-packages`, verifies and uploads them with
-the tarballs; `ci.yml` runs it for pull requests (tarballs only when the
+the tarballs; the explicitly dispatched `ci.yml` runs it for validation (tarballs only when the
 change moves their key) and also builds the device tests' APK. The AAR's
 `.so` files compile against the
 tarball's `include/`, which carries mpv's headers and the patched FFmpeg's
@@ -908,6 +908,14 @@ tarball's `include/`, which carries mpv's headers and the patched FFmpeg's
 
 Building it locally needs JDK 17+ and an Android SDK (`ANDROID_HOME`); Gradle
 installs the NDK `toolchain/android.txt` pins:
+
+Private JIT builds provision their prerequisites explicitly: the native legs
+install checksum-pinned rustup and the Rust version in `toolchain/android.txt`;
+the AAR leg installs JDK 21, configures Java's proxy from the runner's
+`HTTPS_PROXY`, then installs and verifies its SDK, Build Tools, NDK, CMake and
+symbol tools. `scripts/prepare_android_java.py` reads the SDK and CMake versions
+from the AAR build file. The official Lua archive host `www.lua.org` must also
+be reachable through the private source-download proxy.
 
 ```bash
 # the tarballs this checkout's artifacts.json pins (fetched, sha256-checked)

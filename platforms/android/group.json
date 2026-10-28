@@ -39,7 +39,7 @@
     },
     "mpv-android": {
       "inputs": ["libmpv-android"],
-      "sources": ["platforms/android/lib", "scripts/symbols.py"],
+      "sources": ["platforms/android/lib", "scripts/symbols.py", "scripts/prepare_android_java.py"],
       "assetPattern": "mpv-android-{key}.aar",
       "symbolsPattern": "mpv-android-{key}-{variant}-symbols.zip"
     }

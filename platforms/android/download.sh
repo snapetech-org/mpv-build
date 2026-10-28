@@ -80,7 +80,11 @@ fetch_archive () {
 	url=$(pin "$component" url)
 	sha=$(pin "$component" sha256)
 	archive="deps/.$component.archive"
-	curl -fsSL -o "$archive" "$url"
+	echo "$component: downloading pinned archive from $url"
+	if ! curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 -o "$archive" "$url"; then
+		echo >&2 "$component: archive download failed; check the private runner's source egress policy"
+		return 1
+	fi
 	digest=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$archive")
 	if [ -z "$sha" ]; then
 		echo >&2 "$component: warning: versions.json pins no sha256 (downloaded $digest)"

@@ -69,10 +69,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Configure Java for private runner downloads
+        run: python3 scripts/prepare_android_java.py proxy
+
       # Host build tools from apt plus the exact NDK pinned in
       # toolchain/android.txt (part of every android content key).
       - name: Install host toolchain and pinned NDK
         run: bash platforms/android/include/download-sdk.sh
+
+      - name: Install pinned Rust for libdovi
+        run: bash scripts/install_pinned_rustup_linux.sh
 
       - name: Fetch and patch pinned sources
         run: bash platforms/android/download.sh
@@ -115,7 +121,21 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
+
+      # Java does not consume HTTPS_PROXY. Configure it before setup-android
+      # invokes sdkmanager, and retain the same settings for Gradle and its JVMs.
+      - name: Configure Java for private runner downloads
+        run: python3 scripts/prepare_android_java.py proxy
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: '15859902'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install and verify the AAR SDK toolchain
+        run: python3 scripts/prepare_android_java.py sdk
 
       - name: Download the tarballs this run built
         if: needs.natives.result == 'success'

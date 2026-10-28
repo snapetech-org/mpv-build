@@ -62,13 +62,20 @@ sdk_install = android_natives.index("bash platforms/android/include/download-sdk
 assert "distribution: temurin" in android_natives[java_setup:sdk_install]
 assert "java-version: '17'" in android_natives[java_setup:sdk_install]
 assert java_setup < sdk_install, "Java 17 must be installed before sdkmanager runs"
+rust_setup = android_natives.index("bash scripts/install_pinned_rustup_linux.sh")
+assert sdk_install < rust_setup < android_natives.index("Fetch and patch pinned sources")
 
 android_aar = job_section(ANDROID, "aar")
 aar_java = android_aar.index("      - uses: actions/setup-java@v4")
 aar_build = android_aar.index("Build the AAR and run its JVM tests")
 assert "distribution: temurin" in android_aar[aar_java:aar_build]
-assert "java-version: '17'" in android_aar[aar_java:aar_build]
-assert aar_java < aar_build, "Java 17 must be installed before Gradle runs"
+assert "java-version: '21'" in android_aar[aar_java:aar_build]
+aar_proxy = android_aar.index("python3 scripts/prepare_android_java.py proxy")
+aar_sdk = android_aar.index("uses: android-actions/setup-android@")
+aar_verify = android_aar.index("python3 scripts/prepare_android_java.py sdk")
+assert aar_java < aar_proxy < aar_sdk < aar_verify < aar_build, (
+    "a fresh private JIT needs Java proxy routing and a verified SDK before Gradle"
+)
 
 apple = job_section(PUBLISH, "build-apple")
 assert '"group":"private-apple-builds"' in apple

@@ -37,6 +37,7 @@ jobs:
       - name: Validate private platform toolchain workflows
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
+          python3 scripts/test_prepare_android_java.py
           python3 scripts/test_linux_arm64_runtime_workflow.py
 
       # test_audiotrack_truehd.sh encodes its TrueHD fixtures with the host
