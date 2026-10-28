@@ -665,7 +665,7 @@ index 160d860..8b96b53 100644
  enum mp_content_type {
      MP_CONTENT_NONE, // used for force-window
 diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
-index 93e801e..bf3e0b8 100644
+index c60b4e6..9176836 100644
 --- a/video/out/vo_avfoundation.m
 +++ b/video/out/vo_avfoundation.m
 @@ -39,5 +39,6 @@
@@ -683,7 +683,7 @@ index 93e801e..bf3e0b8 100644
      int queue_lead_ms;
      int presentation;
      int osd_max_height;
-@@ -352,5 +355,16 @@
+@@ -352,4 +355,15 @@
      struct mp_image *next_image;
      double next_pts;
 +    struct avf_motion_interpolator *motion;
@@ -699,7 +699,6 @@ index 93e801e..bf3e0b8 100644
 +    int motion_width, motion_height;
      CMTimebaseRef timebase;
      int64_t next_present_host_ns;
-     // Latest host stamp given to a video frame; see avf_host_present_ns().
 @@ -1385,5 +1397,84 @@
  }
  
@@ -969,11 +968,11 @@ index 93e801e..bf3e0b8 100644
          if (atomic_exchange(&p->pending_presentation_resync, false))
              recover_display_layer(vo, "presentation resume", true);
 @@ -4746,5 +4937,6 @@
-         // linger over the held frame.
+         // over the held frame.
          p->ahead_last_pts = MP_NOPTS_VALUE;
 +        reset_motion_reference(p);
          osd_cadence_reset(&p->ahead_cadence);
-         clear_subtitle_cache(p);
+         clear_subtitle_state(vo);
          p->not_ready_drop_count = 0;
 @@ -4803,5 +4995,10 @@
          {"media", AVF_PRESENTATION_MEDIA},
