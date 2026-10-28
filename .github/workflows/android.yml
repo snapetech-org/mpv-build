@@ -118,6 +118,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Provision and verify artifact tools
+        shell: bash
+        run: bash scripts/prepare_linux_artifacts.sh
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

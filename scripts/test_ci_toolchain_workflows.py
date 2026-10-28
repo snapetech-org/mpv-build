@@ -77,6 +77,22 @@ assert aar_java < aar_proxy < aar_sdk < aar_verify < aar_build, (
     "a fresh private JIT needs Java proxy routing and a verified SDK before Gradle"
 )
 
+# Packaging/publication happens in fresh guests, not the ABI compiler guest.
+artifact_setup = "bash scripts/prepare_linux_artifacts.sh"
+assert android_aar.index(artifact_setup) < aar_java
+for job_name, operation in (("plan", "Compute stale libraries per group"),
+                            ("publish", "Download platform builds")):
+    section = job_section(PUBLISH, job_name)
+    assert section.index(artifact_setup) < section.index(operation), (
+        f"{job_name} must provision artifact tools before consuming binaries"
+    )
+artifact_tools = (ROOT / "scripts/prepare_linux_artifacts.sh").read_text()
+for tool in ("zip", "unzip", "zstd", "gh"):
+    assert tool in artifact_tools, f"fresh artifact guests require {tool}"
+assert "sha256sum -c -" in artifact_tools, "the publishing CLI download must be verified"
+aar_script = (ROOT / "platforms/android/lib/build-aar.sh").read_text()
+assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
+
 apple = job_section(PUBLISH, "build-apple")
 assert '"group":"private-apple-builds"' in apple
 assert '"macOS","ARM64"' in apple

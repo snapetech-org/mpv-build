@@ -256,6 +256,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Provision and verify artifact tools
+        shell: bash
+        run: bash scripts/prepare_linux_artifacts.sh
+
       - name: Validate patch series
         run: python3 scripts/patches.py check
 
@@ -833,6 +837,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Provision and verify artifact tools
+        shell: bash
+        run: bash scripts/prepare_linux_artifacts.sh
 
       # A group with nothing stale keeps its committed section and is skipped
       # rather than published; the manifest job's gate below is what proves

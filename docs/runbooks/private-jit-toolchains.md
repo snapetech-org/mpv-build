@@ -13,7 +13,7 @@ not rerun an old workflow revision to validate newer source fixes.
   runner user's Python site and adds that `bin` directory to `GITHUB_PATH`
   before invoking it.
 - **Android:** The native ABI matrix installs Temurin Java 17 before the pinned
-  Android SDK manager runs. The AAR job also installs Java 17 before Gradle.
+  Android SDK manager runs. The AAR job installs Java 21 before Gradle and provisions its complete SDK.
   The NDK version remains pinned in `toolchain/android.txt`.
 - **Apple:** Apple binaries run on the private macOS ARM64 JIT lane. The job
   verifies the provisioned Xcode SDKs and native tools, then installs the
@@ -34,10 +34,23 @@ not rerun an old workflow revision to validate newer source fixes.
   workspace is mounted from the `gamespool0` NFS share at
   `/Volumes/plezyng-native-build-kspld0`; the preflight checks the expected
   export and performs a write/read probe before checkout or Colima startup.
-  A run-scoped Colima `c` directory, Lima at the run root, and profile `b` keep Docker and Lima's
+  A run-scoped Colima directory, short Lima `l` directory, and the default profile keep Docker and Lima's
   control socket paths below Darwin's 104-byte limit. The runtime checks the
   complete socket paths before starting the VM. Cleanup must stop the VM
   successfully before removing its storage.
+
+## Packaging and publishing prerequisites
+
+The plan, AAR and Linux publishing jobs run `scripts/prepare_linux_artifacts.sh`
+before doing their work. Each ephemeral guest installs ZIP/Unzip, Zstandard,
+XZ, ELF inspection tools and a checksum-pinned GitHub CLI. A successful compiler
+job cannot supply tools to a later guest. The AAR driver also checks its host
+commands before Gradle, so missing symbol archivers fail immediately.
+
+Run `40662940900` compiled both Linux architectures and all four Android ABIs.
+It then exposed missing `zip` in the AAR guest and missing `gh` in the Linux
+publisher. These prerequisite checks address those specific failures; a new
+current-source private run is still required to prove publication.
 
 ## Source guards
 

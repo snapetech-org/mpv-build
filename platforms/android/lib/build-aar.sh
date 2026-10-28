@@ -18,6 +18,11 @@
 # python3, unzip, zip and that NDK's llvm-objcopy.
 set -euo pipefail
 
+# Fail before Gradle if symbol packaging cannot complete on this host.
+for tool in python3 java zip unzip tar find sort; do
+	command -v "$tool" >/dev/null || { echo "build-aar.sh: missing required tool: $tool" >&2; exit 1; }
+done
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 
