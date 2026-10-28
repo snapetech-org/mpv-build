@@ -34,6 +34,11 @@ jobs:
       - name: Validate patch series
         run: python3 scripts/patches.py check
 
+      - name: Validate private platform toolchain workflows
+        run: |
+          python3 scripts/test_ci_toolchain_workflows.py
+          python3 scripts/test_linux_arm64_runtime_workflow.py
+
       # test_audiotrack_truehd.sh encodes its TrueHD fixtures with the host
       # ffmpeg's truehd encoder and spdif muxer.
       - name: Install ffmpeg

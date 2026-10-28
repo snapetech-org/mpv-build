@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Keep private native build workflows aligned with their toolchain contracts."""
+
+from pathlib import Path
+import re
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PUBLISH = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+ANDROID = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
+CI = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+RUSTUP_BOOTSTRAP = (ROOT / "scripts/install_pinned_rustup_macos.sh").read_text(
+    encoding="utf-8"
+)
+
+
+def job_section(workflow: str, name: str) -> str:
+    start_match = re.search(rf"(?m)^  {re.escape(name)}:\s*$", workflow)
+    assert start_match, f"workflow has no job named {name}"
+    start = start_match.start()
+    next_line = workflow.find("\n", start) + 1
+    following_job = re.search(r"(?m)^  [A-Za-z0-9_-]+:\s*$", workflow[next_line:])
+    end = next_line + following_job.start() if following_job else len(workflow)
+    return workflow[start:end]
+
+
+def named_step(job: str, name: str) -> str:
+    marker = f"      - name: {name}\n"
+    start = job.index(marker)
+    next_step = job.find("\n      - ", start + len(marker))
+    return job[start:] if next_step < 0 else job[start:next_step]
+
+
+def assert_private_linux_x64(job: str, label: str) -> None:
+    runs_on = re.search(r"(?m)^    runs-on: (.+)$", job)
+    assert runs_on, f"{label} has no explicit runner route"
+    assert '"group":"ng-shared-main-jit"' in runs_on.group(1), (
+        f"{label} must use the private Linux JIT group"
+    )
+    assert '"linux","x64"' in runs_on.group(1), f"{label} must run on Linux x64"
+    assert "private-apple" not in runs_on.group(1), f"{label} must not route to a Mac"
+
+
+windows = job_section(PUBLISH, "build-windows")
+assert_private_linux_x64(windows, "Windows cross-build")
+assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
+windows_install = named_step(windows, "Install dependencies")
+windows_meson_tokens = (
+    "python3 -m pip install --break-system-packages --user meson",
+    'meson_bin="$(python3 -m site --user-base)/bin"',
+    'echo "$meson_bin" >> "$GITHUB_PATH"',
+    "meson --version",
+)
+windows_meson_positions = [windows_install.index(token) for token in windows_meson_tokens]
+assert windows_meson_positions == sorted(windows_meson_positions), (
+    "Windows x64 and ARM64 cross-builds must put the user Meson bin directory on PATH before use"
+)
+
+android_natives = job_section(ANDROID, "natives")
+java_setup = android_natives.index("      - name: Set up Java for Android SDK manager")
+sdk_install = android_natives.index("bash platforms/android/include/download-sdk.sh")
+assert "distribution: temurin" in android_natives[java_setup:sdk_install]
+assert "java-version: '17'" in android_natives[java_setup:sdk_install]
+assert java_setup < sdk_install, "Java 17 must be installed before sdkmanager runs"
+
+android_aar = job_section(ANDROID, "aar")
+aar_java = android_aar.index("      - uses: actions/setup-java@v4")
+aar_build = android_aar.index("Build the AAR and run its JVM tests")
+assert "distribution: temurin" in android_aar[aar_java:aar_build]
+assert "java-version: '17'" in android_aar[aar_java:aar_build]
+assert aar_java < aar_build, "Java 17 must be installed before Gradle runs"
+
+apple = job_section(PUBLISH, "build-apple")
+assert '"group":"private-apple-builds"' in apple
+assert '"macOS","ARM64"' in apple
+apple_preflight = named_step(apple, "Verify Apple toolchain and install pinned Meson")
+assert "rustup" not in apple_preflight, "Apple preflight must not depend on Homebrew rustup"
+rust_step = named_step(apple, "Bootstrap pinned rustup and install pinned Rust toolchain")
+assert "bash scripts/install_pinned_rustup_macos.sh" in rust_step
+assert rust_step.index("install_pinned_rustup_macos.sh") < rust_step.index(
+    "rustup toolchain install"
+)
+assert "brew install rustup" not in PUBLISH
+assert "RUSTUP_AUTO_INSTALL: '0'" in apple
+
+assert "readonly rustup_bootstrap_version='1.29.2'" in RUSTUP_BOOTSTRAP
+assert (
+    "readonly rustup_bootstrap_sha256='f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9'"
+    in RUSTUP_BOOTSTRAP
+)
+assert "aarch64-apple-darwin" in RUSTUP_BOOTSTRAP
+assert "static.rust-lang.org/rustup/archive/" in RUSTUP_BOOTSTRAP
+assert "shasum -a 256 --check --status" in RUSTUP_BOOTSTRAP
+assert "--no-modify-path --default-toolchain none" in RUSTUP_BOOTSTRAP
+assert 'echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"' in RUSTUP_BOOTSTRAP
+
+linux_x64 = job_section(PUBLISH, "build-linux-x64")
+assert_private_linux_x64(linux_x64, "Linux x86_64 build")
+build_start = linux_x64.index("Build and package in the pinned container")
+date_check = linux_x64.index("Check the tarball and symbols for a build date")
+upload = named_step(linux_x64, "Upload platform build")
+assert build_start < date_check < linux_x64.index("Upload platform build")
+assert "./dist/release/*.tar.zst" in upload
+assert "libmpv-linux-x86_64-symbols.zip" in upload
+assert "if-no-files-found: error" in upload
+
+assert "python3 scripts/test_ci_toolchain_workflows.py" in CI
+assert "python3 scripts/test_linux_arm64_runtime_workflow.py" in CI
+
+print("Private Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")

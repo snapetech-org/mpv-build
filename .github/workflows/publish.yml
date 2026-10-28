@@ -334,10 +334,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for formula in autoconf automake libtool ninja rustup python@3.12; do
+          for formula in autoconf automake libtool ninja python@3.12; do
             test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
           done
-          for tool in autoconf automake glibtool ninja rustup python3 xcodebuild xcrun; do
+          for tool in autoconf automake glibtool ninja python3 xcodebuild xcrun; do
             command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
           done
           python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
@@ -356,8 +356,9 @@ jobs:
       # published per-platform zips. No version= argument: the URLs the build
       # script would spell from it are replaced by the manifest's
       # content-addressed ones in the publish job.
-      - name: Install the pinned Rust toolchain
+      - name: Bootstrap pinned rustup and install pinned Rust toolchain
         run: |
+          bash scripts/install_pinned_rustup_macos.sh
           rust_version="$(sed -n 's/^rust=//p' toolchain/apple.txt)"
           test -n "$rust_version"
           # What build_spatial.py runs, named instead of left to a profile:
