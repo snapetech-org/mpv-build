@@ -1,0 +1,1263 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1539,2 +1539,71 @@
+ 
++struct pme_workspace {
++    int alloc_w, alloc_h;
++    float *flow_x, *flow_y;
++    float *sm_a, *sm_b, *sm_tmp;
++    int sH, sW;
++    float *blend_rgb[3];
++    struct mp_sws_context *model_downscale_sws;
++    struct mp_sws_context *source_upscale_sws;
++};
++
++struct pme_job_metrics {
++    bool pme_success;
++    double inference_ms;
++    double preprocessing_ms;
++    double flow_preparation_ms;
++    double gpu_upload_ms;
++    double vulkan_dispatch_ms;
++    double tensor_copy_ms;
++    double reconstruction_ms;
++    double pipeline_ms;
++};
++
++struct priv;
++
++struct pme_worker_thread_arg {
++    struct priv *p;
++    int index;
++};
++
++struct pme_worker_context {
++    struct pme_workspace workspace;
++    pthread_t thread;
++    struct pme_worker_thread_arg thread_arg;
++    int thread_created;
++};
++
++enum pme_scheduler_job_state {
++    PME_JOB_FREE,
++    PME_JOB_QUEUED,
++    PME_JOB_RUNNING,
++    PME_JOB_READY,
++};
++
++enum pme_scheduler_output_kind {
++    PME_OUTPUT_SOURCE,
++    PME_OUTPUT_PAIR,
++    PME_OUTPUT_SIGNAL,
++};
++
++struct pme_scheduler_job {
++    enum pme_scheduler_job_state state;
++    enum pme_scheduler_output_kind output_kind;
++    uint64_t sequence;
++    struct mp_image *prev;
++    struct mp_image *curr;
++    const AVMotionVector *mvs;
++    int n_mvs;
++    double submitted_ms;
++    double prev_pts;
++    double curr_pts;
++    struct mp_image *interp;
++    struct mp_frame source;
++    struct pme_job_metrics metrics;
++    bool success;
++    bool midpoint_emitted;
++    bool metrics_published;
++    bool discard;
++};
++
+ static void *pme_resolve_symbol(struct pme_api *api, const char *name)
+@@ -1715,2 +1784,12 @@
+ 
++static bool pme_provider_supports_parallel_sessions(const struct pme_state *pme)
++{
++    if (!pme || !pme->ready || pme->device_kind != PME_DEVICE_GPU)
++        return false;
++    // CUDA and DirectML support independent session objects. Keep CPU and
++    // providers with shared allocator constraints on the serialized path.
++    return strcmp(pme->provider_name, "CUDAExecutionProvider") == 0 ||
++           strcmp(pme->provider_name, "DmlExecutionProvider") == 0;
++}
++
+ // ====================================================================
+@@ -1719,7 +1798,3 @@
+ 
+-enum pme_state_machine {
+-    STATE_NEED_INPUT,
+-    STATE_HAVE_INTERP,
+-    STATE_HAVE_CURR,
+-};
++#define PME_SCHEDULER_CAPACITY 2
+ 
+@@ -1773,9 +1848,2 @@
+ 
+-enum pme_worker_result_state {
+-    PME_WORKER_RESULT_NONE,
+-    PME_WORKER_RESULT_PENDING,
+-    PME_WORKER_RESULT_READY,
+-    PME_WORKER_RESULT_DISCARDED,
+-};
+-
+ struct priv {
+@@ -1806,3 +1874,2 @@
+     unsigned long long deadline_bypass_frames;
+-    enum pme_state_machine state;
+     int frame_count;
+@@ -1812,24 +1879,10 @@
+ 
+-    // Stored interpolated frame (output in HAVE_INTERP state)
+-    struct mp_image *interp;
+-
+-    // Stored original curr frame (output in HAVE_CURR state)
+-    struct mp_frame stored_curr;
+-
+-    // Prealign workspace (CPU fallback path)
+-    int alloc_w, alloc_h;
+-    float *flow_x, *flow_y;
+-    float *sm_a, *sm_b, *sm_tmp;
+-    int sH, sW;
+-
+-    // Float RGB blend workspace (3 planes, for Phase 2 -> Phase 4)
+-    // When Vulkan active, Phase 4 reads from vk.blend_*_ptr instead
+-    float *blend_rgb[3];   // R, G, B blend = (warp0 + warp1) / 2
+-
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+-    struct mp_sws_context *model_downscale_sws;
+-    struct mp_sws_context *source_upscale_sws;
+-    // Neural runtime state
++    pthread_mutex_t vk_mutex;
++    int vk_mutex_initialized;
+     struct pme_state pme;
++    struct pme_state pme_secondary;
++    struct pme_worker_context worker_contexts[PME_SCHEDULER_CAPACITY];
++    int worker_count;
+     int pme_checked;
+@@ -1843,6 +1896,4 @@
+ 
+-    // The provider inference and image reconstruction run off mpv's filter
+-    // callback. Only one pair is submitted at a time; reset marks its result
+-    // stale and lets source frames pass through until the worker drains.
+-    pthread_t pme_worker_thread;
++    // At most two independent provider sessions can run concurrently. Output
++    // slots remain ordered even when the two GPU sessions finish out of order.
+     pthread_mutex_t pme_worker_mutex;
+@@ -1850,14 +1901,10 @@
+     int pme_worker_sync_initialized;
+-    int pme_worker_thread_created;
+     int pme_worker_shutdown;
+-    int pme_worker_pending;
+-    int pme_worker_active;
+-    int pme_worker_done;
+-    int pme_worker_discard;
+-    int pme_async_pair;
+-    struct mp_image *pme_worker_prev;
+-    struct mp_image *pme_worker_curr;
+-    const AVMotionVector *pme_worker_mvs;
+-    int pme_worker_n_mvs;
+-    double pme_worker_submitted_ms;
++    struct pme_scheduler_job jobs[PME_SCHEDULER_CAPACITY];
++    int output_order[PME_SCHEDULER_CAPACITY];
++    int output_head;
++    int output_count;
++    uint64_t next_sequence;
++    int input_barrier;
++    int reset_drain;
+     struct pme_stats_snapshot published_stats;
+@@ -1869,3 +1916,3 @@
+ {
+-    if (!isfinite(duration_ms) || duration_ms < 0.0)
++    if (!isfinite(duration_ms) || duration_ms <= 0.0)
+         return;
+@@ -1960,5 +2007,32 @@
+     struct priv *p = arg;
+-    pme_init(&p->pme, p->filter, p->pme_init_width, p->pme_init_height,
+-             p->opts->model, p->opts->pme_library, p->opts->runtime,
+-             p->opts->provider_manifest, p->opts->preset, p->opts->allow_cpu);
++    const int init_ok = pme_init(&p->pme, p->filter, p->pme_init_width,
++                                 p->pme_init_height, p->opts->model,
++                                 p->opts->pme_library, p->opts->runtime,
++                                 p->opts->provider_manifest, p->opts->preset,
++                                 p->opts->allow_cpu) == 0;
++    if (!init_ok)
++        pme_cleanup(&p->pme);
++    p->worker_count = init_ok ? 1 : 0;
++    if (init_ok && p->vk_mutex_initialized &&
++        pme_provider_supports_parallel_sessions(&p->pme) && !pme_cancelled(p)) {
++        const int secondary_ok = pme_init(
++            &p->pme_secondary, p->filter, p->pme_init_width,
++            p->pme_init_height, p->opts->model, p->opts->pme_library,
++            p->opts->runtime, p->opts->provider_manifest,
++            p->opts->preset, p->opts->allow_cpu) == 0;
++        if (!secondary_ok)
++            pme_cleanup(&p->pme_secondary);
++        const bool same_provider = secondary_ok &&
++            p->pme.device_kind == p->pme_secondary.device_kind &&
++            p->pme.model_w == p->pme_secondary.model_w &&
++            p->pme.model_h == p->pme_secondary.model_h &&
++            strcmp(p->pme.provider_name, p->pme_secondary.provider_name) == 0 &&
++            strcmp(p->pme.provider_vendor, p->pme_secondary.provider_vendor) == 0;
++        if (same_provider) {
++            p->worker_count = 2;
++        } else {
++            pme_cleanup(&p->pme_secondary);
++            MP_WARN(p->filter, "PME: parallel provider session unavailable; using one in-flight pair\n");
++        }
++    }
+     // Vulkan initialization is also asynchronous: creating the instance,
+@@ -2013,3 +2087,6 @@
+     *checked = p->pme_checked;
+-    *ready = p->pme.ready;
++    // pme_init_thread_fn publishes pme.ready and all provider metadata before
++    // setting pme_checked under this mutex. Never inspect those fields while
++    // initialization is still in progress.
++    *ready = *checked && p->pme.ready;
+     pthread_mutex_unlock(&p->pme_init_mutex);
+@@ -2017,39 +2094,39 @@
+ 
+-static void free_workspace(struct priv *p)
++static void free_workspace(struct pme_workspace *ws)
+ {
+-    free(p->flow_x);  free(p->flow_y);
+-    free(p->sm_a);    free(p->sm_b);    free(p->sm_tmp);
+-    p->flow_x = p->flow_y = p->sm_a = p->sm_b = p->sm_tmp = NULL;
++    free(ws->flow_x);  free(ws->flow_y);
++    free(ws->sm_a);    free(ws->sm_b);    free(ws->sm_tmp);
++    ws->flow_x = ws->flow_y = ws->sm_a = ws->sm_b = ws->sm_tmp = NULL;
+ 
+     for (int c = 0; c < 3; c++) {
+-        free(p->blend_rgb[c]); p->blend_rgb[c] = NULL;
++        free(ws->blend_rgb[c]); ws->blend_rgb[c] = NULL;
+     }
+ 
+-    p->alloc_w = p->alloc_h = 0;
++    ws->alloc_w = ws->alloc_h = 0;
+ }
+ 
+-static void alloc_workspace(struct priv *p, int w, int h)
++static void alloc_workspace(struct pme_workspace *ws, int w, int h)
+ {
+-    if (p->alloc_w == w && p->alloc_h == h) return;
+-    free_workspace(p);
++    if (ws->alloc_w == w && ws->alloc_h == h) return;
++    free_workspace(ws);
+ 
+     int px = w * h;
+-    p->sH = h / PA_DS; p->sW = w / PA_DS;
+-    int spx = p->sH * p->sW;
++    ws->sH = h / PA_DS; ws->sW = w / PA_DS;
++    int spx = ws->sH * ws->sW;
+ 
+-    p->flow_x  = calloc(px, sizeof(float));
+-    p->flow_y  = calloc(px, sizeof(float));
+-    p->sm_a    = malloc(spx * sizeof(float));
+-    p->sm_b    = malloc(spx * sizeof(float));
+-    p->sm_tmp  = malloc(spx * sizeof(float));
++    ws->flow_x  = calloc(px, sizeof(float));
++    ws->flow_y  = calloc(px, sizeof(float));
++    ws->sm_a    = malloc(spx * sizeof(float));
++    ws->sm_b    = malloc(spx * sizeof(float));
++    ws->sm_tmp  = malloc(spx * sizeof(float));
+ 
+     for (int c = 0; c < 3; c++)
+-        p->blend_rgb[c] = malloc(px * sizeof(float));
++        ws->blend_rgb[c] = malloc(px * sizeof(float));
+ 
+-    if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
+-        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2]) {
+-        free_workspace(p);
++    if (!ws->flow_x || !ws->flow_y || !ws->sm_a || !ws->sm_b || !ws->sm_tmp ||
++        !ws->blend_rgb[0] || !ws->blend_rgb[1] || !ws->blend_rgb[2]) {
++        free_workspace(ws);
+         return;
+     }
+-    p->alloc_w = w; p->alloc_h = h;
++    ws->alloc_w = w; ws->alloc_h = h;
+ }
+@@ -2061,14 +2138,14 @@
+ // Run prealign v2 on the flow field (modifies flow_x/flow_y in place)
+-static void run_prealign_v2(struct priv *p, int W, int H)
++static void run_prealign_v2(struct pme_workspace *ws, int W, int H)
+ {
+     int dH, dW;
+-    downsample(p->flow_x, p->sm_a, H, W, PA_DS, &dH, &dW);
+-    downsample(p->flow_y, p->sm_b, H, W, PA_DS, &dH, &dW);
+-    median_2d(p->sm_a, p->sm_tmp, dH, dW, PA_MED_K);
+-    median_2d(p->sm_b, p->sm_a,   dH, dW, PA_MED_K);
++    downsample(ws->flow_x, ws->sm_a, H, W, PA_DS, &dH, &dW);
++    downsample(ws->flow_y, ws->sm_b, H, W, PA_DS, &dH, &dW);
++    median_2d(ws->sm_a, ws->sm_tmp, dH, dW, PA_MED_K);
++    median_2d(ws->sm_b, ws->sm_a,   dH, dW, PA_MED_K);
+     // sm_tmp = filtered fx at 1/4, sm_a = filtered fy at 1/4
+-    gauss_sep(p->sm_tmp, p->sm_b, dH, dW, PA_GAUSS_S);
+-    gauss_sep(p->sm_a,   p->sm_b, dH, dW, PA_GAUSS_S);
+-    upsample(p->sm_tmp, p->flow_x, dH, dW, H, W);
+-    upsample(p->sm_a,   p->flow_y, dH, dW, H, W);
++    gauss_sep(ws->sm_tmp, ws->sm_b, dH, dW, PA_GAUSS_S);
++    gauss_sep(ws->sm_a,   ws->sm_b, dH, dW, PA_GAUSS_S);
++    upsample(ws->sm_tmp, ws->flow_x, dH, dW, H, W);
++    upsample(ws->sm_a,   ws->flow_y, dH, dW, H, W);
+ }
+@@ -2121,3 +2198,4 @@
+ //   Phase 4 (4 threads): residual + clamp + rgb2yuv
+-static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f,
++static struct mp_image *compute_interpolated(struct priv *p, int worker_index,
++                                              struct mp_filter *f,
+                                               struct mp_image *prev,
+@@ -2125,8 +2203,11 @@
+                                               const AVMotionVector *mvs, int n_mvs,
+-                                              double submitted_ms)
++                                              double submitted_ms,
++                                              struct pme_job_metrics *metrics)
+ {
++    struct pme_state *pme = worker_index == 0 ? &p->pme : &p->pme_secondary;
++    struct pme_workspace *ws = &p->worker_contexts[worker_index].workspace;
+     const int source_W = curr->w, source_H = curr->h;
+-    const int model_w = p->pme.model_w;
+-    const int model_h = p->pme.model_h;
+-    const int source_model_scale = p->pme.model_scale;
++    const int model_w = pme->model_w;
++    const int model_h = pme->model_h;
++    const int source_model_scale = pme->model_scale;
+     struct mp_image *scaled_prev = NULL, *scaled_curr = NULL;
+@@ -2135,19 +2216,11 @@
+     const double started = submitted_ms;
+-    p->last_pme_success = false;
+-    p->last_frame_generated = false;
+-    p->preprocessing_ms = 0.0;
+-    p->flow_preparation_ms = 0.0;
+-    p->gpu_upload_ms = 0.0;
+-    p->vulkan_dispatch_ms = 0.0;
+-    p->tensor_copy_ms = 0.0;
+-    p->reconstruction_ms = 0.0;
+-    p->pipeline_ms = 0.0;
++    *metrics = (struct pme_job_metrics){0};
+ 
+-    if (!p->pme.input_buf || !p->pme.output_buf || source_model_scale < 1)
++    if (!pme->input_buf || !pme->output_buf || source_model_scale < 1)
+         goto done;
+     if (source_model_scale > 1) {
+-        if (!p->model_downscale_sws || !p->source_upscale_sws)
++        if (!ws->model_downscale_sws || !ws->source_upscale_sws)
+             goto done;
+-        scaled_prev = pme_scale_image(p->model_downscale_sws, prev, model_w, model_h);
+-        scaled_curr = pme_scale_image(p->model_downscale_sws, curr, model_w, model_h);
++        scaled_prev = pme_scale_image(ws->model_downscale_sws, prev, model_w, model_h);
++        scaled_curr = pme_scale_image(ws->model_downscale_sws, curr, model_w, model_h);
+         if (!scaled_prev || !scaled_curr)
+@@ -2159,7 +2232,9 @@
+     const int W = work_curr->w, H = work_curr->h;
++#ifdef PLEZY_HAVE_PME_VULKAN
+     const size_t pixels = (size_t)W * H;
+     const size_t model_pixels = (size_t)model_w * model_h;
+-    alloc_workspace(p, W, H);
+-    if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
+-        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2] ||
++#endif
++    alloc_workspace(ws, W, H);
++    if (!ws->flow_x || !ws->flow_y || !ws->sm_a || !ws->sm_b || !ws->sm_tmp ||
++        !ws->blend_rgb[0] || !ws->blend_rgb[1] || !ws->blend_rgb[2] ||
+         W != model_w || H != model_h)
+@@ -2170,8 +2245,10 @@
+     if (use_vk) {
++        if (p->vk_mutex_initialized)
++            pthread_mutex_lock(&p->vk_mutex);
+         const double flow_started = get_time_ms();
+-        zoh_fill_scaled(mvs, n_mvs, p->flow_x, p->flow_y, H, W, source_H, source_W);
++        zoh_fill_scaled(mvs, n_mvs, ws->flow_x, ws->flow_y, H, W, source_H, source_W);
+         int dH, dW;
+-        downsample(p->flow_x, p->vk.sm_fx_a_ptr, H, W, PA_DS, &dH, &dW);
+-        downsample(p->flow_y, p->vk.sm_fy_a_ptr, H, W, PA_DS, &dH, &dW);
+-        p->flow_preparation_ms = get_time_ms() - flow_started;
++        downsample(ws->flow_x, p->vk.sm_fx_a_ptr, H, W, PA_DS, &dH, &dW);
++        downsample(ws->flow_y, p->vk.sm_fy_a_ptr, H, W, PA_DS, &dH, &dW);
++        metrics->flow_preparation_ms = get_time_ms() - flow_started;
+ 
+@@ -2187,3 +2264,3 @@
+                     &y_stride, &uv_stride, &u_off, &v_off);
+-        p->gpu_upload_ms = get_time_ms() - upload_started;
++        metrics->gpu_upload_ms = get_time_ms() - upload_started;
+ 
+@@ -2191,3 +2268,3 @@
+         vk_dispatch(&p->vk, y_stride, uv_stride, u_off, v_off, false, 0.0f, 0);
+-        p->vulkan_dispatch_ms = get_time_ms() - dispatch_started;
++        metrics->vulkan_dispatch_ms = get_time_ms() - dispatch_started;
+ 
+@@ -2201,3 +2278,3 @@
+                 for (int c = 0; c < 6; c++)
+-                    p->pme.input_buf[(size_t)c * model_pixels + model_idx] =
++                    pme->input_buf[(size_t)c * model_pixels + model_idx] =
+                         p->vk.nhwc_ptr[source_idx + c];
+@@ -2205,6 +2282,8 @@
+         }
+-        memcpy(p->blend_rgb[0], p->vk.blend_r_ptr, pixels * sizeof(float));
+-        memcpy(p->blend_rgb[1], p->vk.blend_g_ptr, pixels * sizeof(float));
+-        memcpy(p->blend_rgb[2], p->vk.blend_b_ptr, pixels * sizeof(float));
+-        p->tensor_copy_ms = get_time_ms() - tensor_copy_started;
++        memcpy(ws->blend_rgb[0], p->vk.blend_r_ptr, pixels * sizeof(float));
++        memcpy(ws->blend_rgb[1], p->vk.blend_g_ptr, pixels * sizeof(float));
++        memcpy(ws->blend_rgb[2], p->vk.blend_b_ptr, pixels * sizeof(float));
++        metrics->tensor_copy_ms = get_time_ms() - tensor_copy_started;
++        if (p->vk_mutex_initialized)
++            pthread_mutex_unlock(&p->vk_mutex);
+     } else
+@@ -2212,10 +2291,11 @@
+     {
+-        zoh_fill_scaled(mvs, n_mvs, p->flow_x, p->flow_y, H, W, source_H, source_W);
+-        run_prealign_v2(p, W, H);
++        zoh_fill_scaled(mvs, n_mvs, ws->flow_x, ws->flow_y, H, W, source_H, source_W);
++        run_prealign_v2(ws, W, H);
+         pthread_t threads[N_THREADS - 1];
+         struct phase2_args args[N_THREADS];
+-        const int rows_per = H / N_THREADS;
+-        for (int t = 0; t < N_THREADS; t++) {
++        const int num_threads = p->worker_count > 1 ? N_THREADS / 2 : N_THREADS;
++        const int rows_per = H / num_threads;
++        for (int t = 0; t < num_threads; t++) {
+             args[t].y_start = t * rows_per;
+-            args[t].y_end = t == N_THREADS - 1 ? H : (t + 1) * rows_per;
++            args[t].y_end = t == num_threads - 1 ? H : (t + 1) * rows_per;
+             args[t].W = W; args[t].H = H;
+@@ -2229,12 +2309,12 @@
+             args[t].curr_V = work_curr->planes[2]; args[t].curr_vs = work_curr->stride[2];
+-            args[t].flow_x = p->flow_x; args[t].flow_y = p->flow_y;
+-            args[t].input_buf = p->pme.input_buf;
+-            args[t].blend_r = p->blend_rgb[0];
+-            args[t].blend_g = p->blend_rgb[1];
+-            args[t].blend_b = p->blend_rgb[2];
++            args[t].flow_x = ws->flow_x; args[t].flow_y = ws->flow_y;
++            args[t].input_buf = pme->input_buf;
++            args[t].blend_r = ws->blend_rgb[0];
++            args[t].blend_g = ws->blend_rgb[1];
++            args[t].blend_b = ws->blend_rgb[2];
+         }
+-        for (int t = 0; t < N_THREADS - 1; t++)
++        for (int t = 0; t < num_threads - 1; t++)
+             pthread_create(&threads[t], NULL, phase2_thread_fn, &args[t]);
+-        phase2_thread_fn(&args[N_THREADS - 1]);
+-        for (int t = 0; t < N_THREADS - 1; t++)
++        phase2_thread_fn(&args[num_threads - 1]);
++        for (int t = 0; t < num_threads - 1; t++)
+             pthread_join(threads[t], NULL);
+@@ -2243,11 +2323,8 @@
+     const double inference_started = get_time_ms();
+-    p->preprocessing_ms = inference_started - started;
+-    const int pme_ok = pme_execute(&p->pme) == 0;
+-    p->last_inference_ms = get_time_ms() - inference_started;
+-    record_inference_sample(p, p->last_inference_ms);
+-    p->last_pme_success = pme_ok;
++    metrics->preprocessing_ms = inference_started - started;
++    const int pme_ok = pme_execute(pme) == 0;
++    metrics->inference_ms = get_time_ms() - inference_started;
++    metrics->pme_success = pme_ok;
+     if (!pme_ok) {
+-        p->pipeline_ms = get_time_ms() - started;
+-        if (p->neural_probe_pending)
+-            start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
++        metrics->pipeline_ms = get_time_ms() - started;
+         MP_WARN(f, "PME inference failed; source cadence will continue\n");
+@@ -2262,6 +2339,7 @@
+     struct phase4_args args[N_THREADS];
+-    const int rows_per = (H / N_THREADS) & ~1;
+-    for (int t = 0; t < N_THREADS; t++) {
++    const int num_threads = p->worker_count > 1 ? N_THREADS / 2 : N_THREADS;
++    const int rows_per = (H / num_threads) & ~1;
++    for (int t = 0; t < num_threads; t++) {
+         args[t].y_start = t * rows_per;
+-        args[t].y_end = t == N_THREADS - 1 ? H : (t + 1) * rows_per;
++        args[t].y_end = t == num_threads - 1 ? H : (t + 1) * rows_per;
+         args[t].W = W; args[t].H = H;
+@@ -2269,6 +2347,6 @@
+         args[t].model_scale = 1;
+-        args[t].blend_r = p->blend_rgb[0];
+-        args[t].blend_g = p->blend_rgb[1];
+-        args[t].blend_b = p->blend_rgb[2];
+-        args[t].output_buf = p->pme.output_buf;
++        args[t].blend_r = ws->blend_rgb[0];
++        args[t].blend_g = ws->blend_rgb[1];
++        args[t].blend_b = ws->blend_rgb[2];
++        args[t].output_buf = pme->output_buf;
+         args[t].pme_ok = 1;
+@@ -2278,8 +2356,8 @@
+     }
+-    for (int t = 0; t < N_THREADS - 1; t++)
++    for (int t = 0; t < num_threads - 1; t++)
+         pthread_create(&threads[t], NULL, phase4_thread_fn, &args[t]);
+-    phase4_thread_fn(&args[N_THREADS - 1]);
+-    for (int t = 0; t < N_THREADS - 1; t++)
++    phase4_thread_fn(&args[num_threads - 1]);
++    for (int t = 0; t < num_threads - 1; t++)
+         pthread_join(threads[t], NULL);
+-    p->reconstruction_ms = get_time_ms() - reconstruction_started;
++    metrics->reconstruction_ms = get_time_ms() - reconstruction_started;
+ 
+@@ -2291,3 +2369,3 @@
+         mp_image_set_size(out, source_W, source_H);
+-        if (mp_sws_scale(p->source_upscale_sws, out, working_output) < 0) {
++        if (mp_sws_scale(ws->source_upscale_sws, out, working_output) < 0) {
+             mp_image_unrefp(&out);
+@@ -2300,4 +2378,4 @@
+     }
+-    p->reconstruction_ms = get_time_ms() - reconstruction_started;
+-    p->pipeline_ms = get_time_ms() - started;
++    metrics->reconstruction_ms = get_time_ms() - reconstruction_started;
++    metrics->pipeline_ms = get_time_ms() - started;
+ 
+@@ -2307,13 +2385,2 @@
+     out->nominal_fps = 2.0 / source_duration;
+-    const bool missed_deadline = record_deadline_miss(p, f, started, prev->pts, curr->pts);
+-    if (missed_deadline) {
+-        p->last_pme_success = false;
+-        mp_image_unrefp(&out);
+-        goto done;
+-    }
+-    if (p->neural_probe_pending) {
+-        p->neural_probe_pending = false;
+-        p->neural_bypass_until_ms = 0.0;
+-        MP_INFO(f, "PME: Neural recovery probe met its frame deadline; resuming Neural output\n");
+-    }
+ done:
+@@ -2347,8 +2414,65 @@
+ 
++static void reset_pme_stats_locked(struct priv *p)
++{
++    p->last_pme_success = false;
++    p->last_frame_generated = false;
++    p->neural_bypass_until_ms = 0.0;
++    p->neural_probe_pending = false;
++    p->recent_deadline_miss_count = 0;
++    p->recent_deadline_miss_next = 0;
++    publish_pme_stats_locked(p);
++}
++
++static void pme_scheduler_job_clear(struct pme_scheduler_job *job)
++{
++    mp_image_unrefp(&job->prev);
++    mp_image_unrefp(&job->curr);
++    mp_image_unrefp(&job->interp);
++    mp_frame_unref(&job->source);
++    *job = (struct pme_scheduler_job){0};
++    job->state = PME_JOB_FREE;
++}
++
++static int pme_find_free_job_locked(struct priv *p)
++{
++    for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++)
++        if (p->jobs[i].state == PME_JOB_FREE)
++            return i;
++    return -1;
++}
++
++static bool pme_worker_busy_locked(struct priv *p)
++{
++    for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++)
++        if (p->jobs[i].state == PME_JOB_QUEUED ||
++            p->jobs[i].state == PME_JOB_RUNNING)
++            return true;
++    return false;
++}
++
++static int pme_output_head_locked(const struct priv *p)
++{
++    if (!p->output_count)
++        return -1;
++    return p->output_order[p->output_head];
++}
++
++static void pme_output_pop_locked(struct priv *p)
++{
++    if (!p->output_count)
++        return;
++    p->output_head = (p->output_head + 1) % PME_SCHEDULER_CAPACITY;
++    p->output_count--;
++    if (!p->output_count)
++        p->output_head = 0;
++}
++
+ static void *pme_worker_thread_fn(void *arg)
+ {
+-    struct priv *p = arg;
++    struct pme_worker_thread_arg *thread_arg = arg;
++    struct priv *p = thread_arg->p;
++    const int index = thread_arg->index;
+     pthread_mutex_lock(&p->pme_worker_mutex);
+     while (!p->pme_worker_shutdown) {
+-        while (!p->pme_worker_pending && !p->pme_worker_shutdown)
++        while (p->jobs[index].state != PME_JOB_QUEUED && !p->pme_worker_shutdown)
+             pthread_cond_wait(&p->pme_worker_start_cond, &p->pme_worker_mutex);
+@@ -2357,39 +2481,34 @@
+ 
+-        p->pme_worker_pending = 0;
+-        struct mp_image *prev = p->pme_worker_prev;
+-        struct mp_image *curr = p->pme_worker_curr;
+-        const AVMotionVector *mvs = p->pme_worker_mvs;
+-        const int n_mvs = p->pme_worker_n_mvs;
+-        const double submitted_ms = p->pme_worker_submitted_ms;
++        struct pme_scheduler_job *job = &p->jobs[index];
++        job->state = PME_JOB_RUNNING;
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+ 
+-        p->interp = compute_interpolated(p, p->filter, prev, curr, mvs, n_mvs,
+-                                         submitted_ms);
+-        mp_image_unrefp(&prev);
+-        mp_image_unrefp(&curr);
++        struct pme_job_metrics metrics = {0};
++        struct mp_image *interp = compute_interpolated(
++            p, index, p->filter, job->prev, job->curr, job->mvs, job->n_mvs,
++            job->submitted_ms, &metrics);
++        mp_image_unrefp(&job->prev);
++        mp_image_unrefp(&job->curr);
++        job->mvs = NULL;
++        job->n_mvs = 0;
+ 
+         pthread_mutex_lock(&p->pme_worker_mutex);
+-        p->pme_worker_prev = NULL;
+-        p->pme_worker_curr = NULL;
+-        p->pme_worker_mvs = NULL;
+-        p->pme_worker_n_mvs = 0;
+-        if (p->pme_worker_discard || p->pme_worker_shutdown) {
+-            mp_image_unrefp(&p->interp);
+-            p->last_pme_success = false;
+-            p->last_frame_generated = false;
+-            p->neural_bypass_until_ms = 0.0;
+-            p->neural_probe_pending = false;
+-            p->recent_deadline_miss_count = 0;
+-            p->recent_deadline_miss_next = 0;
+-            p->pme_worker_discard = 0;
+-            p->pme_worker_done = 0;
+-            p->pme_async_pair = 0;
++        bool wake_filter = !p->pme_worker_shutdown;
++        if (job->discard || p->pme_worker_shutdown) {
++            mp_image_unrefp(&interp);
++            pme_scheduler_job_clear(job);
++            if (p->reset_drain && !pme_worker_busy_locked(p)) {
++                p->reset_drain = 0;
++                reset_pme_stats_locked(p);
++            }
+         } else {
+-            p->pme_worker_done = 1;
++            job->interp = interp;
++            job->metrics = metrics;
++            job->success = metrics.pme_success;
++            job->state = PME_JOB_READY;
+         }
+-        p->pme_worker_active = 0;
+-        publish_pme_stats_locked(p);
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+ 
+-        mp_filter_wakeup(p->filter);
++        if (wake_filter)
++            mp_filter_wakeup(p->filter);
+         pthread_mutex_lock(&p->pme_worker_mutex);
+@@ -2402,2 +2521,4 @@
+ {
++    if (!p->worker_count)
++        return false;
+     if (!p->pme_worker_sync_initialized) {
+@@ -2415,10 +2536,23 @@
+ 
+-    if (!p->pme_worker_thread_created) {
+-        if (pthread_create(&p->pme_worker_thread, NULL, pme_worker_thread_fn, p) != 0) {
++    for (int i = 0; i < p->worker_count; i++) {
++        struct pme_worker_context *ctx = &p->worker_contexts[i];
++        if (ctx->thread_created)
++            continue;
++        ctx->thread_arg = (struct pme_worker_thread_arg){p, i};
++        if (pthread_create(&ctx->thread, NULL, pme_worker_thread_fn,
++                           &ctx->thread_arg) == 0) {
++            ctx->thread_created = 1;
++            continue;
++        }
++        if (i == 0) {
+             MP_WARN(f, "PME: worker thread could not start; bypassing Neural for this pair\n");
++            p->worker_count = 0;
+             return false;
+         }
+-        p->pme_worker_thread_created = 1;
++        p->worker_count = 1;
++        pme_cleanup(&p->pme_secondary);
++        MP_WARN(f, "PME: second worker could not start; using one in-flight pair\n");
++        break;
+     }
+-    return true;
++    return p->worker_count > 0;
+ }
+@@ -2427,3 +2561,4 @@
+                             struct mp_image *prev, struct mp_image *curr,
+-                            const AVMotionVector *mvs, int n_mvs)
++                            const AVMotionVector *mvs, int n_mvs,
++                            struct mp_frame *source)
+ {
+@@ -2441,3 +2576,11 @@
+     pthread_mutex_lock(&p->pme_worker_mutex);
+-    if (p->pme_worker_active || p->pme_worker_pending || p->pme_worker_shutdown) {
++    int slot = -1;
++    for (int i = 0; i < p->worker_count; i++) {
++        if (p->jobs[i].state == PME_JOB_FREE) {
++            slot = i;
++            break;
++        }
++    }
++    if (slot < 0 || p->output_count >= PME_SCHEDULER_CAPACITY ||
++        p->input_barrier || p->pme_worker_shutdown) {
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2447,14 +2590,22 @@
+     }
+-    publish_pme_stats_locked(p);
+-    p->pme_worker_prev = prev_ref;
+-    p->pme_worker_curr = curr_ref;
+-    p->pme_worker_mvs = mvs;
+-    p->pme_worker_n_mvs = n_mvs;
+-    p->pme_worker_submitted_ms = get_time_ms();
+-    p->pme_worker_discard = 0;
+-    p->pme_worker_done = 0;
+-    p->pme_async_pair = 1;
+-    p->pme_worker_active = 1;
+-    p->pme_worker_pending = 1;
+-    pthread_cond_signal(&p->pme_worker_start_cond);
++
++    struct pme_scheduler_job *job = &p->jobs[slot];
++    *job = (struct pme_scheduler_job){
++        .state = PME_JOB_QUEUED,
++        .output_kind = PME_OUTPUT_PAIR,
++        .sequence = p->next_sequence++,
++        .prev = prev_ref,
++        .curr = curr_ref,
++        .mvs = mvs,
++        .n_mvs = n_mvs,
++        .submitted_ms = get_time_ms(),
++        .prev_pts = prev->pts,
++        .curr_pts = curr->pts,
++        .source = *source,
++    };
++    *source = (struct mp_frame){0};
++    const int tail = (p->output_head + p->output_count) % PME_SCHEDULER_CAPACITY;
++    p->output_order[tail] = slot;
++    p->output_count++;
++    pthread_cond_broadcast(&p->pme_worker_start_cond);
+     pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2463,23 +2614,66 @@
+ 
+-static enum pme_worker_result_state pme_worker_take_result(struct priv *p)
++static bool pme_queue_source(struct priv *p, struct mp_frame *source,
++                             enum pme_scheduler_output_kind kind)
+ {
+     if (!p->pme_worker_sync_initialized)
+-        return PME_WORKER_RESULT_NONE;
++        return false;
+     pthread_mutex_lock(&p->pme_worker_mutex);
+-    if (!p->pme_async_pair) {
+-        pthread_mutex_unlock(&p->pme_worker_mutex);
+-        return PME_WORKER_RESULT_NONE;
+-    }
+-    if (!p->pme_worker_done) {
++    const int slot = pme_find_free_job_locked(p);
++    if (slot < 0 || p->output_count >= PME_SCHEDULER_CAPACITY ||
++        p->input_barrier || p->pme_worker_shutdown) {
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+-        return PME_WORKER_RESULT_PENDING;
++        return false;
+     }
+-    const bool ready = !p->pme_worker_discard;
+-    p->pme_worker_done = 0;
+-    p->pme_async_pair = 0;
++    p->jobs[slot] = (struct pme_scheduler_job){
++        .state = PME_JOB_READY,
++        .output_kind = kind,
++        .sequence = p->next_sequence++,
++        .source = *source,
++    };
++    *source = (struct mp_frame){0};
++    const int tail = (p->output_head + p->output_count) % PME_SCHEDULER_CAPACITY;
++    p->output_order[tail] = slot;
++    p->output_count++;
++    if (kind == PME_OUTPUT_SIGNAL)
++        p->input_barrier = 1;
+     pthread_mutex_unlock(&p->pme_worker_mutex);
+-    return ready ? PME_WORKER_RESULT_READY : PME_WORKER_RESULT_DISCARDED;
++    return true;
+ }
+ 
+-static bool pme_worker_busy(struct priv *p)
++static void pme_publish_job_metrics_locked(struct priv *p, struct mp_filter *f,
++                                          struct pme_scheduler_job *job)
++{
++    if (job->metrics_published)
++        return;
++    p->last_pme_success = job->metrics.pme_success;
++    p->last_frame_generated = false;
++    p->last_inference_ms = job->metrics.inference_ms;
++    p->preprocessing_ms = job->metrics.preprocessing_ms;
++    p->flow_preparation_ms = job->metrics.flow_preparation_ms;
++    p->gpu_upload_ms = job->metrics.gpu_upload_ms;
++    p->vulkan_dispatch_ms = job->metrics.vulkan_dispatch_ms;
++    p->tensor_copy_ms = job->metrics.tensor_copy_ms;
++    p->reconstruction_ms = job->metrics.reconstruction_ms;
++    p->pipeline_ms = job->metrics.pipeline_ms;
++    record_inference_sample(p, job->metrics.inference_ms);
++
++    if (job->interp && job->success) {
++        if (record_deadline_miss(p, f, job->submitted_ms,
++                                 job->prev_pts, job->curr_pts)) {
++            job->success = false;
++            p->last_pme_success = false;
++            mp_image_unrefp(&job->interp);
++        } else if (p->neural_probe_pending) {
++            p->neural_probe_pending = false;
++            p->neural_bypass_until_ms = 0.0;
++            MP_INFO(f, "PME: Neural recovery probe met its frame deadline; resuming Neural output\n");
++        }
++    } else if (p->neural_probe_pending) {
++        start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
++    }
++    job->metrics_published = true;
++    publish_pme_stats_locked(p);
++}
++
++static bool pme_scheduler_emit(struct priv *p, struct mp_filter *f)
+ {
+@@ -2488,5 +2682,40 @@
+     pthread_mutex_lock(&p->pme_worker_mutex);
+-    const bool busy = p->pme_worker_active || p->pme_worker_pending;
++    const int slot = pme_output_head_locked(p);
++    if (slot < 0) {
++        pthread_mutex_unlock(&p->pme_worker_mutex);
++        return false;
++    }
++    struct pme_scheduler_job *job = &p->jobs[slot];
++    if (job->state != PME_JOB_READY) {
++        pthread_mutex_unlock(&p->pme_worker_mutex);
++        return false;
++    }
++
++    if (job->output_kind == PME_OUTPUT_PAIR && !job->midpoint_emitted) {
++        pme_publish_job_metrics_locked(p, f, job);
++        if (job->interp && job->success) {
++            struct mp_image *interp = job->interp;
++            job->interp = NULL;
++            job->midpoint_emitted = true;
++            p->last_frame_generated = true;
++            p->generated_frames++;
++            publish_pme_stats_locked(p);
++            pthread_mutex_unlock(&p->pme_worker_mutex);
++            mp_pin_in_write(f->ppins[1], MAKE_FRAME(MP_FRAME_VIDEO, interp));
++            mp_filter_internal_mark_progress(f);
++            return true;
++        }
++    }
++
++    struct mp_frame source = job->source;
++    job->source = (struct mp_frame){0};
++    const bool was_signal = job->output_kind == PME_OUTPUT_SIGNAL;
++    pme_scheduler_job_clear(job);
++    pme_output_pop_locked(p);
++    if (was_signal)
++        p->input_barrier = 0;
+     pthread_mutex_unlock(&p->pme_worker_mutex);
+-    return busy;
++    mp_pin_in_write(f->ppins[1], source);
++    mp_filter_internal_mark_progress(f);
++    return true;
+ }
+@@ -2498,20 +2727,19 @@
+     pthread_mutex_lock(&p->pme_worker_mutex);
+-    const bool busy = p->pme_worker_active || p->pme_worker_pending;
+-    if (busy) {
+-        p->pme_worker_discard = 1;
+-        p->pme_async_pair = 0;
+-    } else {
+-        p->pme_worker_pending = 0;
+-        p->pme_worker_done = 0;
+-        p->pme_worker_discard = 0;
+-        p->pme_async_pair = 0;
+-        mp_image_unrefp(&p->interp);
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+-        p->neural_bypass_until_ms = 0.0;
+-        p->neural_probe_pending = false;
+-        p->recent_deadline_miss_count = 0;
+-        p->recent_deadline_miss_next = 0;
+-        publish_pme_stats_locked(p);
++    bool busy = false;
++    for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++) {
++        struct pme_scheduler_job *job = &p->jobs[i];
++        if (job->state == PME_JOB_RUNNING) {
++            job->discard = true;
++            busy = true;
++        } else {
++            pme_scheduler_job_clear(job);
++        }
+     }
++    p->output_head = 0;
++    p->output_count = 0;
++    p->input_barrier = 0;
++    p->reset_drain = busy;
++    if (!busy)
++        reset_pme_stats_locked(p);
++    pthread_cond_broadcast(&p->pme_worker_start_cond);
+     pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2592,40 +2820,28 @@
+ 
+-    if (p->state == STATE_HAVE_INTERP) {
+-        const enum pme_worker_result_state worker_result = pme_worker_take_result(p);
+-        if (worker_result == PME_WORKER_RESULT_PENDING)
+-            return;
+-        if (worker_result == PME_WORKER_RESULT_DISCARDED) {
+-            mp_image_unrefp(&p->interp);
+-            mp_pin_in_write(f->ppins[1], p->stored_curr);
+-            p->stored_curr = (struct mp_frame){0};
+-            p->state = STATE_NEED_INPUT;
+-            mp_filter_internal_mark_progress(f);
+-            return;
+-        }
+-        struct mp_image *out = p->interp;
+-        p->interp = NULL;
+-        if (!out || (p->opts->require_neural && !p->last_pme_success)) {
+-            mp_image_unrefp(&out);
+-            p->last_frame_generated = false;
+-            mp_pin_in_write(f->ppins[1], p->stored_curr);
+-            p->stored_curr = (struct mp_frame){0};
+-            p->state = STATE_NEED_INPUT;
+-            mp_filter_internal_mark_progress(f);
+-            return;
+-        }
+-        p->last_frame_generated = p->last_pme_success;
+-        if (p->last_frame_generated)
+-            p->generated_frames++;
+-        mp_pin_in_write(f->ppins[1], MAKE_FRAME(MP_FRAME_VIDEO, out));
+-        p->state = STATE_HAVE_CURR;
+-        mp_filter_internal_mark_progress(f);
++    if (pme_scheduler_emit(p, f))
+         return;
+-    }
+ 
+-    if (p->state == STATE_HAVE_CURR) {
+-        mp_pin_in_write(f->ppins[1], p->stored_curr);
+-        p->stored_curr = (struct mp_frame){0};
+-        p->state = STATE_NEED_INPUT;
+-        return;
++    int queued_outputs = 0;
++    int free_slot = -1;
++    bool input_barrier = false;
++    bool reset_draining = false;
++    bool worker_busy = false;
++    if (p->pme_worker_sync_initialized) {
++        pthread_mutex_lock(&p->pme_worker_mutex);
++        queued_outputs = p->output_count;
++        free_slot = pme_find_free_job_locked(p);
++        input_barrier = p->input_barrier;
++        worker_busy = pme_worker_busy_locked(p);
++        reset_draining = p->reset_drain;
++        if (reset_draining && !worker_busy) {
++            p->reset_drain = 0;
++            reset_draining = false;
++        }
++        pthread_mutex_unlock(&p->pme_worker_mutex);
+     }
++    if (input_barrier || queued_outputs >= PME_SCHEDULER_CAPACITY ||
++        (queued_outputs > 0 && free_slot < 0) ||
++        (p->pme_worker_sync_initialized && queued_outputs == 0 &&
++         free_slot < 0 && !reset_draining))
++        return;
+ 
+@@ -2637,4 +2853,9 @@
+         mp_image_unrefp(&p->prev);
+-        p->state = STATE_NEED_INPUT;
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SIGNAL)) {
++            mp_filter_internal_mark_progress(f);
++        } else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2642,3 +2863,9 @@
+     if (frame.type != MP_FRAME_VIDEO) {
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE)) {
++            mp_filter_internal_mark_progress(f);
++        } else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2648,6 +2875,5 @@
+     p->frame_count++;
+-    // A reset can arrive while the inference worker is draining an old pair.
+-    // Keep the new stream on its source cadence until that worker releases the
+-    // shared model/workspace, then resume from the newest decoded frame.
+-    if (pme_worker_busy(p)) {
++    // A reset can arrive while old provider sessions are still running. Do not
++    // reuse their slots or cross the reset boundary with a new pair.
++    if (reset_draining && worker_busy) {
+         mp_image_unrefp(&p->prev);
+@@ -2655,2 +2881,3 @@
+         mp_pin_in_write(f->ppins[1], frame);
++        mp_filter_internal_mark_progress(f);
+         return;
+@@ -2661,7 +2888,11 @@
+     if (!supported) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2674,7 +2905,11 @@
+         p->prev->imgfmt != mpi->imgfmt || (p->prev->fields & MP_IMGFIELD_INTERLACED)) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2683,7 +2918,19 @@
+     if (frame_pair_looks_like_scene_cut(p->prev, mpi)) {
+-        p->scene_cut_bypasses++;
+-        p->last_pme_success = false;
++        if (p->pme_worker_sync_initialized) {
++            pthread_mutex_lock(&p->pme_worker_mutex);
++            p->scene_cut_bypasses++;
++            publish_pme_stats_locked(p);
++            pthread_mutex_unlock(&p->pme_worker_mutex);
++        } else {
++            p->scene_cut_bypasses++;
++        }
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2695,7 +2942,11 @@
+     if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2716,6 +2967,11 @@
+     if (n_mvs <= 0) {
+-        p->last_pme_success = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+@@ -2726,25 +2982,44 @@
+     // cooldown; a successful deadline probe re-enables Neural processing.
+-    if (p->neural_bypass_until_ms > get_time_ms()) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+-        p->deadline_bypass_frames++;
+-        mp_image_unrefp(&p->prev);
+-        p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
+-        return;
++    bool neural_bypass = false;
++    if (p->pme_worker_sync_initialized) {
++        pthread_mutex_lock(&p->pme_worker_mutex);
++        neural_bypass = p->neural_bypass_until_ms > get_time_ms();
++        if (neural_bypass) {
++            p->deadline_bypass_frames++;
++            publish_pme_stats_locked(p);
++        }
++        pthread_mutex_unlock(&p->pme_worker_mutex);
+     }
+-
+-    if (!pme_submit_pair(p, f, p->prev, mpi, mvs, n_mvs)) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
++    if (neural_bypass) {
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+-        mp_pin_in_write(f->ppins[1], frame);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
+         return;
+     }
++
++    const bool submitted = pme_submit_pair(p, f, p->prev, mpi, mvs, n_mvs,
++                                           &frame);
+     mp_image_unrefp(&p->prev);
+     p->prev = mp_image_new_ref(mpi);
+-    p->stored_curr = frame;
+-    p->state = STATE_HAVE_INTERP;
+-    mp_filter_internal_mark_progress(f);
++    if (submitted) {
++        mp_filter_internal_mark_progress(f);
++        return;
++    }
++    if (queued_outputs > 0 &&
++        pme_queue_source(p, &frame, PME_OUTPUT_SOURCE)) {
++        mp_filter_internal_mark_progress(f);
++        return;
++    }
++    if (frame.type != MP_FRAME_NONE) {
++        // If no scheduler slot is available and no earlier output is queued,
++        // keep source cadence moving instead of losing the decoded frame.
++        mp_pin_in_write(f->ppins[1], frame);
++        mp_filter_internal_mark_progress(f);
++    }
+ }
+@@ -2756,14 +3031,4 @@
+     mp_image_unrefp(&p->prev);
+-    if (!worker_busy)
+-        mp_image_unrefp(&p->interp);
+-    mp_frame_unref(&p->stored_curr);
+-    p->state = STATE_NEED_INPUT;
+-    if (!worker_busy) {
+-        p->last_pme_success = false;
+-        p->last_frame_generated = false;
+-        p->recent_deadline_miss_count = 0;
+-        p->recent_deadline_miss_next = 0;
+-        p->neural_bypass_until_ms = 0.0;
+-        p->neural_probe_pending = false;
+-    }
++    if (!p->pme_worker_sync_initialized && !worker_busy)
++        reset_pme_stats_locked(p);
+ }
+@@ -2780,19 +3045,25 @@
+     }
+-    if (p->pme_worker_thread_created) {
++    if (p->pme_worker_sync_initialized) {
+         pthread_mutex_lock(&p->pme_worker_mutex);
+         p->pme_worker_shutdown = 1;
+-        p->pme_worker_discard = 1;
++        for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++)
++            p->jobs[i].discard = true;
+         pthread_cond_broadcast(&p->pme_worker_start_cond);
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+-        pthread_join(p->pme_worker_thread, NULL);
+-        p->pme_worker_thread_created = 0;
++        for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++) {
++            struct pme_worker_context *ctx = &p->worker_contexts[i];
++            if (ctx->thread_created) {
++                pthread_join(ctx->thread, NULL);
++                ctx->thread_created = 0;
++            }
++        }
++    }
++    for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++) {
++        pme_scheduler_job_clear(&p->jobs[i]);
++        free_workspace(&p->worker_contexts[i].workspace);
+     }
+-    mp_image_unrefp(&p->pme_worker_prev);
+-    mp_image_unrefp(&p->pme_worker_curr);
+     mp_image_unrefp(&p->prev);
+-    mp_image_unrefp(&p->interp);
+-    mp_frame_unref(&p->stored_curr);
+-    free_workspace(p);
+     vk_cleanup(&p->vk);
+     pme_cleanup(&p->pme);
++    pme_cleanup(&p->pme_secondary);
+     if (p->pme_worker_sync_initialized) {
+@@ -2802,2 +3073,6 @@
+     }
++    if (p->vk_mutex_initialized) {
++        pthread_mutex_destroy(&p->vk_mutex);
++        p->vk_mutex_initialized = 0;
++    }
+     if (p->pme_init_sync_initialized) {
+@@ -2822,4 +3097,6 @@
+         pthread_mutex_lock(&p->pme_worker_mutex);
+-        worker_busy = p->pme_worker_active || p->pme_worker_pending;
+-        worker_discard = p->pme_worker_discard;
++        worker_busy = pme_worker_busy_locked(p);
++        worker_discard = p->reset_drain;
++        for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++)
++            worker_discard |= p->jobs[i].discard;
+         if (!worker_busy)
+@@ -2836,16 +3113,22 @@
+     }
+-    const char *provider = stats.last_pme_success ? p->pme.provider_name :
++    const char *provider = ready && stats.last_pme_success ? p->pme.provider_name :
+                            (ready ? mp_tprintf(128, "%s-ready", p->pme.provider_name) :
+                             (checked ? "unavailable" : "initializing"));
++    const char *provider_vendor = ready ? p->pme.provider_vendor : "";
++    const pme_device_kind device_kind = ready ? p->pme.device_kind : PME_DEVICE_ANY;
+     mp_tags_set_str(tags, "provider", provider);
+-    mp_tags_set_str(tags, "provider-vendor", p->pme.provider_vendor);
++    mp_tags_set_str(tags, "provider-vendor", provider_vendor);
+     mp_tags_set_str(tags, "power-mode",
+-                    strcmp(p->pme.provider_name, "QNNExecutionProvider") == 0
++                    ready && strcmp(p->pme.provider_name, "QNNExecutionProvider") == 0
+                         ? htp_mode_for_preset(p->opts->preset)
+                         : "not-applicable");
+-    mp_tags_set_str(tags, "device-kind", p->pme.device_kind == PME_DEVICE_NPU ? "npu" :
+-                    p->pme.device_kind == PME_DEVICE_GPU ? "gpu" :
+-                    p->pme.device_kind == PME_DEVICE_CPU ? "cpu" : "unknown");
++    mp_tags_set_str(tags, "device-kind", device_kind == PME_DEVICE_NPU ? "npu" :
++                    device_kind == PME_DEVICE_GPU ? "gpu" :
++                    device_kind == PME_DEVICE_CPU ? "cpu" : "unknown");
+     mp_tags_set_str(tags, "active", stats.last_frame_generated ? "yes" : "no");
+-    mp_tags_set_str(tags, "gpu", p->vk.ready ? p->vk.device_name : "cpu");
++#ifdef PLEZY_HAVE_PME_VULKAN
++    mp_tags_set_str(tags, "gpu", checked && ready && p->vk.ready ? p->vk.device_name : "cpu");
++#else
++    mp_tags_set_str(tags, "gpu", "cpu");
++#endif
+     mp_tags_set_str(tags, "inference-ms", mp_tprintf(32, "%.3f", stats.last_inference_ms));
+@@ -2902,4 +3185,10 @@
+     p->filter = f;
+-    p->model_downscale_sws = mp_sws_alloc(p);
+-    p->source_upscale_sws = mp_sws_alloc(p);
++    for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++) {
++        struct pme_workspace *ws = &p->worker_contexts[i].workspace;
++        ws->model_downscale_sws = mp_sws_alloc(p);
++        ws->source_upscale_sws = mp_sws_alloc(p);
++    }
++    p->vk_mutex_initialized = pthread_mutex_init(&p->vk_mutex, NULL) == 0;
++    if (!p->vk_mutex_initialized)
++        MP_WARN(f, "PME: Vulkan scheduling mutex unavailable; disabling parallel sessions\n");
+     p->pme_init_sync_initialized = pthread_mutex_init(&p->pme_init_mutex, NULL) == 0;
+@@ -2908,4 +3197,2 @@
+ 
+-    p->state = STATE_NEED_INPUT;
+-
+     // Timing log interval: 30 = log every 30th frame (~1/s, normal use)
