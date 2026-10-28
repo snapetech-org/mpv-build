@@ -202,7 +202,7 @@ new file mode 100644
 index 0000000..2b94452
 --- /dev/null
 +++ b/player/plezy_audio_tap.c
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,176 @@
 +/* SPDX-License-Identifier: LGPL-2.1-or-later
 + * Read-only, bounded SPSC analysis transport. The playback thread only copies
 + * samples; it never waits, allocates, invokes application code or calls Dart.
@@ -237,6 +237,9 @@ index 0000000..2b94452
 +    atomic_init(&tap->dropped_frames, 0);
 +    atomic_init(&tap->status, 0);
 +    if (!atomic_is_lock_free(&tap->read_index) ||
++        !atomic_is_lock_free(&tap->write_index) ||
++        !atomic_is_lock_free(&tap->generation) ||
++        !atomic_is_lock_free(&tap->dropped_frames) ||
 +        !atomic_is_lock_free(&tap->status)) {
 +        free(tap);
 +        return NULL;
