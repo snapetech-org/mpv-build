@@ -530,12 +530,13 @@ jobs:
     permissions:
       contents: read
     # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
-    # The checkout, build outputs, and Colima VM data use the task-specific NFS
-    # workspace so large native builds do not fill the Mac's local disk.
+    # Its run-scoped source workspace and Colima data live on the task-specific
+    # gamespool0 share so the 200 GiB VM disk does not compete for APFS space.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
     env:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      BUILD_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      RUN_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
+      BUILD_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/workspace
       COLIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima
       COLIMA_CACHE_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
       COLIMA_PROFILE: mpv-${{ github.run_id }}-${{ github.run_attempt }}
@@ -557,12 +558,18 @@ jobs:
             /sbin/mount | /usr/bin/grep -F 'plezyng-native-build' || true
             exit 1
           fi
-          probe_dir="$(/usr/bin/mktemp -d "${storage_root}/.gha-mount-probe.XXXXXX")"
+          runs_root="${storage_root}/runs"
+          test -d "$runs_root" || { echo "missing pre-provisioned NFS run directory: $runs_root" >&2; exit 1; }
+          test -w "$runs_root" || { echo "NFS run directory is not writable as $(id -u):$(id -g): $runs_root" >&2; exit 1; }
+          probe_dir="$(/usr/bin/mktemp -d "${runs_root}/.gha-mount-probe.XXXXXX")"
           cleanup_probe() { /bin/rm -rf "$probe_dir"; }
           trap cleanup_probe EXIT
-          probe_content="${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          printf '%s\n' "$probe_content" > "$probe_dir/probe"
-          test "$(/bin/cat "$probe_dir/probe")" = "$probe_content"
+          /bin/dd if=/dev/urandom of="$probe_dir/probe" bs=1048576 count=1 2>/dev/null
+          probe_size="$(/usr/bin/stat -f %z "$probe_dir/probe")"
+          write_sha="$(/usr/bin/shasum -a 256 "$probe_dir/probe" | /usr/bin/awk '{print $1}')"
+          read_sha="$(/bin/cat "$probe_dir/probe" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+          test "$probe_size" = 1048576 || { echo "NFS write probe size mismatch: $probe_size" >&2; exit 1; }
+          test "$read_sha" = "$write_sha" || { echo "NFS write probe hash mismatch" >&2; exit 1; }
           command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
           command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
           python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
@@ -576,11 +583,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$BUILD_ROOT" in
+          case "$RUN_ROOT" in
             /Volumes/plezyng-native-build-kspld0/runs/*) ;;
-            *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
+            *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
           esac
-          rm -rf "$BUILD_ROOT"
+          umask 077
+          rm -rf "$RUN_ROOT"
           mkdir -p "$BUILD_ROOT/src" "$COLIMA_HOME" "$COLIMA_CACHE_HOME" "$DOCKER_CONFIG"
           rsync -a --delete "$GITHUB_WORKSPACE/" "$BUILD_ROOT/src/"
 
@@ -593,7 +601,7 @@ jobs:
           colima --version
           docker --version
           colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 200 \
-            --mount "$NFS_STORAGE_ROOT":w
+            --mount "$BUILD_ROOT":w
           for attempt in $(seq 1 36); do
             if docker info >/dev/null 2>&1; then
               docker info --format '{{.OSType}}/{{.Architecture}}'
@@ -636,12 +644,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$BUILD_ROOT" in
+          case "$RUN_ROOT" in
             /Volumes/plezyng-native-build-kspld0/runs/*) ;;
-            *) echo "unexpected build workspace path: $BUILD_ROOT" >&2; exit 1 ;;
+            *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
           esac
           colima stop "$COLIMA_PROFILE" || true
-          rm -rf "$BUILD_ROOT"
+          rm -rf "$RUN_ROOT"
 
   build-windows:
     name: Build windows ${{ matrix.arch }}
