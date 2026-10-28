@@ -86,6 +86,9 @@ jobs:
       - name: Build libmpv-android (${{ matrix.abi }})
         run: bash platforms/android/build.sh --arch ${{ matrix.arch }}
 
+      - name: Require Plezy ordered PCM ABI (${{ matrix.abi }})
+        run: python3 scripts/check_plezy_audio_tap_export.py "platforms/android/prefix/${{ matrix.abi }}/lib/libmpv.so"
+
       # package.sh emits the unkeyed name (libmpv-android-<abi>.tar.gz): the
       # content key covers the published driver, which this leg cannot know is
       # final yet. The build leg uploads it as-is and record-platform renames
@@ -166,6 +169,17 @@ jobs:
         run: |
           bash scripts/test_build_date.sh dist/release/mpv-android.aar \
             dist/release/mpv-android-{arm64-v8a,armeabi-v7a,x86,x86_64}-symbols.zip
+
+      - name: Require Plezy ordered PCM ABI in the AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="$(mktemp -d)"
+          trap 'rm -rf "$staging"' EXIT
+          unzip -q dist/release/mpv-android.aar 'jni/*/libmpv.so' -d "$staging"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            python3 scripts/check_plezy_audio_tap_export.py "$staging/jni/$abi/libmpv.so"
+          done
 
       - name: List the AAR and its symbols
         run: |
