@@ -1,0 +1,417 @@
+--- a/filters/filter.h
++++ b/filters/filter.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include <stdbool.h>
++#include <stdint.h>
+ #include <libavutil/hwcontext.h>
+ 
+ #include "frame.h"
+@@ -395,6 +396,19 @@
+ // Run a command on the filter. Returns success. For libavfilter.
+ bool mp_filter_command(struct mp_filter *f, struct mp_filter_command *cmd);
+ 
++// Display-scheduler decision for the most recently presented source frame.
++// source_pts identifies the media frame whose following interval was scheduled.
++struct mp_display_sync_feedback {
++    bool valid;
++    double source_pts;
++    int num_vsyncs;
++    double vsync_interval;
++    double playback_speed;
++    double error_before;
++    double error_after;
++    uint64_t serial;
++};
++
+ // Specific information about a sub-tree in a filter graph. Currently, this is
+ // mostly used to give filters access to VO mechanisms and capabilities.
+ struct mp_stream_info {
+@@ -403,6 +417,8 @@
+     double (*get_display_fps)(struct mp_stream_info *i);
+     double (*get_display_sync_interval)(struct mp_stream_info *i);
+     double (*get_playback_speed)(struct mp_stream_info *i);
++    bool (*get_display_sync_feedback)(struct mp_stream_info *i,
++                                      struct mp_display_sync_feedback *feedback);
+     void   (*get_display_res)(struct mp_stream_info *i, int *res);
+ 
+     struct mp_hwdec_devices *hwdec_devs;
+
+--- a/filters/f_output_chain.c
++++ b/filters/f_output_chain.c
+@@ -45,6 +45,7 @@
+     struct vo *vo;
+     struct ao *ao;
+     double video_speed;
++    struct mp_display_sync_feedback display_sync_feedback;
+ 
+     struct mp_output_chain public;
+ };
+@@ -379,6 +380,16 @@
+     return p->video_speed;
+ }
+ 
++static bool get_display_sync_feedback(
++    struct mp_stream_info *i, struct mp_display_sync_feedback *feedback)
++{
++    struct chain *p = i->priv;
++    if (!p->display_sync_feedback.valid)
++        return false;
++    *feedback = p->display_sync_feedback;
++    return true;
++}
++
+ static void get_display_res(struct mp_stream_info *i, int *res)
+ {
+     struct chain *p = i->priv;
+@@ -403,6 +414,15 @@
+ {
+     struct chain *p = c->f->priv;
+     p->video_speed = speed;
++}
++
++void mp_output_chain_set_display_sync_feedback(
++    struct mp_output_chain *c, const struct mp_display_sync_feedback *feedback)
++{
++    struct chain *p = c->f->priv;
++    const uint64_t serial = p->display_sync_feedback.serial + 1;
++    p->display_sync_feedback = *feedback;
++    p->display_sync_feedback.serial = serial;
+ }
+ 
+ void mp_output_chain_set_ao(struct mp_output_chain *c, struct ao *ao)
+@@ -678,6 +698,7 @@
+     p->stream_info.get_display_fps = get_display_fps;
+     p->stream_info.get_display_sync_interval = get_display_sync_interval;
+     p->stream_info.get_playback_speed = get_playback_speed;
++    p->stream_info.get_display_sync_feedback = get_display_sync_feedback;
+     p->stream_info.get_display_res = get_display_res;
+ 
+     p->f->stream_info = &p->stream_info;
+
+--- a/filters/f_output_chain.h
++++ b/filters/f_output_chain.h
+@@ -57,6 +57,10 @@
+ // Effective video playback speed, including display-sync correction.
+ void mp_output_chain_set_video_speed(struct mp_output_chain *p, double speed);
+ 
++// Publish the last source-frame decision from MPV's display-sync scheduler.
++void mp_output_chain_set_display_sync_feedback(
++    struct mp_output_chain *p, const struct mp_display_sync_feedback *feedback);
++
+ // Set the AO. The AO format will be used to determine the filter chain output.
+ // The API user may be asked to update the AO midstream if ao_needs_update is
+ // set.
+
+--- a/player/video.c
++++ b/player/video.c
+@@ -807,6 +807,29 @@
+     }
+ }
+ 
++static void publish_display_sync_feedback(
++    struct MPContext *mpctx, bool valid, double source_pts, int num_vsyncs,
++    double vsync_interval, double playback_speed, double error_before,
++    double error_after)
++{
++    if (!mpctx->vo_chain || !mpctx->vo_chain->filter)
++        return;
++    const struct mp_display_sync_feedback feedback = {
++        .valid = valid && isfinite(source_pts) && source_pts != MP_NOPTS_VALUE &&
++                 num_vsyncs >= 0 && isfinite(vsync_interval) &&
++                 vsync_interval > 0 && isfinite(playback_speed) &&
++                 playback_speed > 0 && isfinite(error_before) &&
++                 isfinite(error_after),
++        .source_pts = source_pts,
++        .num_vsyncs = num_vsyncs,
++        .vsync_interval = vsync_interval,
++        .playback_speed = playback_speed,
++        .error_before = error_before,
++        .error_after = error_after,
++    };
++    mp_output_chain_set_display_sync_feedback(mpctx->vo_chain->filter, &feedback);
++}
++
+ // Manipulate frame timing for display sync, or do nothing for normal timing.
+ static void handle_display_sync_frame(struct MPContext *mpctx,
+                                       struct vo_frame *frame)
+@@ -822,8 +845,10 @@
+ 
+     mpctx->display_sync_active = false;
+ 
+-    if (!VS_IS_DISP(mode) || !vo_is_visible(vo))
+-        return;
++    if (!VS_IS_DISP(mode) || !vo_is_visible(vo)) {
++        publish_display_sync_feedback(mpctx, false, 0, 0, 0, 0, 0, 0);
++        return;
++    }
+ 
+     bool resample = mode == VS_DISP_RESAMPLE || mode == VS_DISP_RESAMPLE_VDROP ||
+                     mode == VS_DISP_RESAMPLE_NONE;
+@@ -832,17 +857,23 @@
+                 mode == VS_DISP_TEMPO;
+     drop &= frame->can_drop;
+ 
+-    if (resample && using_spdif_passthrough(mpctx))
+-        return;
++    if (resample && using_spdif_passthrough(mpctx)) {
++        publish_display_sync_feedback(mpctx, false, 0, 0, 0, 0, 0, 0);
++        return;
++    }
+ 
+     double vsync = vo_get_vsync_interval(vo) / 1e9;
+-    if (vsync <= 0)
+-        return;
++    if (vsync <= 0) {
++        publish_display_sync_feedback(mpctx, false, 0, 0, 0, 0, 0, 0);
++        return;
++    }
+ 
+     double approx_duration = MPMAX(0, mpctx->past_frames[0].approx_duration);
+     double adjusted_duration = approx_duration / opts->playback_speed;
+-    if (adjusted_duration > 0.5)
+-        return;
++    if (adjusted_duration > 0.5) {
++        publish_display_sync_feedback(mpctx, false, 0, 0, 0, 0, 0, 0);
++        return;
++    }
+ 
+     mpctx->speed_factor_v = 1.0;
+     if (mode != VS_DISP_VDROP)
+@@ -939,6 +970,10 @@
+     // the playback speed while in the STATUS_SYNCING state.
+     if (mpctx->video_status != STATUS_SYNCING)
+         update_playback_speed(mpctx);
++
++    publish_display_sync_feedback(
++        mpctx, true, mpctx->past_frames[0].pts, num_vsyncs, vsync,
++        mpctx->video_speed, prev_error, mpctx->display_sync_error);
+ 
+     MP_STATS(mpctx, "value %f aspeed", mpctx->speed_factor_a - 1);
+     MP_STATS(mpctx, "value %f vspeed", mpctx->speed_factor_v - 1);
+
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1875,6 +1875,8 @@
+     bool neural_probe_pending;
+     int adaptive_phase_budget;
+     int configured_phase_budget;
++    bool display_phase_feedback_active;
++    uint64_t display_phase_feedback_serial;
+ };
+ 
+ struct priv {
+@@ -1907,12 +1909,14 @@
+ 
+     // Previous frame for interpolation
+     struct mp_image *prev;
+-    // Error diffuser for estimating display slots across source intervals.
+-    // The downstream display scheduler owns the final vsync decision.
++    // Slot error used by the nominal-grid fallback. MPV's display scheduler
++    // supplies the final slot count and error feedback once it has a match.
+     double display_phase_error;
+     double display_phase_fps;
+     double display_phase_speed;
+     bool display_phase_round_up;
++    bool display_phase_feedback_active;
++    uint64_t display_phase_feedback_serial;
+     int configured_phase_budget;
+     int adaptive_phase_budget;
+     unsigned int adaptive_phase_headroom_pairs;
+@@ -2462,6 +2466,24 @@
+     p->published_stats.neural_probe_pending = p->neural_probe_pending;
+     p->published_stats.adaptive_phase_budget = p->adaptive_phase_budget;
+     p->published_stats.configured_phase_budget = p->configured_phase_budget;
++    p->published_stats.display_phase_feedback_active =
++        p->display_phase_feedback_active;
++    p->published_stats.display_phase_feedback_serial =
++        p->display_phase_feedback_serial;
++}
++
++static void publish_display_phase_feedback(struct priv *p, bool active,
++                                           uint64_t serial)
++{
++    const bool lock_initialized = p->pme_worker_sync_initialized;
++    if (lock_initialized)
++        pthread_mutex_lock(&p->pme_worker_mutex);
++    p->display_phase_feedback_active = active;
++    p->display_phase_feedback_serial = serial;
++    p->published_stats.display_phase_feedback_active = active;
++    p->published_stats.display_phase_feedback_serial = serial;
++    if (lock_initialized)
++        pthread_mutex_unlock(&p->pme_worker_mutex);
+ }
+ 
+ static void reset_pme_stats_locked(struct priv *p)
+@@ -2763,6 +2785,7 @@
+                                   const struct mp_image *curr,
+                                   struct pme_output_phase *phases)
+ {
++    publish_display_phase_feedback(p, false, 0);
+     const int configured_phase_budget = pme_requested_phase_budget(p->opts);
+     int phase_budget = configured_phase_budget;
+     if (p->pme_worker_sync_initialized) {
+@@ -2792,6 +2815,9 @@
+         display_fps = info->get_display_fps(info);
+     const double playback_speed = info && info->get_playback_speed ?
+         info->get_playback_speed(info) : 1.0;
++    struct mp_display_sync_feedback feedback = {0};
++    const bool has_feedback = info && info->get_display_sync_feedback &&
++        info->get_display_sync_feedback(info, &feedback);
+ 
+     if (!isfinite(playback_speed) || playback_speed <= 0.0) {
+         p->display_phase_error = 0.0;
+@@ -2833,26 +2859,50 @@
+         p->display_phase_round_up = false;
+     }
+ 
+-    // Match the display-sync scheduler's display interval and effective video
+-    // speed. AV-sync drop/repeat corrections are applied later in mpv.
++    // When MPV has already scheduled the preceding source frame, use its exact
++    // display-slot decision for this pair. That includes any A/V drop/repeat
++    // correction applied by the player. Startup and reset pairs retain the
++    // deterministic nominal-grid fallback.
++    const bool feedback_matches_pair = has_feedback && feedback.valid &&
++        isfinite(feedback.source_pts) &&
++        fabs(feedback.source_pts - prev->pts) <= 0.00001 &&
++        feedback.num_vsyncs >= 0 &&
++        isfinite(feedback.vsync_interval) &&
++        fabs(feedback.vsync_interval - 1.0 / display_fps) <=
++            MPMAX(0.0001, display_interval * 0.02) &&
++        isfinite(feedback.playback_speed) &&
++        fabs(feedback.playback_speed - playback_speed) <= 0.005 &&
++        isfinite(feedback.error_before) && isfinite(feedback.error_after);
+     const double fractional_slots = source_duration / playback_speed * display_fps +
+-                                   p->display_phase_error;
+-    if (!isfinite(fractional_slots) || fractional_slots < 0.5 ||
+-        fractional_slots > 1000000.0) {
+-        p->display_phase_error = 0.0;
+-        p->display_phase_round_up = false;
+-        return 0;
+-    }
+-    const int target_slots = (int)llrint(fractional_slots);
+-    p->display_phase_error = fractional_slots - target_slots;
++                                    p->display_phase_error;
++    int target_slots;
++    const bool use_feedback =
++        feedback_matches_pair && feedback.num_vsyncs <= 1000000;
++    publish_display_phase_feedback(p, use_feedback,
++                                   use_feedback ? feedback.serial : 0);
++    if (use_feedback) {
++        target_slots = feedback.num_vsyncs;
++        p->display_phase_error =
++            feedback.error_after / feedback.vsync_interval;
++    } else {
++        if (!isfinite(fractional_slots) || fractional_slots < 0.5 ||
++            fractional_slots > 1000000.0) {
++            p->display_phase_error = 0.0;
++            p->display_phase_round_up = false;
++            return 0;
++        }
++        target_slots = (int)llrint(fractional_slots);
++        p->display_phase_error = fractional_slots - target_slots;
++    }
+     if (target_slots <= 1)
+         return 0;
+ 
+-    // Keep generated phases on the error-diffused per-pair slot grid. Preset
+-    // budgets choose a subset; they must not stretch fewer phases evenly
+-    // across the source interval, which would move them off that nominal grid.
++    // Preset budgets choose a subset of display slots. With matching MPV
++    // feedback their timestamps follow the actual slot edges; otherwise the
++    // error-diffused nominal grid is used.
+     const int count = MPMIN(target_slots - 1, phase_budget);
+     int previous_slot = 0;
++    int planned_count = 0;
+     for (int i = 0; i < count; i++) {
+         const double ideal_slot = (double)(i + 1) * target_slots / (count + 1);
+         const double lower_slot = floor(ideal_slot);
+@@ -2864,22 +2914,34 @@
+             p->display_phase_round_up = !p->display_phase_round_up;
+         slot = MPCLAMP(slot, previous_slot + 1, target_slots - (count - i));
+         previous_slot = slot;
+-        const double alpha = (double)slot / target_slots;
+-        phases[i] = (struct pme_output_phase){
+-            .alpha = alpha,
+-            .pts = prev->pts + alpha * source_duration,
++        double phase_pts;
++        if (use_feedback) {
++            // MPV's error is in wall-clock seconds; convert each actual display
++            // slot edge back to media PTS using the playback speed.
++            const double slot_time = slot * feedback.vsync_interval -
++                                     feedback.error_before;
++            phase_pts = prev->pts + slot_time * feedback.playback_speed;
++            if (!isfinite(phase_pts) || phase_pts <= prev->pts ||
++                phase_pts >= curr->pts)
++                continue;
++        } else {
++            phase_pts = prev->pts + source_duration * slot / target_slots;
++        }
++        phases[planned_count++] = (struct pme_output_phase){
++            .alpha = (phase_pts - prev->pts) / source_duration,
++            .pts = phase_pts,
+         };
+     }
+ 
+-    for (int i = 0; i < count; i++) {
+-        const double next_pts = i + 1 < count ? phases[i + 1].pts : curr->pts;
++    for (int i = 0; i < planned_count; i++) {
++        const double next_pts = i + 1 < planned_count ? phases[i + 1].pts : curr->pts;
+         phases[i].duration = next_pts - phases[i].pts;
+         if (!isfinite(phases[i].alpha) || phases[i].alpha <= 0.0 ||
+             phases[i].alpha >= 1.0 || !isfinite(phases[i].duration) ||
+             phases[i].duration <= 0.0)
+             return 0;
+     }
+-    return count;
++    return planned_count;
+ }
+ 
+ static bool pme_submit_pair(struct priv *p, struct mp_filter *f,
+@@ -3242,6 +3304,7 @@
+ 
+     struct mp_frame frame = mp_pin_out_read(f->ppins[0]);
+     if (mp_frame_is_signaling(frame)) {
++        publish_display_phase_feedback(p, false, 0);
+         mp_image_unrefp(&p->prev);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+@@ -3283,6 +3346,7 @@
+                            mpi->imgfmt == IMGFMT_420P &&
+                            !(mpi->fields & MP_IMGFIELD_INTERLACED);
+     if (!supported) {
++        publish_display_phase_feedback(p, false, 0);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
+@@ -3302,6 +3366,7 @@
+     // Stream metadata can claim 24/30 fps while individual timestamps are
+     // variable. Preserve source cadence and restart slot diffusion on a break.
+     if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
++        publish_display_phase_feedback(p, false, 0);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
+@@ -3433,6 +3498,7 @@
+ static void f_reset(struct mp_filter *f)
+ {
+     struct priv *p = f->priv;
++    publish_display_phase_feedback(p, false, 0);
+     p->display_phase_error = 0.0;
+     p->display_phase_fps = 0.0;
+     p->display_phase_speed = 0.0;
+@@ -3565,6 +3631,12 @@
+                     mp_tprintf(32, "%d", stats.adaptive_phase_budget));
+     mp_tags_set_str(tags, "phase-budget-configured",
+                     mp_tprintf(32, "%d", stats.configured_phase_budget));
++    mp_tags_set_str(tags, "phase-timing-source",
++                    stats.display_phase_feedback_active ? "mpv-display-sync" :
++                                                          "nominal-grid");
++    mp_tags_set_str(tags, "phase-feedback-serial",
++                    mp_tprintf(32, "%llu",
++                               (unsigned long long)stats.display_phase_feedback_serial));
+     *(struct mp_tags **)cmd->res = tags;
+     return true;
+ }
+
