@@ -774,6 +774,21 @@ jobs:
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
 
+      # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
+      # 8 GiB Linux JIT guest. Limit every nested Ninja invocation as well as
+      # the outer build so concurrent C++ compilers cannot OOM the guest.
+      - name: Limit Ninja concurrency to the guest memory budget
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/windows-ninja"
+          cat > "$RUNNER_TEMP/windows-ninja/ninja" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec /usr/bin/ninja --jobs=1 "$@"
+          SH
+          chmod 0755 "$RUNNER_TEMP/windows-ninja/ninja"
+          echo "$RUNNER_TEMP/windows-ninja" >> "$GITHUB_PATH"
+
       - name: Build libmpv-windows (${{ matrix.arch }})
         run: bash platforms/windows/build.sh ${{ matrix.arch }}
 
