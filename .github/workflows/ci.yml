@@ -156,8 +156,11 @@ jobs:
       inputs.action_tag == 'ci' &&
       inputs.runner_pool_tag == 'private' &&
       github.ref == 'refs/heads/main' &&
-      (inputs.pr_number == '' ||
-       (inputs.pr_sha != '' && inputs.target_run_id != '' &&
+      ((inputs.pr_number == '' && inputs.pr_sha == '' &&
+        inputs.target_run_id == '' && inputs.pr_author == '' &&
+        inputs.pr_repository == '') ||
+       (inputs.pr_number != '' && inputs.pr_sha != '' &&
+        inputs.target_run_id != '' &&
         inputs.pr_author == 'snapetech' &&
         inputs.pr_repository == github.repository &&
        (github.actor == 'snapetech' || github.actor == 'github-actions[bot]')))
