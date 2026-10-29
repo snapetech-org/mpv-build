@@ -35,7 +35,7 @@ index fb10be5..68b67b4 100644
  
  # ffmpeg
  libavcodec = dependency('libavcodec', version: '>= 60.31.102')
-@@ -1719,6 +1720,22 @@ if rst2pdf.found()
+@@ -1719,6 +1720,23 @@ if rst2pdf.found()
  endif
  
  
@@ -47,6 +47,7 @@ index fb10be5..68b67b4 100644
 +    qairt_root = run_command('sh', '-c', 'printf %s "$QAIRT_SDK_ROOT"', check: false).stdout().strip()
 +    if qairt_root != '' and fs.is_file(qairt_root / 'include/QNN/QnnInterface.h')
 +        anvil_includes += include_directories(qairt_root / 'include')
++        anvil_includes += include_directories(qairt_root / 'include/QNN')
 +        dependencies += cc.find_library('vulkan', required: true)
 +        add_project_arguments('-DPLEZY_HAVE_ANVIL', language: 'c')
 +        sources += files('video/filter/vf_anvil.c')
@@ -58,7 +59,7 @@ index fb10be5..68b67b4 100644
  # Set config.h
  conf_data = configuration_data()
  conf_data.set_quoted('CONFIGURATION', meson.build_options())
-@@ -1784,7 +1801,7 @@ minor = client_h_define.split('|')[1].strip('() ')
+@@ -1784,7 +1802,7 @@ minor = client_h_define.split('|')[1].strip('() ')
  client_api_version = major + '.' + minor + '.0'
  
  libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
@@ -6816,7 +6817,7 @@ new file mode 100644
 index 0000000..7b3c20f
 --- /dev/null
 +++ b/video/filter/vf_anvil.c
-@@ -0,0 +1,3477 @@
+@@ -0,0 +1,3478 @@
 +/*
 + * vf_anvil.c - ANVIL Video Frame Interpolation filter for mpv
 + *
