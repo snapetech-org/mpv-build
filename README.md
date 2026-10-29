@@ -1021,3 +1021,17 @@ If you want the demo app to use the local build version, you need to modify `Pac
 ## License
 
 The bundles (`frameworks`, `xcframeworks`), which include both `libmpv` and `FFmpeg` libraries, are licensed under the GPL v3.0.
+
+### Ordered subtitle PCM package receipt
+
+Final package inspection schema 2 requires the complete additive tap ABI:
+`mpv_plezy_audio_tap_version`, `mpv_plezy_audio_tap_enable`,
+`mpv_plezy_audio_tap_read`, and `mpv_plezy_audio_tap_read_next`. Every packaged
+native member and every Apple architecture must expose all four. Windows
+inspection distinguishes PE exports from imported names; ELF default symbol
+versions are supported. The receipt binds the archive and individual member
+hashes, and records the exact required symbol set. Older one-symbol receipts
+cannot satisfy immutable reuse or PlezyNG promotion. The inspection scripts are
+content-key inputs, so this stronger contract changes affected artifact names.
+These source changes did not run builds, symbol inspection, packaging or CI;
+static exports alone do not qualify execution or device performance.

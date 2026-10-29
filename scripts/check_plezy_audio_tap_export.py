@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from pathlib import Path
 
 
 SYMBOL = "mpv_plezy_audio_tap_read_next"
+SYMBOLS = ("mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
+           "mpv_plezy_audio_tap_read", SYMBOL)
 
 
 def commands(path: Path) -> list[list[str]]:
@@ -28,12 +31,34 @@ def commands(path: Path) -> list[list[str]]:
     return [[tool, *flags, str(path)] for tool in dict.fromkeys(candidates) if tool]
 
 
-def has_symbol(output: str) -> bool:
+def has_symbol(output: str, symbol: str = SYMBOL) -> bool:
     for line in output.splitlines():
         fields = line.replace(":", " ").split()
-        if any(field.lstrip("_") == SYMBOL for field in fields):
+        # Darwin prepends exactly one underscore. ELF may append a default
+        # symbol-version name; Windows stdcall decoration is not this C ABI.
+        if any(re.fullmatch(r"_?" + re.escape(symbol) + r"(?:@@[A-Za-z0-9_.-]+)?", field) for field in fields):
             return True
     return False
+
+
+def export_output(output: str, command: list[str], binary: Path) -> str:
+    if binary.suffix.lower() != '.dll' or '--coff-exports' in command:
+        return output
+    # objdump -p prints imports as well. A DLL importing a tap function from
+    # another library is not evidence that it exports the ABI itself.
+    start = output.find('The Export Tables')
+    if start < 0:
+        start = output.find('Export Table:')  # LLVM objdump PE format
+    if start < 0: return ''
+    section = output[start:]
+    for marker in ('The Function Table', 'PE File Base Relocations', 'Base Relocation Table', 'Import Table:'):
+        end = section.find(marker)
+        if end >= 0: section = section[:end]
+    return section
+
+
+def missing_symbols(output: str) -> list[str]:
+    return [symbol for symbol in SYMBOLS if not has_symbol(output, symbol)]
 
 
 def main() -> int:
@@ -53,11 +78,12 @@ def main() -> int:
             for arch in archs.stdout.split():
                 result = subprocess.run(["xcrun", "nm", "-arch", arch, "-gUj", str(binary)],
                                         capture_output=True, text=True, timeout=60)
-                if result.returncode or not has_symbol(result.stdout):
-                    print(f"error: {binary} has no {SYMBOL} for {arch}", file=sys.stderr)
+                missing = missing_symbols(result.stdout)
+                if result.returncode or missing:
+                    print(f"error: {binary} has an incomplete PCM ABI for {arch}: {missing}", file=sys.stderr)
                     return 1
             if archs.stdout.split():
-                print(f"verified {SYMBOL} in all Apple slices: {binary}")
+                print(f"verified all {len(SYMBOLS)} PCM exports in every Apple slice: {binary}")
                 return 0
 
     failures: list[str] = []
@@ -70,14 +96,15 @@ def main() -> int:
         if result.returncode != 0:
             failures.append(result.stderr.strip() or f"{command[0]} exited {result.returncode}")
             continue
-        if has_symbol(result.stdout):
-            print(f"verified {SYMBOL}: {binary}")
+        missing = missing_symbols(export_output(result.stdout, command, binary))
+        if not missing:
+            print(f"verified all {len(SYMBOLS)} PCM exports: {binary}")
             return 0
-        failures.append(f"{command[0]} found no exported {SYMBOL}")
+        failures.append(f"{command[0]} missing exports: {', '.join(missing)}")
 
     details = "; ".join(item for item in failures if item)
     print(
-        f"error: {binary} does not export {SYMBOL}; refusing a subtitle-capture artifact"
+        f"error: {binary} does not export the complete PCM ABI; refusing a subtitle-capture artifact"
         + (f" ({details})" if details else ""),
         file=sys.stderr,
     )

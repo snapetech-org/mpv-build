@@ -18,6 +18,8 @@ MAX_ENTRY = 1024 * 1024 * 1024
 MAX_TOTAL = 4 * MAX_ENTRY
 MAX_ENTRIES = 50000
 SYMBOL = 'mpv_plezy_audio_tap_read_next'
+REQUIRED_SYMBOLS = ['mpv_plezy_audio_tap_version', 'mpv_plezy_audio_tap_enable',
+                    'mpv_plezy_audio_tap_read', SYMBOL]
 
 
 def inspect(package: Path, expected: int | None = None) -> dict:
@@ -86,7 +88,7 @@ def inspect(package: Path, expected: int | None = None) -> dict:
                     member(info.name, info.size, info.isfile(), lambda info=info: archive.extractfile(info))
     if not found or expected is not None and len(found) != expected:
         raise ValueError(f'Expected {expected or "at least one"} MPV binaries, found {len(found)}')
-    return {'orderedSubtitlePcmAbi': 1, 'artifactSha256': digest.hexdigest(),
+    return {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 2, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
             'symbol': SYMBOL, 'binaries': sorted(found), 'binarySha256': hashes, 'executionQualified': False}
 
 

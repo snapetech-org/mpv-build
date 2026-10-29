@@ -652,6 +652,9 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
     binaries = receipt.get("binaries")
     hashes = receipt.get("binarySha256")
     if (receipt.get("orderedSubtitlePcmAbi") != 1 or
+            receipt.get("inspectionSchema") != 2 or
+            receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
+                "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
             receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
             receipt.get("artifactSha256") != entry.get("checksum") or
             not isinstance(binaries, list) or not binaries or
