@@ -161,25 +161,25 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-windows",
       "libraries": {
         "libmpv-windows": {
-          "key": "8dbcea0c526c",
+          "key": "544d2295432e",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-windows-8dbcea0c526c-aarch64.zip",
-              "checksum": "27e93e919ab40bf343746a124a6e611321c55b372d62e7cc96304470acfc77d8"
+              "asset": "libmpv-windows-544d2295432e-aarch64.zip",
+              "checksum": "c6dc18a50dd8889574e92d2e3ad0455a210bf93f044f553a3723ba1d3974fb08"
             },
             "x86_64": {
-              "asset": "libmpv-windows-8dbcea0c526c-x86_64.zip",
-              "checksum": "adec908248bdec069b3c42e706780f1a836768ab68c96699bc5d377870082669"
+              "asset": "libmpv-windows-544d2295432e-x86_64.zip",
+              "checksum": "b6ef479535aa4f508322e450339f490616c45f8b76867b27890a2884accd7be2"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-windows-8dbcea0c526c-aarch64-symbols.zip",
-              "checksum": "ba6c0ea6092c1c887c9a6d9bc05a979ad0c4543e7f85fdff4ba3cd3e76f39be1"
+              "asset": "libmpv-windows-544d2295432e-aarch64-symbols.zip",
+              "checksum": "2abb3bb3f9fb20889b04dfb1761d0004938a829d9b9467acda3fb3248bb347de"
             },
             "x86_64": {
-              "asset": "libmpv-windows-8dbcea0c526c-x86_64-symbols.zip",
-              "checksum": "b6faa2fd0de05fe649610f6093118eea6651a6b0402993c5751a52a2c2ba57d3"
+              "asset": "libmpv-windows-544d2295432e-x86_64-symbols.zip",
+              "checksum": "b0bc264cf96dc14fbc218e30b2196f1d6cb3e22bfa16e62ec9847150c36b8ff0"
             }
           }
         }
