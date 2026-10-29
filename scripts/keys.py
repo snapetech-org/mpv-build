@@ -879,6 +879,7 @@ def _record_variant(args, root: Path, group: Group) -> int:
         entry["prebuilt"][args.platform] = {
             "asset": asset,
             "checksum": _sha256_file(target),
+            "capabilities": pcm_capability(root, target, 1),
         }
         if spec.symbols_pattern:
             entry.setdefault("symbols", {}).update(
@@ -892,6 +893,14 @@ def _record_variant(args, root: Path, group: Group) -> int:
         save_manifest(root, manifest)
         print(f"wrote {MANIFEST_PATH}")
     return 0
+
+
+def pcm_capability(root: Path, artifact: Path, expected=None):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("plezy_pcm_package", root / "scripts/inspect_pcm_package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.inspect(artifact, expected)
 
 
 def cmd_record_platform(args, root: Path, group: Group) -> int:
@@ -954,6 +963,8 @@ def cmd_record_packages(args, root: Path, group: Group) -> int:
             print(f"{artifact_id}: not built in this run, keeping the recorded entry")
             continue
         entry = {"key": key, "asset": target.name, "checksum": _sha256_file(target)}
+        if artifact_id == "mpv-android":
+            entry["capabilities"] = pcm_capability(root, target, 4)
         if spec.symbols_pattern:
             entry["symbols"] = _record_symbols(
                 release, artifact_id, spec, key, spec.symbols_variants
@@ -1015,6 +1026,8 @@ def cmd_record_frameworks(args, root: Path, group: Group) -> int:
                 "asset": addressed.name,
                 "checksum": swiftpm_checksum(addressed),
             }
+            if library == "libmpv":
+                frameworks[name]["capabilities"] = pcm_capability(root, addressed)
 
         if not frameworks:
             raise SystemExit(f"{library}: no static libraries found in {reference.name}")

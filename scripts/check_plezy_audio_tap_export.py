@@ -21,11 +21,10 @@ def commands(path: Path) -> list[list[str]]:
 
     candidates = [shutil.which("llvm-nm"), shutil.which("nm")]
     if path.suffix.lower() == ".dll":
-        candidates += [
-            shutil.which("x86_64-w64-mingw32-nm"),
-            shutil.which("aarch64-w64-mingw32-nm"),
-        ]
-    flags = ["-D", "--defined-only"] if path.suffix.lower() in {".so", ".dylib"} else ["-g", "--defined-only"]
+        inspectors = [shutil.which("llvm-readobj"), shutil.which("llvm-objdump"), shutil.which("objdump")]
+        return [[tool, "--coff-exports" if Path(tool).name.startswith("llvm-readobj") else "-p", str(path)]
+                for tool in inspectors if tool]
+    flags = ["-D", "--defined-only"] if ".so" in path.name or path.suffix.lower() == ".dylib" else ["-g", "--defined-only"]
     return [[tool, *flags, str(path)] for tool in dict.fromkeys(candidates) if tool]
 
 
@@ -44,6 +43,22 @@ def main() -> int:
     binary = args.binary
     if not binary.is_file():
         parser.error(f"libmpv binary does not exist: {binary}")
+
+    # A universal Apple archive needs the symbol in every architecture,
+    # not merely once in nm's combined output.
+    if sys.platform == "darwin" and shutil.which("xcrun"):
+        archs = subprocess.run(["xcrun", "lipo", "-archs", str(binary)],
+                               capture_output=True, text=True, timeout=60)
+        if archs.returncode == 0:
+            for arch in archs.stdout.split():
+                result = subprocess.run(["xcrun", "nm", "-arch", arch, "-gUj", str(binary)],
+                                        capture_output=True, text=True, timeout=60)
+                if result.returncode or not has_symbol(result.stdout):
+                    print(f"error: {binary} has no {SYMBOL} for {arch}", file=sys.stderr)
+                    return 1
+            if archs.stdout.split():
+                print(f"verified {SYMBOL} in all Apple slices: {binary}")
+                return 0
 
     failures: list[str] = []
     for command in commands(binary):
