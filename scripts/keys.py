@@ -651,8 +651,9 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
         return [f"{label}: no packaged ordered-PCM receipt"]
     binaries = receipt.get("binaries")
     hashes = receipt.get("binarySha256")
+    architectures = receipt.get("binaryArchitectures")
     if (receipt.get("orderedSubtitlePcmAbi") != 1 or
-            receipt.get("inspectionSchema") != 2 or
+            receipt.get("inspectionSchema") != 3 or
             receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
                 "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
             receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
@@ -662,8 +663,37 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
             len(set(binaries)) != len(binaries) or
             expected is not None and len(binaries) != expected or
             not isinstance(hashes, dict) or set(hashes) != set(binaries) or
-            any(not isinstance(value, str) or not CHECKSUM_RE.fullmatch(value) for value in hashes.values())):
+            any(not isinstance(value, str) or not CHECKSUM_RE.fullmatch(value) for value in hashes.values()) or
+            not isinstance(architectures, dict) or set(architectures) != set(binaries) or
+            any(not isinstance(value, list) or not value or any(arch not in ('i386', 'armv7', 'arm64', 'arm64e', 'x86_64')
+                for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
         return [f"{label}: mismatched packaged ordered-PCM receipt"]
+    if expected == 1 and label in ('x86_64', 'aarch64'):
+        machine = 'arm64' if label == 'aarch64' else 'x86_64'
+        if any(value != [machine] for value in architectures.values()):
+            return [f"{label}: packaged machine does not match the platform variant"]
+    if expected == 4:
+        android = {'arm64-v8a': 'arm64', 'armeabi-v7a': 'armv7', 'x86': 'i386', 'x86_64': 'x86_64'}
+        if {f'jni/{abi}/libmpv.so' for abi in android} != set(binaries) or any(
+                architectures.get(f'jni/{abi}/libmpv.so') != [machine] for abi, machine in android.items()):
+            return [f"{label}: Android ABI paths and packaged machines differ"]
+    if any('.xcframework/' in name.lower() for name in binaries):
+        slices = receipt.get('appleSlices')
+        if not isinstance(slices, list) or not slices or len(slices) > 32:
+            return [f"{label}: missing Apple platform coverage"]
+        coverage, covered = set(), set()
+        for row in slices:
+            if (not isinstance(row, dict) or row.get('binary') not in architectures or
+                    row['binary'] in covered or row.get('architectures') != architectures[row['binary']] or
+                    not isinstance(row.get('platform'), str) or not isinstance(row.get('variant'), str)):
+                return [f"{label}: inconsistent Apple slice receipt"]
+            covered.add(row['binary'])
+            coverage.update((row['platform'], row['variant'], arch) for arch in row['architectures'])
+        required = {('ios', '', 'arm64'), ('ios', 'simulator', 'arm64'), ('ios', 'simulator', 'x86_64'),
+            ('ios', 'maccatalyst', 'arm64'), ('ios', 'maccatalyst', 'x86_64'), ('macos', '', 'arm64'), ('macos', '', 'x86_64'),
+            ('tvos', '', 'arm64'), ('tvos', '', 'arm64e'), ('tvos', 'simulator', 'arm64'), ('tvos', 'simulator', 'x86_64')}
+        if covered != set(binaries) or not required <= coverage:
+            return [f"{label}: incomplete Apple platform coverage"]
     return []
 
 
