@@ -12,3 +12,4 @@
 0151-desktop-pme-prefer-cached-host-memory.patch
 0152-desktop-pme-support-reduced-model-shapes.patch
 0154-desktop-pme-overlap-scheduler.patch
+0155-desktop-pme-display-phases.patch
