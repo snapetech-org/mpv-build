@@ -28,7 +28,7 @@ def inspect(package: Path, expected: int | None = None) -> dict:
     with package.open('rb') as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
-    found, names, total = [], set(), 0
+    found, names, hashes, total = [], set(), {}, 0
     with tempfile.TemporaryDirectory(prefix='mpv-abi-') as temporary:
         def member(name, size, regular, source):
             nonlocal total
@@ -49,15 +49,18 @@ def inspect(package: Path, expected: int | None = None) -> dict:
             total += size
             target = Path(temporary) / (str(len(found)) + '-' + path.name)
             remaining = size
+            binary_digest = hashlib.sha256()
             with source() as reader, target.open('wb') as writer:
                 while remaining:
                     block = reader.read(min(1024 * 1024, remaining))
                     if not block: raise ValueError('Truncated MPV binary')
                     writer.write(block)
+                    binary_digest.update(block)
                     remaining -= len(block)
             subprocess.run([sys.executable, str(Path(__file__).with_name('check_plezy_audio_tap_export.py')),
                             str(target)], check=True, timeout=120)
             found.append(normalized)
+            hashes[normalized] = binary_digest.hexdigest()
 
         if zipfile.is_zipfile(package):
             with zipfile.ZipFile(package) as archive:
@@ -84,7 +87,7 @@ def inspect(package: Path, expected: int | None = None) -> dict:
     if not found or expected is not None and len(found) != expected:
         raise ValueError(f'Expected {expected or "at least one"} MPV binaries, found {len(found)}')
     return {'orderedSubtitlePcmAbi': 1, 'artifactSha256': digest.hexdigest(),
-            'symbol': SYMBOL, 'binaries': sorted(found), 'executionQualified': False}
+            'symbol': SYMBOL, 'binaries': sorted(found), 'binarySha256': hashes, 'executionQualified': False}
 
 
 if __name__ == '__main__':

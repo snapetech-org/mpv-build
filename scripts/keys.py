@@ -541,6 +541,8 @@ def _artifact_key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if "mpv" in spec.components:
+        text.extend(pcm_inspection_key_inputs(root))
     for component in sorted(spec.components):
         for name, digest in patch_entries(root, component, group.name):
             text.append(f"patch={component}/{name}:{digest}")
@@ -626,12 +628,40 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if component == "mpv":
+        text.extend(pcm_inspection_key_inputs(root))
     for name, digest in patch_entries(root, component, group.name):
         text.append(f"patch={name}:{digest}")
     if group.name == "apple" and artifact == "libmpv":
         for name, digest in patch_entries(root, "spatialaudiobridge", group.name):
             text.append(f"patch=spatialaudiobridge/{name}:{digest}")
     return "\n".join(text) + "\n"
+
+
+def pcm_inspection_key_inputs(root: Path) -> list[str]:
+    # A changed package inspection contract cannot reuse a previously published
+    # immutable name that was accepted under weaker symbol/receipt checks.
+    return [f"pcm-inspector={name}:{_sha256_file(root / name)}" for name in (
+        "scripts/inspect_pcm_package.py", "scripts/check_plezy_audio_tap_export.py")]
+
+
+def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
+    receipt = entry.get("capabilities")
+    if not isinstance(receipt, dict):
+        return [f"{label}: no packaged ordered-PCM receipt"]
+    binaries = receipt.get("binaries")
+    hashes = receipt.get("binarySha256")
+    if (receipt.get("orderedSubtitlePcmAbi") != 1 or
+            receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
+            receipt.get("artifactSha256") != entry.get("checksum") or
+            not isinstance(binaries, list) or not binaries or
+            any(not isinstance(name, str) for name in binaries) or
+            len(set(binaries)) != len(binaries) or
+            expected is not None and len(binaries) != expected or
+            not isinstance(hashes, dict) or set(hashes) != set(binaries) or
+            any(not isinstance(value, str) or not CHECKSUM_RE.fullmatch(value) for value in hashes.values())):
+        return [f"{label}: mismatched packaged ordered-PCM receipt"]
+    return []
 
 
 def library_key(root: Path, group: Group, artifact: str) -> str:
@@ -682,7 +712,17 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
         return ["no manifest entry"]
 
     if group.artifacts is not None:
-        return _artifact_entry_problems(entry, key, group.artifacts[library])
+        problems = _artifact_entry_problems(entry, key, group.artifacts[library])
+        if library == "mpv-android":
+            problems.extend(pcm_receipt_problems(entry, library, 4))
+            paths = (entry.get("capabilities") or {}).get("binaries", [])
+            required = {f"jni/{abi}/libmpv.so" for abi in group.platforms}
+            if not isinstance(paths, list) or set(name for name in paths if isinstance(name, str)) != required:
+                problems.append("mpv-android: ordered-PCM receipt does not cover every ABI")
+        elif "mpv" in group.artifacts[library].components:
+            for variant, value in (entry.get("prebuilt") or {}).items():
+                if isinstance(value, dict): problems.extend(pcm_receipt_problems(value, variant, 1))
+        return problems
 
     problems = []
     if entry.get("key") != key:
@@ -700,6 +740,8 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
     if not frameworks:
         problems.append("no frameworks recorded")
     for name, framework in sorted(frameworks.items()):
+        if library == "libmpv":
+            problems.extend(pcm_receipt_problems(framework, name))
         asset = framework.get("asset")
         checksum = framework.get("checksum", "")
         if asset != framework_asset(name, key):
@@ -879,8 +921,9 @@ def _record_variant(args, root: Path, group: Group) -> int:
         entry["prebuilt"][args.platform] = {
             "asset": asset,
             "checksum": _sha256_file(target),
-            "capabilities": pcm_capability(root, target, 1),
         }
+        if "mpv" in spec.components:
+            entry["prebuilt"][args.platform]["capabilities"] = pcm_capability(root, target, 1)
         if spec.symbols_pattern:
             entry.setdefault("symbols", {}).update(
                 _record_symbols(release, artifact_id, spec, key, (args.platform,))

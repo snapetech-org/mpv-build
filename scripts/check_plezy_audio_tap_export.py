@@ -63,8 +63,8 @@ def main() -> int:
     failures: list[str] = []
     for command in commands(binary):
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False)
-        except OSError as error:
+            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=90)
+        except (OSError, subprocess.TimeoutExpired) as error:
             failures.append(f"{command[0]}: {error}")
             continue
         if result.returncode != 0:
