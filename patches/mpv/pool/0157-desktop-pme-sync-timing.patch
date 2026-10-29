@@ -1,0 +1,210 @@
+--- a/filters/filter.h
++++ b/filters/filter.h
+@@ -401,6 +401,8 @@
+     void *priv; // for use by whoever implements the callbacks
+ 
+     double (*get_display_fps)(struct mp_stream_info *i);
++    double (*get_display_sync_interval)(struct mp_stream_info *i);
++    double (*get_playback_speed)(struct mp_stream_info *i);
+     void   (*get_display_res)(struct mp_stream_info *i, int *res);
+ 
+     struct mp_hwdec_devices *hwdec_devs;
+--- a/filters/f_output_chain.c
++++ b/filters/f_output_chain.c
+@@ -44,6 +44,7 @@
+ 
+     struct vo *vo;
+     struct ao *ao;
++    double video_speed;
+ 
+     struct mp_output_chain public;
+ };
+@@ -366,6 +367,18 @@
+     return res;
+ }
+ 
++static double get_display_sync_interval(struct mp_stream_info *i)
++{
++    struct chain *p = i->priv;
++    return p->vo ? vo_get_vsync_interval(p->vo) / 1e9 : 0.0;
++}
++
++static double get_playback_speed(struct mp_stream_info *i)
++{
++    struct chain *p = i->priv;
++    return p->video_speed;
++}
++
+ static void get_display_res(struct mp_stream_info *i, int *res)
+ {
+     struct chain *p = i->priv;
+@@ -384,6 +397,12 @@
+     p->stream_info.dr_vo = vo;
+     p->vo = vo;
+     update_output_caps(p);
++}
++
++void mp_output_chain_set_video_speed(struct mp_output_chain *c, double speed)
++{
++    struct chain *p = c->f->priv;
++    p->video_speed = speed;
+ }
+ 
+ void mp_output_chain_set_ao(struct mp_output_chain *c, struct ao *ao)
+@@ -654,8 +673,11 @@
+ {
+     p->frame_type = MP_FRAME_VIDEO;
+ 
++    p->video_speed = 1.0;
+     p->stream_info.priv = p;
+     p->stream_info.get_display_fps = get_display_fps;
++    p->stream_info.get_display_sync_interval = get_display_sync_interval;
++    p->stream_info.get_playback_speed = get_playback_speed;
+     p->stream_info.get_display_res = get_display_res;
+ 
+     p->f->stream_info = &p->stream_info;
+--- a/filters/f_output_chain.h
++++ b/filters/f_output_chain.h
+@@ -54,6 +54,9 @@
+ struct vo;
+ void mp_output_chain_set_vo(struct mp_output_chain *p, struct vo *vo);
+ 
++// Effective video playback speed, including display-sync correction.
++void mp_output_chain_set_video_speed(struct mp_output_chain *p, double speed);
++
+ // Set the AO. The AO format will be used to determine the filter chain output.
+ // The API user may be asked to update the AO midstream if ao_needs_update is
+ // set.
+--- a/player/audio.c
++++ b/player/audio.c
+@@ -199,6 +199,10 @@
+     mpctx->audio_speed = mpctx->opts->playback_speed * mpctx->speed_factor_a;
+     mpctx->video_speed = mpctx->opts->playback_speed * mpctx->speed_factor_v;
+ 
++    if (mpctx->vo_chain && mpctx->vo_chain->filter)
++        mp_output_chain_set_video_speed(mpctx->vo_chain->filter,
++                                        mpctx->video_speed);
++
+     update_speed_filters(mpctx);
+ }
+ 
+--- a/player/video.c
++++ b/player/video.c
+@@ -251,6 +251,7 @@
+     vo_c->filter =
+         mp_output_chain_create(mpctx->filter_root, MP_OUTPUT_CHAIN_VIDEO);
+     mp_output_chain_set_vo(vo_c->filter, vo_c->vo);
++    mp_output_chain_set_video_speed(vo_c->filter, mpctx->video_speed);
+     vo_c->filter->update_subtitles = filter_update_subtitles;
+     vo_c->filter->update_subtitles_ctx = mpctx;
+ 
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1898,6 +1898,7 @@
+     // The downstream display scheduler owns the final vsync decision.
+     double display_phase_error;
+     double display_phase_fps;
++    double display_phase_speed;
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+@@ -2728,17 +2729,32 @@
+         curr->pts <= prev->pts) {
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
++        p->display_phase_speed = 0.0;
+         return 0;
+     }
+ 
+     const double source_duration = curr->pts - prev->pts;
+     struct mp_stream_info *info = mp_filter_find_stream_info(f);
+-    const double display_fps = info && info->get_display_fps ?
+-        info->get_display_fps(info) : 0.0;
++    const double display_interval = info && info->get_display_sync_interval ?
++        info->get_display_sync_interval(info) : 0.0;
++    double display_fps = display_interval > 0.0 && isfinite(display_interval) ?
++        1.0 / display_interval : 0.0;
++    if (display_fps <= 0.0 && info && info->get_display_fps)
++        display_fps = info->get_display_fps(info);
++    const double playback_speed = info && info->get_playback_speed ?
++        info->get_playback_speed(info) : 1.0;
++
++    if (!isfinite(playback_speed) || playback_speed <= 0.0) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
++        p->display_phase_speed = 0.0;
++        return 0;
++    }
+ 
+     if (!isfinite(display_fps) || display_fps <= 0.0) {
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
++        p->display_phase_speed = playback_speed;
+         phases[0] = (struct pme_output_phase){
+             .alpha = 0.5,
+             .pts = prev->pts + source_duration * 0.5,
+@@ -2747,22 +2763,26 @@
+         return 1;
+     }
+ 
+-    const double source_fps = 1.0 / source_duration;
+-    if (display_fps <= source_fps + 0.01) {
++    const double effective_source_fps = playback_speed / source_duration;
++    if (display_fps <= effective_source_fps + 0.01) {
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = display_fps;
++        p->display_phase_speed = playback_speed;
+         return 0;
+     }
+ 
+     if (!isfinite(p->display_phase_fps) ||
+-        fabs(p->display_phase_fps - display_fps) > 0.01) {
++        fabs(p->display_phase_fps - display_fps) > 0.01 ||
++        !isfinite(p->display_phase_speed) ||
++        fabs(p->display_phase_speed - playback_speed) > 0.001) {
+         p->display_phase_fps = display_fps;
++        p->display_phase_speed = playback_speed;
+         p->display_phase_error = 0.0;
+     }
+ 
+-    // This error diffusion mirrors the integer slot-count decision used by
+-    // mpv's display-sync scheduler, but cannot see its live AV-sync corrections.
+-    const double fractional_slots = source_duration * display_fps +
++    // Match the display-sync scheduler's display interval and effective video
++    // speed. AV-sync drop/repeat corrections are applied later in mpv.
++    const double fractional_slots = source_duration / playback_speed * display_fps +
+                                    p->display_phase_error;
+     if (!isfinite(fractional_slots) || fractional_slots < 0.5 ||
+         fractional_slots > 1000000.0) {
+@@ -3119,6 +3139,7 @@
+         mp_image_unrefp(&p->prev);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
++        p->display_phase_speed = 0.0;
+         if (queued_outputs > 0 &&
+             pme_queue_source(p, &frame, PME_OUTPUT_SIGNAL)) {
+             mp_filter_internal_mark_progress(f);
+@@ -3156,6 +3177,7 @@
+     if (!supported) {
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
++        p->display_phase_speed = 0.0;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+         if (queued_outputs > 0 &&
+@@ -3173,6 +3195,7 @@
+     if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
++        p->display_phase_speed = 0.0;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+         if (queued_outputs > 0 &&
+@@ -3302,6 +3325,7 @@
+     struct priv *p = f->priv;
+     p->display_phase_error = 0.0;
+     p->display_phase_fps = 0.0;
++    p->display_phase_speed = 0.0;
+     const bool worker_busy = pme_worker_cancel_for_reset(p);
+     mp_image_unrefp(&p->prev);
+     if (!p->pme_worker_sync_initialized && !worker_busy)
