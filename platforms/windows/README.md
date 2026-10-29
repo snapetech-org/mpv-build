@@ -21,7 +21,8 @@ own `GIT_REMOTE_NAME origin` / `GIT_TAG` / `GIT_RESET` idiom from
 configures with `-DCOMPILER_TOOLCHAIN=clang` (mandatory for aarch64),
 bootstraps the toolchain (`ninja llvm`, `ninja rustup`, `ninja llvm-clang`)
 and runs `ninja mpv`. Full builds need a Linux host with the winbuild README
-apt set plus pip meson >= 1.3.0; only `--configure-only` runs elsewhere.
+apt set, `wget` (used by the `cppwinrt` Windows metadata download), and pip
+meson >= 1.3.0; only `--configure-only` runs elsewhere.
 
 The zip preserves the sourceforge mpv-dev package shape (`libmpv-2.dll`,
 `libmpv.dll.a`, `include/mpv/*.h` at the archive root), so consumers currently
