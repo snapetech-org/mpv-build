@@ -133,25 +133,25 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
-          "key": "52b991183e5f",
+          "key": "500fcbd3b251",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-linux-52b991183e5f-aarch64.tar.zst",
-              "checksum": "280611b23e02781f2010b48cf7a10193642b2f61e1ed2160a4abe8d03489ca57"
+              "asset": "libmpv-linux-500fcbd3b251-aarch64.tar.zst",
+              "checksum": "2af01ddc6830258d6d9ba56a2afe2d75744e0b264fb2ae25c82f7d8eeae12431"
             },
             "x86_64": {
-              "asset": "libmpv-linux-52b991183e5f-x86_64.tar.zst",
-              "checksum": "e958c2bbe2c323f39631283f756749c91d2e7d7a56e5531b6b0f469279ac6dd3"
+              "asset": "libmpv-linux-500fcbd3b251-x86_64.tar.zst",
+              "checksum": "d30e156e7933c3dbd5a9c5b8c5c7c6e4893808dca062cb1a54f23a8459af9d02"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-linux-52b991183e5f-aarch64-symbols.zip",
-              "checksum": "c8dc3990b8570cb8d01eb8fc243f12a976487da4888b23da54192f340c220f0a"
+              "asset": "libmpv-linux-500fcbd3b251-aarch64-symbols.zip",
+              "checksum": "ddc9ebb1770cf7a91e2d50ba46a36a0bbbcbe64adad4de70fc1b017e45057a89"
             },
             "x86_64": {
-              "asset": "libmpv-linux-52b991183e5f-x86_64-symbols.zip",
-              "checksum": "f5794448530acbb3419b1811656f7eac2fd19cf5490e94d22b4edaded7b47414"
+              "asset": "libmpv-linux-500fcbd3b251-x86_64-symbols.zip",
+              "checksum": "f33eddaae651b2178b5b43b28d4143e5faafc53b74ed7570916c18c18854fa17"
             }
           }
         }
