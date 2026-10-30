@@ -44,6 +44,19 @@ def assert_private_linux_x64(job: str, label: str) -> None:
 windows = job_section(PUBLISH, "build-windows")
 assert_private_linux_x64(windows, "Windows cross-build")
 assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
+windows_swap = named_step(windows, "Add temporary swap for compiler memory spikes")
+for token in (
+    "swap_size_gib=8",
+    "keep_free_gib=4",
+    "sudo fallocate -l",
+    "sudo mkswap",
+    "sudo swapon",
+    "sudo sysctl vm.swappiness=100",
+):
+    assert token in windows_swap, f"Windows cross-builds must configure safe guest swap: {token}"
+assert windows.index(windows_swap) < windows.index(
+    named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
+), "compiler swap must be enabled before the Windows build starts"
 windows_ninja = named_step(windows, "Limit Ninja concurrency to the guest memory budget")
 assert 'exec /usr/bin/ninja -j 1 "$@"' in windows_ninja, (
     "Windows cross-builds must serialize nested Ninja builds to fit the 8 GiB JIT guest"
