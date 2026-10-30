@@ -775,8 +775,34 @@ jobs:
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
 
       # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
-      # 8 GiB Linux JIT guest. Limit every nested Ninja invocation as well as
-      # the outer build so concurrent C++ compilers cannot OOM the guest.
+      # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
+      # process can exceed physical RAM, while retaining free space for the
+      # build and package outputs.
+      - name: Add temporary swap for compiler memory spikes
+        shell: bash
+        run: |
+          set -euo pipefail
+          swap_file=/var/tmp/gha-windows-build.swap
+          swap_size_gib=8
+          keep_free_gib=4
+          available_kib="$(df -Pk /var/tmp | awk 'NR == 2 {print $4}')"
+          required_kib="$(( (swap_size_gib + keep_free_gib) * 1024 * 1024 ))"
+          if (( available_kib < required_kib )); then
+            echo "need $((swap_size_gib + keep_free_gib)) GiB free on /var/tmp for compiler swap and build outputs; found $((available_kib / 1024 / 1024)) GiB" >&2
+            exit 1
+          fi
+          sudo fallocate -l "${swap_size_gib}G" "$swap_file"
+          sudo chmod 0600 "$swap_file"
+          sudo mkswap "$swap_file"
+          sudo swapon "$swap_file"
+          sudo sysctl vm.swappiness=100
+          free -h
+          swapon --show
+          df -h /var/tmp
+
+      # Keep every nested Ninja invocation serialized as well as the outer
+      # build. Swap handles the largest single translation unit; serialization
+      # prevents multiple C++ compiler processes from multiplying that peak.
       - name: Limit Ninja concurrency to the guest memory budget
         shell: bash
         run: |
