@@ -76,6 +76,12 @@ assert windows_meson_positions == sorted(windows_meson_positions), (
     "Windows x64 and ARM64 cross-builds must put the user Meson bin directory on PATH before use"
 )
 
+patches = job_section(CI, "patches")
+patch_test_tools = named_step(patches, "Install ffmpeg")
+assert "--no-install-recommends ffmpeg cmake" in patch_test_tools, (
+    "the Android glue regression test uses CMake and the patch-suite job must install it"
+)
+
 android_natives = job_section(ANDROID, "natives")
 java_setup = android_natives.index("      - name: Set up Java for Android SDK manager")
 sdk_install = android_natives.index("bash platforms/android/include/download-sdk.sh")

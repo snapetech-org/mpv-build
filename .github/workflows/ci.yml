@@ -43,7 +43,7 @@ jobs:
       # test_audiotrack_truehd.sh encodes its TrueHD fixtures with the host
       # ffmpeg's truehd encoder and spdif muxer.
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg cmake
 
       - name: Test patch framework
         run: bash scripts/test_patches.sh
