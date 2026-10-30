@@ -45,7 +45,7 @@ windows = job_section(PUBLISH, "build-windows")
 assert_private_linux_x64(windows, "Windows cross-build")
 assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
 windows_ninja = named_step(windows, "Limit Ninja concurrency to the guest memory budget")
-assert 'exec /usr/bin/ninja --jobs=1 "$@"' in windows_ninja, (
+assert 'exec /usr/bin/ninja -j 1 "$@"' in windows_ninja, (
     "Windows cross-builds must serialize nested Ninja builds to fit the 8 GiB JIT guest"
 )
 assert 'echo "$RUNNER_TEMP/windows-ninja" >> "$GITHUB_PATH"' in windows_ninja, (

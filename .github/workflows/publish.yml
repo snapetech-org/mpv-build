@@ -784,7 +784,7 @@ jobs:
           cat > "$RUNNER_TEMP/windows-ninja/ninja" <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          exec /usr/bin/ninja --jobs=1 "$@"
+          exec /usr/bin/ninja -j 1 "$@"
           SH
           chmod 0755 "$RUNNER_TEMP/windows-ninja/ninja"
           echo "$RUNNER_TEMP/windows-ninja" >> "$GITHUB_PATH"
