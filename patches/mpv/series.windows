@@ -16,3 +16,8 @@
 0156-desktop-pme-single-inference-phases.patch
 0157-desktop-pme-sync-timing.patch
 0158-desktop-pme-nominal-slot-grid.patch
+0159-desktop-pme-adaptive-phase-budget.patch
+0160-desktop-pme-resample-720p-sources.patch
+0161-desktop-pme-display-sync-feedback.patch
+0162-desktop-pme-source-cadence-telemetry.patch
+0163-desktop-pme-prefer-rx7900-vulkan-compute.patch

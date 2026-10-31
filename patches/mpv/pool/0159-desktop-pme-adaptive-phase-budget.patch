@@ -1,0 +1,176 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -81,6 +81,7 @@
+ #define N_THREADS    4
+ #define PME_INFERENCE_WINDOW 64
+ #define PME_MAX_OUTPUT_PHASES 7
++#define PME_PHASE_RECOVERY_PAIRS 120
+ 
+ // BT.709 RGB[0,1] -> YUV limited range coefficients
+ // Y = YR*r + YG*g + YB*b + 16    (r,g,b in [0,1], coefficients pre-scaled by 255)
+@@ -1862,6 +1863,8 @@
+     unsigned long long deadline_bypass_frames;
+     double neural_bypass_until_ms;
+     bool neural_probe_pending;
++    int adaptive_phase_budget;
++    int configured_phase_budget;
+ };
+ 
+ struct priv {
+@@ -1900,6 +1903,9 @@
+     double display_phase_fps;
+     double display_phase_speed;
+     bool display_phase_round_up;
++    int configured_phase_budget;
++    int adaptive_phase_budget;
++    unsigned int adaptive_phase_headroom_pairs;
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+@@ -2444,6 +2450,8 @@
+     p->published_stats.deadline_bypass_frames = p->deadline_bypass_frames;
+     p->published_stats.neural_bypass_until_ms = p->neural_bypass_until_ms;
+     p->published_stats.neural_probe_pending = p->neural_probe_pending;
++    p->published_stats.adaptive_phase_budget = p->adaptive_phase_budget;
++    p->published_stats.configured_phase_budget = p->configured_phase_budget;
+ }
+ 
+ static void reset_pme_stats_locked(struct priv *p)
+@@ -2720,11 +2728,40 @@
+     return p->worker_count > 0;
+ }
+ 
++static int pme_requested_phase_budget(const struct pme_opts *opts)
++{
++    if (opts && opts->preset && strcmp(opts->preset, "performance") == 0)
++        return 1;
++    if (opts && opts->preset && strcmp(opts->preset, "quality") == 0)
++        return PME_MAX_OUTPUT_PHASES;
++    return 3;
++}
++
++static int pme_adaptive_phase_budget_locked(struct priv *p, int configured)
++{
++    if (p->configured_phase_budget != configured || p->adaptive_phase_budget < 1) {
++        p->configured_phase_budget = configured;
++        p->adaptive_phase_budget = configured;
++        p->adaptive_phase_headroom_pairs = 0;
++        publish_pme_stats_locked(p);
++    }
++    return p->adaptive_phase_budget;
++}
++
+ static int pme_plan_output_phases(struct priv *p, struct mp_filter *f,
+                                   const struct mp_image *prev,
+                                   const struct mp_image *curr,
+                                   struct pme_output_phase *phases)
+ {
++    const int configured_phase_budget = pme_requested_phase_budget(p->opts);
++    int phase_budget = configured_phase_budget;
++    if (p->pme_worker_sync_initialized) {
++        pthread_mutex_lock(&p->pme_worker_mutex);
++        phase_budget = pme_adaptive_phase_budget_locked(
++            p, configured_phase_budget);
++        pthread_mutex_unlock(&p->pme_worker_mutex);
++    }
++
+     if (!prev || !curr || !isfinite(prev->pts) || !isfinite(curr->pts) ||
+         prev->pts == MP_NOPTS_VALUE || curr->pts == MP_NOPTS_VALUE ||
+         curr->pts <= prev->pts) {
+@@ -2801,14 +2838,6 @@
+     if (target_slots <= 1)
+         return 0;
+ 
+-    int phase_budget = 3;
+-    if (p->opts && p->opts->preset &&
+-        strcmp(p->opts->preset, "performance") == 0)
+-        phase_budget = 1;
+-    else if (p->opts && p->opts->preset &&
+-             strcmp(p->opts->preset, "quality") == 0)
+-        phase_budget = PME_MAX_OUTPUT_PHASES;
+-
+     // Keep generated phases on the error-diffused per-pair slot grid. Preset
+     // budgets choose a subset; they must not stretch fewer phases evenly
+     // across the source interval, which would move them off that nominal grid.
+@@ -2954,6 +2983,50 @@
+     publish_pme_stats_locked(p);
+ }
+ 
++static void pme_adapt_phase_budget_after_miss_locked(struct priv *p,
++                                                      struct mp_filter *f,
++                                                      struct pme_scheduler_job *job)
++{
++    if (job->phase_count <= 1 || p->adaptive_phase_budget <= 1)
++        return;
++
++    const int previous_budget = p->adaptive_phase_budget;
++    p->adaptive_phase_budget = MPMIN(p->adaptive_phase_budget,
++                                     job->phase_count - 1);
++    if (p->adaptive_phase_budget >= previous_budget)
++        return;
++    p->adaptive_phase_headroom_pairs = 0;
++    MP_WARN(f, "PME: reducing display phase limit from %d to %d after a deadline miss\n",
++            previous_budget, p->adaptive_phase_budget);
++    publish_pme_stats_locked(p);
++}
++
++static void pme_adapt_phase_budget_after_pair_locked(struct priv *p,
++                                                      struct mp_filter *f,
++                                                      struct pme_scheduler_job *job)
++{
++    if (job->phase_count <= 0 || !job->success || job->deadline_missed ||
++        job->generated_count != job->phase_count) {
++        p->adaptive_phase_headroom_pairs = 0;
++        return;
++    }
++
++    if (p->adaptive_phase_budget >= p->configured_phase_budget) {
++        p->adaptive_phase_headroom_pairs = 0;
++        return;
++    }
++
++    if (++p->adaptive_phase_headroom_pairs < PME_PHASE_RECOVERY_PAIRS)
++        return;
++
++    const int previous_budget = p->adaptive_phase_budget;
++    p->adaptive_phase_budget++;
++    p->adaptive_phase_headroom_pairs = 0;
++    MP_INFO(f, "PME: restoring display phase budget from %d to %d after %d on-time pairs\n",
++            previous_budget, p->adaptive_phase_budget, PME_PHASE_RECOVERY_PAIRS);
++    publish_pme_stats_locked(p);
++}
++
+ static bool pme_scheduler_emit(struct priv *p, struct mp_filter *f)
+ {
+     if (!p->pme_worker_sync_initialized)
+@@ -2982,6 +3055,7 @@
+             job->success = false;
+             job->skip_interpolations = true;
+             p->last_pme_success = false;
++            pme_adapt_phase_budget_after_miss_locked(p, f, job);
+             mp_image_unrefp(&interp);
+             for (int i = job->phase_emit_index; i < job->phase_ready_count; i++)
+                 mp_image_unrefp(&job->interp[i]);
+@@ -3011,8 +3085,10 @@
+         return false;
+     }
+ 
+-    if (job->output_kind == PME_OUTPUT_PAIR)
++    if (job->output_kind == PME_OUTPUT_PAIR) {
++        pme_adapt_phase_budget_after_pair_locked(p, f, job);
+         pme_publish_job_metrics_locked(p, f, job);
++    }
+     struct mp_frame source = job->source;
+     job->source = (struct mp_frame){0};
+     const bool was_signal = job->output_kind == PME_OUTPUT_SIGNAL;
+@@ -3474,6 +3550,10 @@
+     mp_tags_set_str(tags, "deadline-backoffs", mp_tprintf(32, "%llu", stats.neural_backoffs));
+     mp_tags_set_str(tags, "deadline-bypass-frames",
+                     mp_tprintf(32, "%llu", stats.deadline_bypass_frames));
++    mp_tags_set_str(tags, "phase-budget",
++                    mp_tprintf(32, "%d", stats.adaptive_phase_budget));
++    mp_tags_set_str(tags, "phase-budget-configured",
++                    mp_tprintf(32, "%d", stats.configured_phase_budget));
+     *(struct mp_tags **)cmd->res = tags;
+     return true;
+ }
