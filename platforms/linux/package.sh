@@ -163,3 +163,5 @@ tar --sort=name --owner=0 --group=0 --numeric-owner \
   --mtime='2020-01-01 00:00:00 UTC' \
   --zstd -C "$stage" -cf "$artifact" .
 echo "==> Packaged $artifact"
+
+python3 "$REPO_ROOT/scripts/inspect_pcm_package.py" "$artifact" --expected 1

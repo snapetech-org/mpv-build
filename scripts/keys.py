@@ -541,6 +541,8 @@ def _artifact_key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if "mpv" in spec.components:
+        text.extend(pcm_inspection_key_inputs(root))
     for component in sorted(spec.components):
         for name, digest in patch_entries(root, component, group.name):
             text.append(f"patch={component}/{name}:{digest}")
@@ -626,12 +628,73 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if component == "mpv":
+        text.extend(pcm_inspection_key_inputs(root))
     for name, digest in patch_entries(root, component, group.name):
         text.append(f"patch={name}:{digest}")
     if group.name == "apple" and artifact == "libmpv":
         for name, digest in patch_entries(root, "spatialaudiobridge", group.name):
             text.append(f"patch=spatialaudiobridge/{name}:{digest}")
     return "\n".join(text) + "\n"
+
+
+def pcm_inspection_key_inputs(root: Path) -> list[str]:
+    # A changed package inspection contract cannot reuse a previously published
+    # immutable name that was accepted under weaker symbol/receipt checks.
+    return [f"pcm-inspector={name}:{_sha256_file(root / name)}" for name in (
+        "scripts/inspect_pcm_package.py", "scripts/check_plezy_audio_tap_export.py")]
+
+
+def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
+    receipt = entry.get("capabilities")
+    if not isinstance(receipt, dict):
+        return [f"{label}: no packaged ordered-PCM receipt"]
+    binaries = receipt.get("binaries")
+    hashes = receipt.get("binarySha256")
+    architectures = receipt.get("binaryArchitectures")
+    if (receipt.get("orderedSubtitlePcmAbi") != 1 or
+            receipt.get("inspectionSchema") != 3 or
+            receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
+                "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
+            receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
+            receipt.get("artifactSha256") != entry.get("checksum") or
+            not isinstance(binaries, list) or not binaries or
+            any(not isinstance(name, str) for name in binaries) or
+            len(set(binaries)) != len(binaries) or
+            expected is not None and len(binaries) != expected or
+            not isinstance(hashes, dict) or set(hashes) != set(binaries) or
+            any(not isinstance(value, str) or not CHECKSUM_RE.fullmatch(value) for value in hashes.values()) or
+            not isinstance(architectures, dict) or set(architectures) != set(binaries) or
+            any(not isinstance(value, list) or not value or any(arch not in ('i386', 'armv7', 'arm64', 'arm64e', 'x86_64')
+                for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
+        return [f"{label}: mismatched packaged ordered-PCM receipt"]
+    if expected == 1 and label in ('x86_64', 'aarch64'):
+        machine = 'arm64' if label == 'aarch64' else 'x86_64'
+        if any(value != [machine] for value in architectures.values()):
+            return [f"{label}: packaged machine does not match the platform variant"]
+    if expected == 4:
+        android = {'arm64-v8a': 'arm64', 'armeabi-v7a': 'armv7', 'x86': 'i386', 'x86_64': 'x86_64'}
+        if {f'jni/{abi}/libmpv.so' for abi in android} != set(binaries) or any(
+                architectures.get(f'jni/{abi}/libmpv.so') != [machine] for abi, machine in android.items()):
+            return [f"{label}: Android ABI paths and packaged machines differ"]
+    if any('.xcframework/' in name.lower() for name in binaries):
+        slices = receipt.get('appleSlices')
+        if not isinstance(slices, list) or not slices or len(slices) > 32:
+            return [f"{label}: missing Apple platform coverage"]
+        coverage, covered = set(), set()
+        for row in slices:
+            if (not isinstance(row, dict) or row.get('binary') not in architectures or
+                    row['binary'] in covered or row.get('architectures') != architectures[row['binary']] or
+                    not isinstance(row.get('platform'), str) or not isinstance(row.get('variant'), str)):
+                return [f"{label}: inconsistent Apple slice receipt"]
+            covered.add(row['binary'])
+            coverage.update((row['platform'], row['variant'], arch) for arch in row['architectures'])
+        required = {('ios', '', 'arm64'), ('ios', 'simulator', 'arm64'), ('ios', 'simulator', 'x86_64'),
+            ('ios', 'maccatalyst', 'arm64'), ('ios', 'maccatalyst', 'x86_64'), ('macos', '', 'arm64'), ('macos', '', 'x86_64'),
+            ('tvos', '', 'arm64'), ('tvos', '', 'arm64e'), ('tvos', 'simulator', 'arm64'), ('tvos', 'simulator', 'x86_64')}
+        if covered != set(binaries) or not required <= coverage:
+            return [f"{label}: incomplete Apple platform coverage"]
+    return []
 
 
 def library_key(root: Path, group: Group, artifact: str) -> str:
@@ -682,7 +745,17 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
         return ["no manifest entry"]
 
     if group.artifacts is not None:
-        return _artifact_entry_problems(entry, key, group.artifacts[library])
+        problems = _artifact_entry_problems(entry, key, group.artifacts[library])
+        if library == "mpv-android":
+            problems.extend(pcm_receipt_problems(entry, library, 4))
+            paths = (entry.get("capabilities") or {}).get("binaries", [])
+            required = {f"jni/{abi}/libmpv.so" for abi in group.platforms}
+            if not isinstance(paths, list) or set(name for name in paths if isinstance(name, str)) != required:
+                problems.append("mpv-android: ordered-PCM receipt does not cover every ABI")
+        elif "mpv" in group.artifacts[library].components:
+            for variant, value in (entry.get("prebuilt") or {}).items():
+                if isinstance(value, dict): problems.extend(pcm_receipt_problems(value, variant, 1))
+        return problems
 
     problems = []
     if entry.get("key") != key:
@@ -700,6 +773,8 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
     if not frameworks:
         problems.append("no frameworks recorded")
     for name, framework in sorted(frameworks.items()):
+        if library == "libmpv":
+            problems.extend(pcm_receipt_problems(framework, name))
         asset = framework.get("asset")
         checksum = framework.get("checksum", "")
         if asset != framework_asset(name, key):
@@ -880,6 +955,8 @@ def _record_variant(args, root: Path, group: Group) -> int:
             "asset": asset,
             "checksum": _sha256_file(target),
         }
+        if "mpv" in spec.components:
+            entry["prebuilt"][args.platform]["capabilities"] = pcm_capability(root, target, 1)
         if spec.symbols_pattern:
             entry.setdefault("symbols", {}).update(
                 _record_symbols(release, artifact_id, spec, key, (args.platform,))
@@ -892,6 +969,14 @@ def _record_variant(args, root: Path, group: Group) -> int:
         save_manifest(root, manifest)
         print(f"wrote {MANIFEST_PATH}")
     return 0
+
+
+def pcm_capability(root: Path, artifact: Path, expected=None):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("plezy_pcm_package", root / "scripts/inspect_pcm_package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.inspect(artifact, expected)
 
 
 def cmd_record_platform(args, root: Path, group: Group) -> int:
@@ -954,6 +1039,8 @@ def cmd_record_packages(args, root: Path, group: Group) -> int:
             print(f"{artifact_id}: not built in this run, keeping the recorded entry")
             continue
         entry = {"key": key, "asset": target.name, "checksum": _sha256_file(target)}
+        if artifact_id == "mpv-android":
+            entry["capabilities"] = pcm_capability(root, target, 4)
         if spec.symbols_pattern:
             entry["symbols"] = _record_symbols(
                 release, artifact_id, spec, key, spec.symbols_variants
@@ -1015,6 +1102,8 @@ def cmd_record_frameworks(args, root: Path, group: Group) -> int:
                 "asset": addressed.name,
                 "checksum": swiftpm_checksum(addressed),
             }
+            if library == "libmpv":
+                frameworks[name]["capabilities"] = pcm_capability(root, addressed)
 
         if not frameworks:
             raise SystemExit(f"{library}: no static libraries found in {reference.name}")

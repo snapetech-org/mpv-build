@@ -391,6 +391,21 @@ jobs:
         run: |
           make build use-prebuilt libs=${{ needs.plan.outputs.stale_apple }} platform=${{ matrix.platforms }}
 
+      - name: Require Plezy ordered PCM ABI (${{ matrix.platform_type }})
+        if: contains(format(',{0},', needs.plan.outputs.stale_apple), ',libmpv,')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=("dist/libmpv/${{ matrix.platform_type }}/thin/"*/lib/libmpv.a)
+          if (( ${#archives[@]} == 0 )); then
+            echo "No libmpv archives were produced for ${{ matrix.platform_type }}" >&2
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            python3 scripts/check_plezy_audio_tap_export.py "$archive"
+          done
+
       # Each spatial slice: the prelinked core's exports, a link with libdovi's
       # Rust runtime force-loaded, and an Objective-C consumer through the
       # packaged mpv.pc. Slices without spatial audio are skipped. Only a leg
@@ -521,6 +536,9 @@ jobs:
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=x86_64 bash platforms/linux/container-build.sh
 
+      - name: Require Plezy ordered PCM ABI
+        run: python3 scripts/check_plezy_audio_tap_export.py libmpv-prefix/lib/libmpv.so
+
       - name: Check the tarball and symbols for a build date
         run: |
           bash scripts/test_build_date.sh dist/release/*.tar.zst \
@@ -645,6 +663,10 @@ jobs:
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=aarch64 bash platforms/linux/container-build.sh
+
+      - name: Require Plezy ordered PCM ABI
+        working-directory: ${{ env.BUILD_ROOT }}/src
+        run: python3 scripts/check_plezy_audio_tap_export.py libmpv-prefix/lib/libmpv.so
 
       - name: Check the tarball and symbols for a build date
         shell: bash
@@ -817,6 +839,14 @@ jobs:
 
       - name: Build libmpv-windows (${{ matrix.arch }})
         run: bash platforms/windows/build.sh ${{ matrix.arch }}
+
+      - name: Require Plezy ordered PCM ABI (${{ matrix.arch }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          dev_dir="$(find "build/windows/${{ matrix.arch }}" -maxdepth 1 -type d -name 'mpv-dev-*' -print -quit)"
+          test -n "$dev_dir" || { echo "mpv-dev package was not produced" >&2; exit 1; }
+          python3 scripts/check_plezy_audio_tap_export.py "$dev_dir/libmpv-2.dll"
 
       # package.sh names the zip by content key itself, so the build leg
       # uploads it as-is; publish records every variant at once. Beside it
