@@ -352,7 +352,7 @@ main() {
   meson setup build \
     --prefix="$prefix" \
     --default-library=static \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
     -Ddemos=false \
     -Dtests=false
@@ -414,6 +414,12 @@ main() {
   # Fedora report). Enabled means the configure fails when the pieces are
   # absent instead of degrading in silence.
   #
+  # The Plezy Motion Engine filter owns a separate Vulkan instance/device for
+  # compute. Enable Vulkan in both libplacebo and mpv so the filter is compiled
+  # and libmpv's Vulkan dependency is available. The PME filter selects its
+  # physical device independently; Plezy's Linux Wayland plane continues to
+  # present through its EGL-backed render context.
+  #
   # cuda-hwaccel/cuda-interop are pinned for the same reason: they need
   # ffnvcodec and resolve to disabled without it. They give NVIDIA GPUs the
   # nvdec/nvdec-copy hwdecs, which libva cannot serve there without a
@@ -429,7 +435,7 @@ main() {
     -Dcplugins=disabled \
     -Dmanpage-build=disabled \
     -Djack=disabled \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
     -Dgl=enabled \
     -Degl=enabled \
