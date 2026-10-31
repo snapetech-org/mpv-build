@@ -34,10 +34,8 @@ jobs:
   natives:
     name: Build android ${{ matrix.abi }}
     if: inputs.natives
-    # Pinned, never ubuntu-latest: the NDK is pinned, but nasm, meson and the
-    # autotools come from the image's apt, and a rebuild of a published key
-    # has to reproduce its bytes. ubuntu-latest moved these legs to
-    # ubuntu-26.04 in October 2026; the tarballs published since were built there.
+    # The Android NDK is pinned. nasm, meson and autotools come from the
+    # private JIT image, and the release artifacts must reproduce those inputs.
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-natives"]}}', github.run_id, strategy.job-index)) }}
     # One job per ABI: the driver builds one architecture per --arch invocation
     # (platforms/android/build.sh), the ABIs share nothing but sources, and the

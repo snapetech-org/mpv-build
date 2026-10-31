@@ -41,6 +41,18 @@ jobs:
   dump:
     name: Dump ${{ inputs.arch }} logs (${{ inputs.pattern }})
     # The host the cached windows tree was built on (publish.yml build-windows).
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-dump"]}}', github.run_id)) }}
     steps:
       - name: Restore newest build state cache

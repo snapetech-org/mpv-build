@@ -22,6 +22,18 @@ jobs:
   build:
     permissions:
       contents: read
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.

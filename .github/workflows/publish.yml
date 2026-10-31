@@ -55,8 +55,20 @@ jobs:
     # dependencies for one of them, and Xcode for the apple merge test), but
     # not a Linux cc:
     # test_avf_timebase_servo.c uses M_PI under -std=c11, which glibc hides in
-    # strict ISO mode (gcc 13 on ubuntu-24.04: "'M_PI' undeclared"), while
-    # Apple libc exposes it. Keep them on the compiler they are written for.
+    # strict ISO mode (gcc 13: "'M_PI' undeclared"), while Apple libc
+    # exposes it. Keep them on the compiler they are written for.
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
@@ -236,6 +248,18 @@ jobs:
     needs: tests
     permissions:
       contents: read
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-plan"]}}', github.run_id)) }}
     outputs:
       # The stale libraries of the apple group, comma-separated: the `libs=`
@@ -306,7 +330,18 @@ jobs:
   build-apple:
     name: Build apple ${{ matrix.name }}
     needs: plan
-    if: contains(needs.plan.outputs.stale_groups, ',apple,')
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        contains(needs.plan.outputs.stale_groups, ',apple,')
+      )
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
@@ -429,7 +464,18 @@ jobs:
   publish-apple:
     name: Publish apple
     needs: [build-apple, build-linux-arm64]
-    if: always() && !cancelled() && needs.build-apple.result == 'success'
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        always() && !cancelled() && needs.build-apple.result == 'success'
+      )
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
@@ -504,7 +550,18 @@ jobs:
   build-linux-x64:
     name: Build linux x86_64
     needs: plan
-    if: contains(needs.plan.outputs.stale_groups, ',linux,')
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        contains(needs.plan.outputs.stale_groups, ',linux,')
+      )
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-x64"]}}', github.run_id)) }}
@@ -539,9 +596,17 @@ jobs:
     name: Build linux aarch64
     needs: [plan, build-apple]
     if: >-
-      always() && !cancelled() &&
-      needs.plan.result == 'success' &&
-      contains(needs.plan.outputs.stale_groups, ',linux,')
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        always() && !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.stale_groups, ',linux,')
+      )
     permissions:
       contents: read
     # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
@@ -678,19 +743,30 @@ jobs:
   build-windows:
     name: Build windows ${{ matrix.arch }}
     needs: plan
-    if: contains(needs.plan.outputs.stale_groups, ',windows,')
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        contains(needs.plan.outputs.stale_groups, ',windows,')
+      )
     permissions:
       contents: read
     # Both target arches cross-compile from an x86_64 host: winbuild's
     # GCC_ARCH probe runs the HOST compiler with -march=x86-64 and fails on
     # arm64 hosts, and aarch64-w64-mingw32 only needs the clang toolchain,
     # which build.sh hardcodes.
-    # Pinned to the host the cached toolchain was built on: the llvm
-    # bootstrap links the host clang against the host's libc++, so the cached
-    # clang needs ubuntu-24.04's libc++/libunwind (LLVM 18) at run time. On
-    # ubuntu-26.04 it dies with "libunwind.so.1: cannot open shared object
-    # file" and meson reports "Unknown compiler(s)". The cache key does not
-    # name the host, so moving this runner means a new cache epoch
+    # Pinned to the host environment the cached toolchain was built on: the
+    # LLVM bootstrap links host clang against libc++, so the cached clang
+    # needs the matching libc++/libunwind (LLVM 18) at run time. A different
+    # system library generation fails with "libunwind.so.1: cannot open
+    # shared object file" and meson reports "Unknown compiler(s)". The cache
+    # key does not name the host, so moving this runner means a new cache epoch
     # (windows-ep3) and a cold, hours-long toolchain bootstrap.
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-windows"]}}', github.run_id, strategy.job-index)) }}
     strategy:
@@ -845,7 +921,18 @@ jobs:
     # skipped need would otherwise skip this job -- silently publishing nothing
     # and leaving the commit unpinnable. The per-row gate below decides which
     # rows actually act; `!cancelled()` keeps a superseded run from publishing.
-    if: always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+      )
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-publish"]}}', github.run_id, strategy.job-index)) }}
@@ -960,7 +1047,18 @@ jobs:
     needs: [plan, publish-apple, publish]
     # always(): this gate is what proves a group that was stale actually
     # published, so it must run even when one of them failed.
-    if: always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+      )
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-manifest"]}}', github.run_id)) }}

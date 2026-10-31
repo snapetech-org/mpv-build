@@ -25,6 +25,18 @@ jobs:
     name: Patch series
     permissions:
       contents: read
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-patches"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
@@ -184,6 +196,18 @@ jobs:
     name: Android plan
     permissions:
       contents: read
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-android-plan"]}}', github.run_id)) }}
     outputs:
       natives: ${{ steps.stale.outputs.natives }}
@@ -223,6 +247,18 @@ jobs:
     # The harnesses compile Objective-C and Swift against Apple's frameworks.
     permissions:
       contents: read
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-spatial"]}}', github.run_id)) }}
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
@@ -268,6 +304,18 @@ jobs:
     # The demo builds are expensive; run them only through explicit dispatch.
     permissions:
       contents: write
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.

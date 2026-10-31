@@ -36,6 +36,18 @@ jobs:
     name: Tag and release
     permissions:
       contents: write
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'release' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-release"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4

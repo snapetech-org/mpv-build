@@ -28,6 +28,18 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-check"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +238,18 @@ jobs:
           - repository: "mpvkit/libdovi-build"
             branch: libdovi-build
             components: "libdovi"
+    if: >-
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'ci' &&
+          inputs.runner_pool_tag == 'private'
+        )
+      ) &&
+      (
+        true
+      )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-check-deps"]}}', github.run_id, strategy.job-index)) }}
     steps:
       - uses: actions/checkout@v4
