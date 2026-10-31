@@ -1,0 +1,198 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1826,6 +1826,16 @@
+ // ====================================================================
+ 
+ #define PME_SCHEDULER_CAPACITY 2
++#define PME_SOURCE_CADENCE_CONFIRMATION_PAIRS 24
++
++enum pme_source_cadence_state {
++    PME_SOURCE_CADENCE_UNKNOWN,
++    PME_SOURCE_CADENCE_PROBING,
++    PME_SOURCE_CADENCE_CFR_24,
++    PME_SOURCE_CADENCE_CFR_30,
++    PME_SOURCE_CADENCE_NON_UNIFORM,
++    PME_SOURCE_CADENCE_DISCONTINUITY,
++};
+ 
+ struct pme_opts {
+     char *model;
+@@ -1877,6 +1887,9 @@
+     int configured_phase_budget;
+     bool display_phase_feedback_active;
+     uint64_t display_phase_feedback_serial;
++    int source_cadence_state;
++    int source_cadence_samples;
++    int source_cadence_fps;
+ };
+ 
+ struct priv {
+@@ -1920,6 +1933,9 @@
+     int configured_phase_budget;
+     int adaptive_phase_budget;
+     unsigned int adaptive_phase_headroom_pairs;
++    int source_cadence_state;
++    int source_cadence_candidate_fps;
++    int source_cadence_samples;
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+@@ -2486,6 +2502,29 @@
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+ }
+ 
++static void publish_source_cadence(struct priv *p)
++{
++    const bool lock_initialized = p->pme_worker_sync_initialized;
++    if (lock_initialized)
++        pthread_mutex_lock(&p->pme_worker_mutex);
++    p->published_stats.source_cadence_state = p->source_cadence_state;
++    p->published_stats.source_cadence_samples = p->source_cadence_samples;
++    p->published_stats.source_cadence_fps =
++        p->source_cadence_state == PME_SOURCE_CADENCE_CFR_24 ? 24 :
++        p->source_cadence_state == PME_SOURCE_CADENCE_CFR_30 ? 30 : 0;
++    if (lock_initialized)
++        pthread_mutex_unlock(&p->pme_worker_mutex);
++}
++
++static void reset_source_cadence(struct priv *p,
++                                 enum pme_source_cadence_state state)
++{
++    p->source_cadence_state = state;
++    p->source_cadence_candidate_fps = 0;
++    p->source_cadence_samples = 0;
++    publish_source_cadence(p);
++}
++
+ static void reset_pme_stats_locked(struct priv *p)
+ {
+     p->last_pme_success = false;
+@@ -3251,18 +3290,71 @@
+     return mean_difference >= 44 && changed_samples * 100 >= total_samples * 68;
+ }
+ 
+-static bool frame_pair_matches_supported_cadence(const struct mp_image *previous,
+-                                                  const struct mp_image *current)
++static int frame_pair_supported_cadence_fps(const struct mp_image *previous,
++                                            const struct mp_image *current)
+ {
+     if (!previous || !current || !isfinite(previous->pts) || !isfinite(current->pts) ||
+         previous->pts == MP_NOPTS_VALUE || current->pts == MP_NOPTS_VALUE ||
+         current->pts <= previous->pts)
+-        return false;
++        return 0;
+ 
+     const double duration = current->pts - previous->pts;
+     const double tolerance = 0.002; // 2 ms; rejects VFR and discontinuous pairs.
+-    return fabs(duration - 1.0 / 24.0) <= tolerance ||
+-           fabs(duration - 1.0 / 30.0) <= tolerance;
++    if (fabs(duration - 1.0 / 24.0) <= tolerance)
++        return 24;
++    if (fabs(duration - 1.0 / 30.0) <= tolerance)
++        return 30;
++    return 0;
++}
++
++static int observe_source_cadence(struct priv *p,
++                                  const struct mp_image *previous,
++                                  const struct mp_image *current)
++{
++    if (!previous) {
++        reset_source_cadence(p, PME_SOURCE_CADENCE_UNKNOWN);
++        return 0;
++    }
++    if (!current || !isfinite(previous->pts) || !isfinite(current->pts) ||
++        previous->pts == MP_NOPTS_VALUE || current->pts == MP_NOPTS_VALUE ||
++        current->pts <= previous->pts) {
++        reset_source_cadence(p, PME_SOURCE_CADENCE_DISCONTINUITY);
++        return 0;
++    }
++
++    const int fps = frame_pair_supported_cadence_fps(previous, current);
++    if (!fps) {
++        reset_source_cadence(p, PME_SOURCE_CADENCE_NON_UNIFORM);
++        return 0;
++    }
++
++    if (p->source_cadence_candidate_fps != fps) {
++        p->source_cadence_candidate_fps = fps;
++        p->source_cadence_samples = 1;
++        p->source_cadence_state = PME_SOURCE_CADENCE_PROBING;
++    } else if (p->source_cadence_samples < PME_SOURCE_CADENCE_CONFIRMATION_PAIRS) {
++        p->source_cadence_samples++;
++    }
++
++    if (p->source_cadence_samples >= PME_SOURCE_CADENCE_CONFIRMATION_PAIRS) {
++        p->source_cadence_state = fps == 24 ? PME_SOURCE_CADENCE_CFR_24 :
++                                             PME_SOURCE_CADENCE_CFR_30;
++    }
++    publish_source_cadence(p);
++    return p->source_cadence_state == PME_SOURCE_CADENCE_CFR_24 ||
++           p->source_cadence_state == PME_SOURCE_CADENCE_CFR_30 ? fps : 0;
++}
++
++static const char *source_cadence_state_name(int state)
++{
++    switch (state) {
++    case PME_SOURCE_CADENCE_PROBING: return "probing";
++    case PME_SOURCE_CADENCE_CFR_24: return "cfr-24";
++    case PME_SOURCE_CADENCE_CFR_30: return "cfr-30";
++    case PME_SOURCE_CADENCE_NON_UNIFORM: return "non-uniform-pts";
++    case PME_SOURCE_CADENCE_DISCONTINUITY: return "pts-discontinuity";
++    default: return "unknown";
++    }
+ }
+ 
+ static void f_process(struct mp_filter *f)
+@@ -3305,6 +3397,7 @@
+     struct mp_frame frame = mp_pin_out_read(f->ppins[0]);
+     if (mp_frame_is_signaling(frame)) {
+         publish_display_phase_feedback(p, false, 0);
++        reset_source_cadence(p, PME_SOURCE_CADENCE_UNKNOWN);
+         mp_image_unrefp(&p->prev);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+@@ -3347,6 +3440,7 @@
+                            !(mpi->fields & MP_IMGFIELD_INTERLACED);
+     if (!supported) {
+         publish_display_phase_feedback(p, false, 0);
++        reset_source_cadence(p, PME_SOURCE_CADENCE_UNKNOWN);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
+@@ -3363,9 +3457,11 @@
+         return;
+     }
+ 
+-    // Stream metadata can claim 24/30 fps while individual timestamps are
+-    // variable. Preserve source cadence and restart slot diffusion on a break.
+-    if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
++    // Do not infer CFR from container metadata or one matching frame interval.
++    // Require 24 consecutive source PTS intervals; any irregular interval
++    // immediately returns the stream to passthrough.
++    const int supported_cadence_fps = observe_source_cadence(p, p->prev, mpi);
++    if (!supported_cadence_fps) {
+         publish_display_phase_feedback(p, false, 0);
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+@@ -3499,6 +3595,7 @@
+ {
+     struct priv *p = f->priv;
+     publish_display_phase_feedback(p, false, 0);
++    reset_source_cadence(p, PME_SOURCE_CADENCE_UNKNOWN);
+     p->display_phase_error = 0.0;
+     p->display_phase_fps = 0.0;
+     p->display_phase_speed = 0.0;
+@@ -3637,6 +3734,12 @@
+     mp_tags_set_str(tags, "phase-feedback-serial",
+                     mp_tprintf(32, "%llu",
+                                (unsigned long long)stats.display_phase_feedback_serial));
++    mp_tags_set_str(tags, "source-cadence",
++                    source_cadence_state_name(stats.source_cadence_state));
++    mp_tags_set_str(tags, "source-cadence-samples",
++                    mp_tprintf(32, "%d", stats.source_cadence_samples));
++    mp_tags_set_str(tags, "source-cadence-fps",
++                    mp_tprintf(32, "%d", stats.source_cadence_fps));
+     *(struct mp_tags **)cmd->res = tags;
+     return true;
+ }
