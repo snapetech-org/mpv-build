@@ -1,11 +1,13 @@
 From: PlezyNG
-Subject: [PATCH] PME: select and report the Vulkan compute device
+Subject: [PATCH] PME: prefer and report the RX 7900 XT compute device
 
 Let the PME filter target a requested Vulkan device by a device-name substring
 through PLEZY_PME_VULKAN_DEVICE. This is separate from mpv's display renderer,
 so multi-GPU systems can reserve motion compute for a dedicated accelerator.
-An unmatched explicit request bypasses Vulkan instead of silently selecting a
-different GPU. Report the selected physical-device name in PME metadata so the
+When no device is explicitly requested, prefer the AMD RX 7900 XT by its
+vendor/device IDs and otherwise keep the first available device. An unmatched
+explicit request bypasses Vulkan instead of silently selecting a different
+GPU. Report the selected physical-device name in PME metadata so the
 performance overlay identifies the hardware that ran the GPU stages.
 
 diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
@@ -19,7 +21,7 @@ diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
      VkDevice device;
      VkQueue queue;
      uint32_t queueFamily;
-@@ -313,13 +314,52 @@
+@@ -313,13 +314,66 @@
      };
      VK_CHECK(vkCreateInstance(&ici, NULL, &vk->instance), fail);
  
@@ -52,8 +54,8 @@ diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
 +
 +    const char *requested_device = getenv("PLEZY_PME_VULKAN_DEVICE");
 +    uint32_t selected_index = 0;
++    int found = 0;
 +    if (requested_device && requested_device[0]) {
-+        int found = 0;
 +        for (uint32_t i = 0; i < devCount; i++) {
 +            VkPhysicalDeviceProperties properties;
 +            vkGetPhysicalDeviceProperties(devices[i], &properties);
@@ -69,6 +71,20 @@ diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
 +            free(devices);
 +            goto fail;
 +        }
++    } else {
++        // Keep PME's GPU work on the dedicated inference adapter when present.
++        // This Vulkan device is independent of mpv's display renderer.
++        for (uint32_t i = 0; i < devCount; i++) {
++            VkPhysicalDeviceProperties properties;
++            vkGetPhysicalDeviceProperties(devices[i], &properties);
++            if (properties.vendorID == 0x1002 && properties.deviceID == 0x744c) {
++                selected_index = i;
++                found = 1;
++                break;
++            }
++        }
++        if (found)
++            MP_INFO(f, "Vulkan: preferring AMD Radeon RX 7900 XT for PME compute\n");
 +    }
 +    vk->physDev = devices[selected_index];
 +    free(devices);
