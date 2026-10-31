@@ -800,21 +800,6 @@ jobs:
           swapon --show
           df -h /var/tmp
 
-      # Keep every nested Ninja invocation serialized as well as the outer
-      # build. Swap handles the largest single translation unit; serialization
-      # prevents multiple C++ compiler processes from multiplying that peak.
-      - name: Limit Ninja concurrency to the guest memory budget
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/windows-ninja"
-          cat > "$RUNNER_TEMP/windows-ninja/ninja" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec /usr/bin/ninja -j 1 "$@"
-          SH
-          chmod 0755 "$RUNNER_TEMP/windows-ninja/ninja"
-          echo "$RUNNER_TEMP/windows-ninja" >> "$GITHUB_PATH"
-
       - name: Build libmpv-windows (${{ matrix.arch }})
         run: bash platforms/windows/build.sh ${{ matrix.arch }}
 

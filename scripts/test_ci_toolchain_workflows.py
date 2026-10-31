@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Keep private native build workflows aligned with their toolchain contracts."""
 
-from pathlib import Path
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLISH = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
 ANDROID = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
 CI = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+WINDOWS_BUILD = (ROOT / "platforms/windows/build.sh").read_text(encoding="utf-8")
 RUSTUP_BOOTSTRAP = (ROOT / "scripts/install_pinned_rustup_macos.sh").read_text(
     encoding="utf-8"
 )
@@ -57,12 +62,84 @@ for token in (
 assert windows.index(windows_swap) < windows.index(
     named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
 ), "compiler swap must be enabled before the Windows build starts"
-windows_ninja = named_step(windows, "Limit Ninja concurrency to the guest memory budget")
-assert 'exec /usr/bin/ninja -j 1 "$@"' in windows_ninja, (
-    "Windows cross-builds must serialize nested Ninja builds to fit the 8 GiB JIT guest"
+for token in (
+    'NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"',
+    'cat > "$NINJA_WRAPPER_DIR/ninja" <<\'SH\'',
+    "--jobs|--load-average|-j|-l)",
+    "--jobs=*|--load-average=*|-j*|-l*)",
+    'args+=("$arg")',
+    'exec /usr/bin/ninja -j 1 "${args[@]}"',
+    'export PATH="$NINJA_WRAPPER_DIR:$PATH"',
+):
+    assert token in WINDOWS_BUILD, (
+        "the Windows build driver must normalize unsupported job flags, remove load limits, "
+        f"and serialize nested Ninja builds: {token}"
+    )
+assert WINDOWS_BUILD.index('export PATH="$NINJA_WRAPPER_DIR:$PATH"') < WINDOWS_BUILD.index(
+    'cmake -S "$SRC"'
+), "the Ninja wrapper must be active before CMake configures nested builds"
+
+wrapper_start = WINDOWS_BUILD.index("<<'SH'\n") + len("<<'SH'\n")
+wrapper_end = re.search(r"(?m)^SH\s*$", WINDOWS_BUILD[wrapper_start:])
+assert wrapper_end, "the Windows Ninja wrapper heredoc must be terminated"
+wrapper_source = textwrap.dedent(
+    WINDOWS_BUILD[wrapper_start : wrapper_start + wrapper_end.start()]
+).replace("/usr/bin/ninja", '"${NINJA_TEST_BIN}"', 1)
+with tempfile.TemporaryDirectory(prefix="mpv-ninja-wrapper-") as temporary:
+    temp = Path(temporary)
+    wrapper = temp / "ninja-wrapper"
+    fake_ninja = temp / "fake-ninja"
+    captured_args = temp / "ninja-args"
+    fake_ninja.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['NINJA_TEST_ARGS']).write_text('\\0'.join(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    wrapper.write_text(wrapper_source, encoding="utf-8")
+    fake_ninja.chmod(0o755)
+    wrapper.chmod(0o755)
+    env = os.environ.copy()
+    env["NINJA_TEST_BIN"] = str(fake_ninja)
+    env["NINJA_TEST_ARGS"] = str(captured_args)
+    subprocess.run(
+        [
+            str(wrapper),
+            "--jobs=1",
+            "--jobs",
+            "4",
+            "-j",
+            "5",
+            "-j12",
+            "-l",
+            "0.5",
+            "-l5",
+            "--load-average=3",
+            "--load-average",
+            "1",
+            "-C",
+            "build",
+        ],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert captured_args.read_text(encoding="utf-8").split("\0") == [
+        "-j",
+        "1",
+        "-C",
+        "build",
+    ], (
+        "the wrapper must drop unsupported job/load flags and keep ordinary Ninja arguments"
+    )
+windows_build_step = named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
+assert "bash platforms/windows/build.sh" in windows_build_step, (
+    "the Windows publish job must use the keyed build driver containing the wrapper"
 )
-assert 'echo "$RUNNER_TEMP/windows-ninja" >> "$GITHUB_PATH"' in windows_ninja, (
-    "the memory-bounded Ninja wrapper must apply to nested ExternalProject builds"
+assert "Limit Ninja concurrency to the guest memory budget" not in windows, (
+    "the serial Ninja wrapper must live in the keyed Windows build driver"
 )
 windows_install = named_step(windows, "Install dependencies")
 windows_meson_tokens = (

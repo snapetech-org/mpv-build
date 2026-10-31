@@ -83,6 +83,39 @@ SRC="$WORK/mpv-winbuild-cmake"
 BUILD="$WORK/$ARCH"
 mkdir -p "$WORK"
 
+# Upstream passes `--jobs=1` to Ninja, but supported Ninja releases accept
+# `-j 1` instead. Normalize all job options and drop load-average limits so
+# I/O or system load never stalls a build; keep one compiler for the 8 GiB
+# guest's peak memory use. This lives in the build driver so its content key
+# moves and Windows artifacts rebuild when the wrapper contract changes.
+NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"
+mkdir -p "$NINJA_WRAPPER_DIR"
+cat > "$NINJA_WRAPPER_DIR/ninja" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+args=()
+skip_next=0
+for arg in "$@"; do
+  if (( skip_next )); then
+    skip_next=0
+    continue
+  fi
+  case "$arg" in
+    --jobs|--load-average|-j|-l)
+      skip_next=1
+      ;;
+    --jobs=*|--load-average=*|-j*|-l*)
+      ;;
+    *)
+      args+=("$arg")
+      ;;
+  esac
+done
+exec /usr/bin/ninja -j 1 "${args[@]}"
+SH
+chmod 0755 "$NINJA_WRAPPER_DIR/ninja"
+export PATH="$NINJA_WRAPPER_DIR:$PATH"
+
 echo "==> mpv-winbuild-cmake @ $WINBUILD_COMMIT"
 if [[ ! -d "$SRC/.git" ]]; then
   # The unified repo may itself be a git worktree whose admin dir sits outside
