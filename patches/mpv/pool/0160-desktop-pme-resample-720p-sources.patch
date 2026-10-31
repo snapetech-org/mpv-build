@@ -1,0 +1,124 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1540,7 +1540,8 @@
+     float *input_buf;
+     float *output_buf;
+     uint64_t in_elems, out_elems;
+-    int model_w, model_h, model_scale;
++    int model_w, model_h;
++    double model_scale;
+     int ready;
+ };
+ 
+@@ -1550,8 +1551,8 @@
+     float *sm_a, *sm_b, *sm_tmp;
+     int sH, sW;
+     float *blend_rgb[3];
+-    struct mp_sws_context *model_downscale_sws;
+-    struct mp_sws_context *source_upscale_sws;
++    struct mp_sws_context *model_input_sws;
++    struct mp_sws_context *source_output_sws;
+ };
+ 
+ struct pme_job_metrics {
+@@ -1743,11 +1744,14 @@
+ 
+     const int model_h = (int)pme->info.input.dimensions[2];
+     const int model_w = (int)pme->info.input.dimensions[3];
+-    if (w % model_w != 0 || h % model_h != 0 || w / model_w != h / model_h ||
+-        w / model_w < 1 || w / model_w > 4 ||
++    const double model_scale_x = (double)w / model_w;
++    const double model_scale_y = (double)h / model_h;
++    if (!isfinite(model_scale_x) || !isfinite(model_scale_y) ||
++        fabs(model_scale_x - model_scale_y) > 1e-6 ||
++        model_scale_x < 0.5 || model_scale_x > 4.0 ||
+         pme->info.input.element_count != (uint64_t)model_w * model_h * 6 ||
+         pme->info.output.element_count != (uint64_t)model_w * model_h * 3) {
+-        MP_WARN(f, "PME: model %dx%d requires source dimensions at the same 1x–4x scale; got %dx%d\n",
++        MP_WARN(f, "PME: model %dx%d requires the same aspect ratio at a 0.5x–4x scale; got %dx%d\n",
+                 model_w, model_h, w, h);
+         return -1;
+     }
+@@ -1756,7 +1760,7 @@
+     pme->out_elems = pme->info.output.element_count;
+     pme->model_w = model_w;
+     pme->model_h = model_h;
+-    pme->model_scale = w / model_w;
++    pme->model_scale = model_scale_x;
+     pme->input_buf = calloc((size_t)pme->in_elems, sizeof(float));
+     pme->output_buf = calloc((size_t)pme->out_elems, sizeof(float));
+     if (!pme->input_buf || !pme->output_buf) {
+@@ -1767,8 +1771,14 @@
+     snprintf(pme->provider_name, sizeof(pme->provider_name), "%s", pme->info.provider_name);
+     snprintf(pme->provider_vendor, sizeof(pme->provider_vendor), "%s", pme->info.provider_vendor);
+     pme->ready = 1;
+-    MP_INFO(f, "PME: %s on %s ready (model %dx%d, source %dx%d, scale %d)\n",
+-            pme->provider_name, pme->provider_vendor[0] ? pme->provider_vendor : "accelerator",
++    const char *device_label = pme->provider_vendor;
++    if (!device_label[0]) {
++        device_label = pme->device_kind == PME_DEVICE_CPU ? "CPU" :
++                       pme->device_kind == PME_DEVICE_NPU ? "NPU" :
++                       pme->device_kind == PME_DEVICE_GPU ? "GPU" : "device";
++    }
++    MP_INFO(f, "PME: %s on %s ready (model %dx%d, source %dx%d, scale %.3fx)\n",
++            pme->provider_name, device_label,
+             model_w, model_h, w, h, pme->model_scale);
+     return 0;
+ }
+@@ -2244,20 +2254,20 @@
+     const int source_W = curr->w, source_H = curr->h;
+     const int model_w = pme->model_w;
+     const int model_h = pme->model_h;
+-    const int source_model_scale = pme->model_scale;
++    const bool needs_model_resample = source_W != model_w || source_H != model_h;
+     struct mp_image *scaled_prev = NULL, *scaled_curr = NULL;
+     struct mp_image *working_output = NULL, *out = NULL;
+     struct mp_image *work_prev = prev, *work_curr = curr;
+     const double started = started_ms;
+     *metrics = (struct pme_job_metrics){0};
+ 
+-    if (!pme->input_buf || !pme->output_buf || source_model_scale < 1)
++    if (!pme->input_buf || !pme->output_buf)
+         goto done;
+-    if (source_model_scale > 1) {
+-        if (!ws->model_downscale_sws || !ws->source_upscale_sws)
++    if (needs_model_resample) {
++        if (!ws->model_input_sws || !ws->source_output_sws)
+             goto done;
+-        scaled_prev = pme_scale_image(ws->model_downscale_sws, prev, model_w, model_h);
+-        scaled_curr = pme_scale_image(ws->model_downscale_sws, curr, model_w, model_h);
++        scaled_prev = pme_scale_image(ws->model_input_sws, prev, model_w, model_h);
++        scaled_curr = pme_scale_image(ws->model_input_sws, curr, model_w, model_h);
+         if (!scaled_prev || !scaled_curr)
+             goto done;
+         work_prev = scaled_prev;
+@@ -2408,7 +2418,7 @@
+             goto done;
+         mp_image_copy_attributes(out, curr);
+         mp_image_set_size(out, source_W, source_H);
+-        if (mp_sws_scale(ws->source_upscale_sws, out, working_output) < 0) {
++        if (mp_sws_scale(ws->source_output_sws, out, working_output) < 0) {
+             mp_image_unrefp(&out);
+             goto done;
+         }
+@@ -3269,7 +3279,8 @@
+         return;
+     }
+     const int w = mpi->w, h = mpi->h;
+-    const bool supported = w == 1920 && h == 1080 && mpi->imgfmt == IMGFMT_420P &&
++    const bool supported = ((w == 1280 && h == 720) || (w == 1920 && h == 1080)) &&
++                           mpi->imgfmt == IMGFMT_420P &&
+                            !(mpi->fields & MP_IMGFIELD_INTERLACED);
+     if (!supported) {
+         p->display_phase_error = 0.0;
+@@ -3588,8 +3599,8 @@
+     p->filter = f;
+     for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++) {
+         struct pme_workspace *ws = &p->worker_contexts[i].workspace;
+-        ws->model_downscale_sws = mp_sws_alloc(p);
+-        ws->source_upscale_sws = mp_sws_alloc(p);
++        ws->model_input_sws = mp_sws_alloc(p);
++        ws->source_output_sws = mp_sws_alloc(p);
+     }
+     p->vk_mutex_initialized = pthread_mutex_init(&p->vk_mutex, NULL) == 0;
+     if (!p->vk_mutex_initialized)

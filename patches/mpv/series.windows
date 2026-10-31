@@ -4,3 +4,20 @@
 # Every group but android: a MediaCodec that starts failing mid-stream rarely
 # recovers, and waiting out its error burst only delays the software fallback.
 0025-vd-lavc-recover-hwdec-after-decode-error-burst.patch
+0143-desktop-plezy-motion-engine-filter.patch
+0146-desktop-pme-count-worker-dispatch-in-deadline.patch
+0148-desktop-pme-select-vulkan-device.patch
+0149-desktop-pme-meson-target-arguments.patch
+0150-desktop-pme-stage-timing-metadata.patch
+0151-desktop-pme-prefer-cached-host-memory.patch
+0152-desktop-pme-support-reduced-model-shapes.patch
+0154-desktop-pme-overlap-scheduler.patch
+0155-desktop-pme-display-phases.patch
+0156-desktop-pme-single-inference-phases.patch
+0157-desktop-pme-sync-timing.patch
+0158-desktop-pme-nominal-slot-grid.patch
+0159-desktop-pme-adaptive-phase-budget.patch
+0160-desktop-pme-resample-720p-sources.patch
+0161-desktop-pme-display-sync-feedback.patch
+0162-desktop-pme-source-cadence-telemetry.patch
+0163-desktop-pme-prefer-rx7900-vulkan-compute.patch

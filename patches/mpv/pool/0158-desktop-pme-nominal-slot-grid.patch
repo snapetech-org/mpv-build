@@ -1,0 +1,117 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1899,6 +1899,7 @@
+     double display_phase_error;
+     double display_phase_fps;
+     double display_phase_speed;
++    bool display_phase_round_up;
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+@@ -2730,6 +2731,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
++        p->display_phase_round_up = false;
+         return 0;
+     }
+ 
+@@ -2748,6 +2750,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
++        p->display_phase_round_up = false;
+         return 0;
+     }
+ 
+@@ -2755,6 +2758,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = playback_speed;
++        p->display_phase_round_up = false;
+         phases[0] = (struct pme_output_phase){
+             .alpha = 0.5,
+             .pts = prev->pts + source_duration * 0.5,
+@@ -2768,6 +2772,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = display_fps;
+         p->display_phase_speed = playback_speed;
++        p->display_phase_round_up = false;
+         return 0;
+     }
+ 
+@@ -2778,6 +2783,7 @@
+         p->display_phase_fps = display_fps;
+         p->display_phase_speed = playback_speed;
+         p->display_phase_error = 0.0;
++        p->display_phase_round_up = false;
+     }
+ 
+     // Match the display-sync scheduler's display interval and effective video
+@@ -2787,6 +2793,7 @@
+     if (!isfinite(fractional_slots) || fractional_slots < 0.5 ||
+         fractional_slots > 1000000.0) {
+         p->display_phase_error = 0.0;
++        p->display_phase_round_up = false;
+         return 0;
+     }
+     const int target_slots = (int)llrint(fractional_slots);
+@@ -2802,10 +2809,23 @@
+              strcmp(p->opts->preset, "quality") == 0)
+         phase_budget = PME_MAX_OUTPUT_PHASES;
+ 
+-    const int output_slots = MPMIN(target_slots, phase_budget + 1);
+-    const int count = output_slots - 1;
++    // Keep generated phases on the error-diffused per-pair slot grid. Preset
++    // budgets choose a subset; they must not stretch fewer phases evenly
++    // across the source interval, which would move them off that nominal grid.
++    const int count = MPMIN(target_slots - 1, phase_budget);
++    int previous_slot = 0;
+     for (int i = 0; i < count; i++) {
+-        const double alpha = (double)(i + 1) / output_slots;
++        const double ideal_slot = (double)(i + 1) * target_slots / (count + 1);
++        const double lower_slot = floor(ideal_slot);
++        const double fractional_slot = ideal_slot - lower_slot;
++        int slot = fabs(fractional_slot - 0.5) < 1e-9 ?
++            (int)lower_slot + (p->display_phase_round_up ? 1 : 0) :
++            (int)floor(ideal_slot + 0.5);
++        if (fabs(fractional_slot - 0.5) < 1e-9)
++            p->display_phase_round_up = !p->display_phase_round_up;
++        slot = MPCLAMP(slot, previous_slot + 1, target_slots - (count - i));
++        previous_slot = slot;
++        const double alpha = (double)slot / target_slots;
+         phases[i] = (struct pme_output_phase){
+             .alpha = alpha,
+             .pts = prev->pts + alpha * source_duration,
+@@ -3140,6 +3160,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
++        p->display_phase_round_up = false;
+         if (queued_outputs > 0 &&
+             pme_queue_source(p, &frame, PME_OUTPUT_SIGNAL)) {
+             mp_filter_internal_mark_progress(f);
+@@ -3178,6 +3199,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
++        p->display_phase_round_up = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+         if (queued_outputs > 0 &&
+@@ -3196,6 +3218,7 @@
+         p->display_phase_error = 0.0;
+         p->display_phase_fps = 0.0;
+         p->display_phase_speed = 0.0;
++        p->display_phase_round_up = false;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+         if (queued_outputs > 0 &&
+@@ -3326,6 +3349,7 @@
+     p->display_phase_error = 0.0;
+     p->display_phase_fps = 0.0;
+     p->display_phase_speed = 0.0;
++    p->display_phase_round_up = false;
+     const bool worker_busy = pme_worker_cancel_for_reset(p);
+     mp_image_unrefp(&p->prev);
+     if (!p->pme_worker_sync_initialized && !worker_busy)

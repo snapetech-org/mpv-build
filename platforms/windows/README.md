@@ -21,7 +21,16 @@ own `GIT_REMOTE_NAME origin` / `GIT_TAG` / `GIT_RESET` idiom from
 configures with `-DCOMPILER_TOOLCHAIN=clang` (mandatory for aarch64),
 bootstraps the toolchain (`ninja llvm`, `ninja rustup`, `ninja llvm-clang`)
 and runs `ninja mpv`. Full builds need a Linux host with the winbuild README
-apt set plus pip meson >= 1.3.0; only `--configure-only` runs elsewhere.
+apt set, `wget` (used by the `cppwinrt` Windows metadata download), and pip
+meson >= 1.3.0; only `--configure-only` runs elsewhere.
+
+On Ubuntu 24.04 with the host Clang 18 toolchain, also install
+`libc++-18-dev` and `libc++abi-18-dev`. The runtime-only `libc++1` and
+`libc++abi1` packages are insufficient: LLVM's configure step can cache a
+failed `-stdlib=libc++` linker probe and later fall back to libstdc++. If the
+build was configured before these development packages were installed, clear
+the cached `CXX_LINKER_SUPPORTS_STDLIB` result and rerun the LLVM configure
+step before resuming the build.
 
 The zip preserves the sourceforge mpv-dev package shape (`libmpv-2.dll`,
 `libmpv.dll.a`, `include/mpv/*.h` at the archive root), so consumers currently

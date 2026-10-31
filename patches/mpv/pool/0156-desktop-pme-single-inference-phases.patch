@@ -1,0 +1,105 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -2228,6 +2228,7 @@
+                                               double alpha, double phase_pts,
+                                               double phase_duration, double started_ms,
+                                               bool flow_prepared, bool allow_vulkan,
++                                              bool run_inference,
+                                               struct pme_job_metrics *metrics)
+ {
+     struct pme_state *pme = worker_index == 0 ? &p->pme : &p->pme_secondary;
+@@ -2353,8 +2354,8 @@
+ 
+     const double inference_started = get_time_ms();
+     metrics->preprocessing_ms = inference_started - started;
+-    const int pme_ok = pme_execute(pme) == 0;
+-    metrics->inference_ms = get_time_ms() - inference_started;
++    const int pme_ok = !run_inference || pme_execute(pme) == 0;
++    metrics->inference_ms = run_inference ? get_time_ms() - inference_started : 0.0;
+     metrics->pme_success = pme_ok;
+     if (!pme_ok) {
+         metrics->pipeline_ms = get_time_ms() - started;
+@@ -2549,7 +2550,47 @@
+         struct pme_job_metrics metrics = {.pme_success = true};
+         bool all_success = true;
+         bool flow_prepared = false;
++        int inference_phase_index = 0;
++        struct mp_image *inference_interp = NULL;
++
++        // The PME graph is midpoint-trained. Reuse one near-midpoint result
++        // for all display phases in this source pair instead of inferring once
++        // per generated frame.
++        if (job->phase_count > 1) {
++            for (int i = 1; i < job->phase_count; i++) {
++                if (fabs(job->phases[i].alpha - 0.5) <
++                    fabs(job->phases[inference_phase_index].alpha - 0.5))
++                    inference_phase_index = i;
++            }
++
++            pthread_mutex_lock(&p->pme_worker_mutex);
++            const bool stop = job->discard || p->pme_worker_shutdown ||
++                              job->skip_interpolations;
++            pthread_mutex_unlock(&p->pme_worker_mutex);
++            if (stop) {
++                all_success = false;
++            } else {
++                struct pme_job_metrics phase_metrics = {0};
++                inference_interp = compute_interpolated(
++                    p, worker_index, p->filter, job->prev, job->curr,
++                    job->mvs, job->n_mvs,
++                    job->phases[inference_phase_index].alpha,
++                    job->phases[inference_phase_index].pts,
++                    job->phases[inference_phase_index].duration,
++                    get_time_ms(), false, false, true, &phase_metrics);
++                pme_accumulate_job_metrics(&metrics, &phase_metrics);
++                if (!inference_interp || !phase_metrics.pme_success) {
++                    mp_image_unrefp(&inference_interp);
++                    all_success = false;
++                } else {
++                    flow_prepared = true;
++                }
++            }
++        }
++
+         for (int i = 0; i < job->phase_count; i++) {
++            if (!all_success)
++                break;
+             pthread_mutex_lock(&p->pme_worker_mutex);
+             const bool stop = job->discard || p->pme_worker_shutdown ||
+                               job->skip_interpolations;
+@@ -2560,12 +2601,21 @@
+             }
+ 
+             struct pme_job_metrics phase_metrics = {0};
+-            struct mp_image *interp = compute_interpolated(
+-                p, worker_index, p->filter, job->prev, job->curr, job->mvs, job->n_mvs,
+-                job->phases[i].alpha, job->phases[i].pts,
+-                job->phases[i].duration, get_time_ms(), flow_prepared,
+-                job->phase_count == 1, &phase_metrics);
+-            pme_accumulate_job_metrics(&metrics, &phase_metrics);
++            struct mp_image *interp = NULL;
++            if (job->phase_count > 1 && i == inference_phase_index) {
++                interp = inference_interp;
++                inference_interp = NULL;
++                phase_metrics.pme_success = true;
++            } else {
++                interp = compute_interpolated(
++                    p, worker_index, p->filter, job->prev, job->curr,
++                    job->mvs, job->n_mvs,
++                    job->phases[i].alpha, job->phases[i].pts,
++                    job->phases[i].duration, get_time_ms(), flow_prepared,
++                    job->phase_count == 1, job->phase_count == 1,
++                    &phase_metrics);
++                pme_accumulate_job_metrics(&metrics, &phase_metrics);
++            }
+             if (!interp || !phase_metrics.pme_success) {
+                 mp_image_unrefp(&interp);
+                 all_success = false;
+@@ -2591,6 +2641,7 @@
+             }
+             mp_filter_wakeup(p->filter);
+         }
++        mp_image_unrefp(&inference_interp);
+ 
+         mp_image_unrefp(&job->prev);
+         mp_image_unrefp(&job->curr);

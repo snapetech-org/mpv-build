@@ -1,0 +1,655 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -80,6 +80,7 @@
+ #define PA_GAUSS_S   2.0f
+ #define N_THREADS    4
+ #define PME_INFERENCE_WINDOW 64
++#define PME_MAX_OUTPUT_PHASES 7
+ 
+ // BT.709 RGB[0,1] -> YUV limited range coefficients
+ // Y = YR*r + YG*g + YB*b + 16    (r,g,b in [0,1], coefficients pre-scaled by 255)
+@@ -1308,6 +1309,7 @@
+     const float *flow_x, *flow_y;
+     float *input_buf;
+     float *blend_r, *blend_g, *blend_b;
++    float alpha;
+ };
+ 
+ static void *phase2_thread_fn(void *arg)
+@@ -1320,18 +1322,20 @@
+     for (int y = a->y_start; y < a->y_end; y++) {
+         for (int x = 0; x < W; x++) {
+             const int idx = y * W + x;
+-            const float fxx = a->flow_x[idx] * 0.5f;
+-            const float fyy = a->flow_y[idx] * 0.5f;
++            const float fxx_prev = a->flow_x[idx] * a->alpha;
++            const float fyy_prev = a->flow_y[idx] * a->alpha;
++            const float fxx_curr = a->flow_x[idx] * (1.0f - a->alpha);
++            const float fyy_curr = a->flow_y[idx] * (1.0f - a->alpha);
+             float r0, g0, b0, r1, g1, b1;
+             sample_yuv_to_rgb(a->prev_Y, a->prev_ys, a->prev_U, a->prev_us,
+                               a->prev_V, a->prev_vs, W, H,
+-                              (float)x - fxx, (float)y - fyy, &r0, &g0, &b0);
++                              (float)x - fxx_prev, (float)y - fyy_prev, &r0, &g0, &b0);
+             sample_yuv_to_rgb(a->curr_Y, a->curr_ys, a->curr_U, a->curr_us,
+                               a->curr_V, a->curr_vs, W, H,
+-                              (float)x + fxx, (float)y + fyy, &r1, &g1, &b1);
+-            a->blend_r[idx] = (r0 + r1) * 0.5f;
+-            a->blend_g[idx] = (g0 + g1) * 0.5f;
+-            a->blend_b[idx] = (b0 + b1) * 0.5f;
++                              (float)x + fxx_curr, (float)y + fyy_curr, &r1, &g1, &b1);
++            a->blend_r[idx] = (1.0f - a->alpha) * r0 + a->alpha * r1;
++            a->blend_g[idx] = (1.0f - a->alpha) * g0 + a->alpha * g1;
++            a->blend_b[idx] = (1.0f - a->alpha) * b0 + a->alpha * b1;
+             if (x % model_scale == 0 && y % model_scale == 0) {
+                 const size_t model_idx = (size_t)(y / model_scale) * model_W + x / model_scale;
+                 a->input_buf[0 * model_plane + model_idx] = r0;
+@@ -1357,6 +1361,7 @@
+     const float *blend_r, *blend_g, *blend_b;
+     const float *output_buf;
+     int pme_ok;
++    float alpha;
+     uint8_t *out_Y, *out_U, *out_V;
+     int out_ys, out_us, out_vs;
+ };
+@@ -1429,9 +1434,10 @@
+          wx * (1.0f - wy) * a->output_buf[(size_t)(channel) * model_plane + i10] + \
+          (1.0f - wx) * wy * a->output_buf[(size_t)(channel) * model_plane + i01] + \
+          wx * wy * a->output_buf[(size_t)(channel) * model_plane + i11])
+-        *r += PME_UPSAMPLE_RESIDUAL(0);
+-        *g += PME_UPSAMPLE_RESIDUAL(1);
+-        *b += PME_UPSAMPLE_RESIDUAL(2);
++        const float residual_scale = 4.0f * a->alpha * (1.0f - a->alpha);
++        *r += residual_scale * PME_UPSAMPLE_RESIDUAL(0);
++        *g += residual_scale * PME_UPSAMPLE_RESIDUAL(1);
++        *b += residual_scale * PME_UPSAMPLE_RESIDUAL(2);
+ #undef PME_UPSAMPLE_RESIDUAL
+     }
+     *r = clamp_unit(*r);
+@@ -1559,6 +1565,12 @@
+     double pipeline_ms;
+ };
+ 
++struct pme_output_phase {
++    double alpha;
++    double pts;
++    double duration;
++};
++
+ struct priv;
+ 
+ struct pme_worker_thread_arg {
+@@ -1597,11 +1609,17 @@
+     double submitted_ms;
+     double prev_pts;
+     double curr_pts;
+-    struct mp_image *interp;
++    struct pme_output_phase phases[PME_MAX_OUTPUT_PHASES];
++    struct mp_image *interp[PME_MAX_OUTPUT_PHASES];
++    int phase_count;
++    int phase_ready_count;
++    int phase_emit_index;
++    int generated_count;
+     struct mp_frame source;
+     struct pme_job_metrics metrics;
+     bool success;
+-    bool midpoint_emitted;
++    bool skip_interpolations;
++    bool deadline_missed;
+     bool metrics_published;
+     bool discard;
+ };
+@@ -1876,6 +1894,10 @@
+ 
+     // Previous frame for interpolation
+     struct mp_image *prev;
++    // Error diffuser for estimating display slots across source intervals.
++    // The downstream display scheduler owns the final vsync decision.
++    double display_phase_error;
++    double display_phase_fps;
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+@@ -2181,8 +2203,10 @@
+ // Section 9c: Synchronous interpolation pipeline
+ // ====================================================================
+ 
+-// Compute prealigned blend + PME neural residual -> full interpolated frame.
+-// Returns a new mp_image (YUV420P) with PTS set to midpoint.
++// Compute a time-directed prealigned blend + PME residual at an arbitrary
++// phase between the source frames. The current graph was trained for a
++// midpoint; off-midpoint residual tapering is an approximation pending visual
++// qualification with the selected models.
+ //
+ // GPU pipeline (when Vulkan available):
+ //   Phase 1a (CPU): ZOH + downsample -> SSBO
+@@ -2201,7 +2225,9 @@
+                                               struct mp_image *prev,
+                                               struct mp_image *curr,
+                                               const AVMotionVector *mvs, int n_mvs,
+-                                              double submitted_ms,
++                                              double alpha, double phase_pts,
++                                              double phase_duration, double started_ms,
++                                              bool flow_prepared, bool allow_vulkan,
+                                               struct pme_job_metrics *metrics)
+ {
+     struct pme_state *pme = worker_index == 0 ? &p->pme : &p->pme_secondary;
+@@ -2213,7 +2239,7 @@
+     struct mp_image *scaled_prev = NULL, *scaled_curr = NULL;
+     struct mp_image *working_output = NULL, *out = NULL;
+     struct mp_image *work_prev = prev, *work_curr = curr;
+-    const double started = submitted_ms;
++    const double started = started_ms;
+     *metrics = (struct pme_job_metrics){0};
+ 
+     if (!pme->input_buf || !pme->output_buf || source_model_scale < 1)
+@@ -2240,7 +2266,8 @@
+         W != model_w || H != model_h)
+         goto done;
+ #ifdef PLEZY_HAVE_PME_VULKAN
+-    const bool use_vk = p->vk.ready && p->vk.W == W && p->vk.H == H;
++    const bool use_vk = allow_vulkan && p->vk.ready && p->vk.W == W && p->vk.H == H &&
++                        fabs(alpha - 0.5) < 1e-6;
+ 
+     if (use_vk) {
+         if (p->vk_mutex_initialized)
+@@ -2289,8 +2316,11 @@
+     } else
+ #endif
+     {
+-        zoh_fill_scaled(mvs, n_mvs, ws->flow_x, ws->flow_y, H, W, source_H, source_W);
+-        run_prealign_v2(ws, W, H);
++        if (!flow_prepared) {
++            zoh_fill_scaled(mvs, n_mvs, ws->flow_x, ws->flow_y, H, W,
++                            source_H, source_W);
++            run_prealign_v2(ws, W, H);
++        }
+         pthread_t threads[N_THREADS - 1];
+         struct phase2_args args[N_THREADS];
+         const int num_threads = p->worker_count > 1 ? N_THREADS / 2 : N_THREADS;
+@@ -2312,6 +2342,7 @@
+             args[t].blend_r = ws->blend_rgb[0];
+             args[t].blend_g = ws->blend_rgb[1];
+             args[t].blend_b = ws->blend_rgb[2];
++            args[t].alpha = alpha;
+         }
+         for (int t = 0; t < num_threads - 1; t++)
+             pthread_create(&threads[t], NULL, phase2_thread_fn, &args[t]);
+@@ -2350,6 +2381,7 @@
+         args[t].blend_b = ws->blend_rgb[2];
+         args[t].output_buf = pme->output_buf;
+         args[t].pme_ok = 1;
++        args[t].alpha = alpha;
+         args[t].out_Y = working_output->planes[0]; args[t].out_ys = working_output->stride[0];
+         args[t].out_U = working_output->planes[1]; args[t].out_us = working_output->stride[1];
+         args[t].out_V = working_output->planes[2]; args[t].out_vs = working_output->stride[2];
+@@ -2379,10 +2411,9 @@
+     metrics->reconstruction_ms = get_time_ms() - reconstruction_started;
+     metrics->pipeline_ms = get_time_ms() - started;
+ 
+-    const double source_duration = curr->pts - prev->pts;
+-    out->pts = prev->pts + source_duration / 2.0;
+-    out->pkt_duration = source_duration / 2.0;
+-    out->nominal_fps = 2.0 / source_duration;
++    out->pts = phase_pts;
++    out->pkt_duration = phase_duration;
++    out->nominal_fps = 1.0 / phase_duration;
+ done:
+     mp_image_unrefp(&working_output);
+     mp_image_unrefp(&scaled_prev);
+@@ -2427,7 +2458,8 @@
+ {
+     mp_image_unrefp(&job->prev);
+     mp_image_unrefp(&job->curr);
+-    mp_image_unrefp(&job->interp);
++    for (int i = 0; i < PME_MAX_OUTPUT_PHASES; i++)
++        mp_image_unrefp(&job->interp[i]);
+     mp_frame_unref(&job->source);
+     *job = (struct pme_scheduler_job){0};
+     job->state = PME_JOB_FREE;
+@@ -2450,6 +2482,21 @@
+     return false;
+ }
+ 
++static int pme_find_queued_job_locked(struct priv *p, int worker_index)
++{
++    if (p->worker_count == 1) {
++        for (int i = 0; i < PME_SCHEDULER_CAPACITY; i++)
++            if (p->jobs[i].state == PME_JOB_QUEUED)
++                return i;
++        return -1;
++    }
++
++    if (worker_index >= 0 && worker_index < PME_SCHEDULER_CAPACITY &&
++        p->jobs[worker_index].state == PME_JOB_QUEUED)
++        return worker_index;
++    return -1;
++}
++
+ static int pme_output_head_locked(const struct priv *p)
+ {
+     if (!p->output_count)
+@@ -2467,26 +2514,84 @@
+         p->output_head = 0;
+ }
+ 
++static void pme_accumulate_job_metrics(struct pme_job_metrics *total,
++                                      const struct pme_job_metrics *phase)
++{
++    total->pme_success = total->pme_success && phase->pme_success;
++    total->inference_ms += phase->inference_ms;
++    total->preprocessing_ms += phase->preprocessing_ms;
++    total->flow_preparation_ms += phase->flow_preparation_ms;
++    total->gpu_upload_ms += phase->gpu_upload_ms;
++    total->vulkan_dispatch_ms += phase->vulkan_dispatch_ms;
++    total->tensor_copy_ms += phase->tensor_copy_ms;
++    total->reconstruction_ms += phase->reconstruction_ms;
++    total->pipeline_ms += phase->pipeline_ms;
++}
++
+ static void *pme_worker_thread_fn(void *arg)
+ {
+     struct pme_worker_thread_arg *thread_arg = arg;
+     struct priv *p = thread_arg->p;
+-    const int index = thread_arg->index;
++    const int worker_index = thread_arg->index;
+     pthread_mutex_lock(&p->pme_worker_mutex);
+     while (!p->pme_worker_shutdown) {
+-        while (p->jobs[index].state != PME_JOB_QUEUED && !p->pme_worker_shutdown)
++        int job_index = -1;
++        while ((job_index = pme_find_queued_job_locked(p, worker_index)) < 0 &&
++               !p->pme_worker_shutdown)
+             pthread_cond_wait(&p->pme_worker_start_cond, &p->pme_worker_mutex);
+         if (p->pme_worker_shutdown)
+             break;
+ 
+-        struct pme_scheduler_job *job = &p->jobs[index];
++        struct pme_scheduler_job *job = &p->jobs[job_index];
+         job->state = PME_JOB_RUNNING;
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+ 
+-        struct pme_job_metrics metrics = {0};
+-        struct mp_image *interp = compute_interpolated(
+-            p, index, p->filter, job->prev, job->curr, job->mvs, job->n_mvs,
+-            job->submitted_ms, &metrics);
++        struct pme_job_metrics metrics = {.pme_success = true};
++        bool all_success = true;
++        bool flow_prepared = false;
++        for (int i = 0; i < job->phase_count; i++) {
++            pthread_mutex_lock(&p->pme_worker_mutex);
++            const bool stop = job->discard || p->pme_worker_shutdown ||
++                              job->skip_interpolations;
++            pthread_mutex_unlock(&p->pme_worker_mutex);
++            if (stop) {
++                all_success = false;
++                break;
++            }
++
++            struct pme_job_metrics phase_metrics = {0};
++            struct mp_image *interp = compute_interpolated(
++                p, worker_index, p->filter, job->prev, job->curr, job->mvs, job->n_mvs,
++                job->phases[i].alpha, job->phases[i].pts,
++                job->phases[i].duration, get_time_ms(), flow_prepared,
++                job->phase_count == 1, &phase_metrics);
++            pme_accumulate_job_metrics(&metrics, &phase_metrics);
++            if (!interp || !phase_metrics.pme_success) {
++                mp_image_unrefp(&interp);
++                all_success = false;
++                break;
++            }
++            flow_prepared = true;
++
++            pthread_mutex_lock(&p->pme_worker_mutex);
++            const bool cancelled = job->discard || p->pme_worker_shutdown;
++            const bool skipped = job->skip_interpolations;
++            if (!cancelled && !skipped) {
++                job->interp[i] = interp;
++                job->phase_ready_count = i + 1;
++                job->metrics = metrics;
++            }
++            pthread_mutex_unlock(&p->pme_worker_mutex);
++            if (cancelled || skipped) {
++                mp_image_unrefp(&interp);
++                all_success = false;
++                if (cancelled)
++                    break;
++                break;
++            }
++            mp_filter_wakeup(p->filter);
++        }
++
+         mp_image_unrefp(&job->prev);
+         mp_image_unrefp(&job->curr);
+         job->mvs = NULL;
+@@ -2495,16 +2600,21 @@
+         pthread_mutex_lock(&p->pme_worker_mutex);
+         bool wake_filter = !p->pme_worker_shutdown;
+         if (job->discard || p->pme_worker_shutdown) {
+-            mp_image_unrefp(&interp);
+             pme_scheduler_job_clear(job);
+             if (p->reset_drain && !pme_worker_busy_locked(p)) {
+                 p->reset_drain = 0;
+                 reset_pme_stats_locked(p);
+             }
+         } else {
+-            job->interp = interp;
+             job->metrics = metrics;
+-            job->success = metrics.pme_success;
++            job->success = all_success && !job->skip_interpolations &&
++                           job->phase_ready_count == job->phase_count;
++            if (!job->success) {
++                job->skip_interpolations = true;
++                for (int i = job->phase_emit_index; i < job->phase_ready_count; i++)
++                    mp_image_unrefp(&job->interp[i]);
++                job->phase_ready_count = job->phase_emit_index;
++            }
+             job->state = PME_JOB_READY;
+         }
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2557,11 +2667,99 @@
+     return p->worker_count > 0;
+ }
+ 
++static int pme_plan_output_phases(struct priv *p, struct mp_filter *f,
++                                  const struct mp_image *prev,
++                                  const struct mp_image *curr,
++                                  struct pme_output_phase *phases)
++{
++    if (!prev || !curr || !isfinite(prev->pts) || !isfinite(curr->pts) ||
++        prev->pts == MP_NOPTS_VALUE || curr->pts == MP_NOPTS_VALUE ||
++        curr->pts <= prev->pts) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
++        return 0;
++    }
++
++    const double source_duration = curr->pts - prev->pts;
++    struct mp_stream_info *info = mp_filter_find_stream_info(f);
++    const double display_fps = info && info->get_display_fps ?
++        info->get_display_fps(info) : 0.0;
++
++    if (!isfinite(display_fps) || display_fps <= 0.0) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
++        phases[0] = (struct pme_output_phase){
++            .alpha = 0.5,
++            .pts = prev->pts + source_duration * 0.5,
++            .duration = source_duration * 0.5,
++        };
++        return 1;
++    }
++
++    const double source_fps = 1.0 / source_duration;
++    if (display_fps <= source_fps + 0.01) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = display_fps;
++        return 0;
++    }
++
++    if (!isfinite(p->display_phase_fps) ||
++        fabs(p->display_phase_fps - display_fps) > 0.01) {
++        p->display_phase_fps = display_fps;
++        p->display_phase_error = 0.0;
++    }
++
++    // This error diffusion mirrors the integer slot-count decision used by
++    // mpv's display-sync scheduler, but cannot see its live AV-sync corrections.
++    const double fractional_slots = source_duration * display_fps +
++                                   p->display_phase_error;
++    if (!isfinite(fractional_slots) || fractional_slots < 0.5 ||
++        fractional_slots > 1000000.0) {
++        p->display_phase_error = 0.0;
++        return 0;
++    }
++    const int target_slots = (int)llrint(fractional_slots);
++    p->display_phase_error = fractional_slots - target_slots;
++    if (target_slots <= 1)
++        return 0;
++
++    int phase_budget = 3;
++    if (p->opts && p->opts->preset &&
++        strcmp(p->opts->preset, "performance") == 0)
++        phase_budget = 1;
++    else if (p->opts && p->opts->preset &&
++             strcmp(p->opts->preset, "quality") == 0)
++        phase_budget = PME_MAX_OUTPUT_PHASES;
++
++    const int output_slots = MPMIN(target_slots, phase_budget + 1);
++    const int count = output_slots - 1;
++    for (int i = 0; i < count; i++) {
++        const double alpha = (double)(i + 1) / output_slots;
++        phases[i] = (struct pme_output_phase){
++            .alpha = alpha,
++            .pts = prev->pts + alpha * source_duration,
++        };
++    }
++
++    for (int i = 0; i < count; i++) {
++        const double next_pts = i + 1 < count ? phases[i + 1].pts : curr->pts;
++        phases[i].duration = next_pts - phases[i].pts;
++        if (!isfinite(phases[i].alpha) || phases[i].alpha <= 0.0 ||
++            phases[i].alpha >= 1.0 || !isfinite(phases[i].duration) ||
++            phases[i].duration <= 0.0)
++            return 0;
++    }
++    return count;
++}
++
+ static bool pme_submit_pair(struct priv *p, struct mp_filter *f,
+                             struct mp_image *prev, struct mp_image *curr,
+                             const AVMotionVector *mvs, int n_mvs,
++                            const struct pme_output_phase *phases, int phase_count,
+                             struct mp_frame *source)
+ {
++    if (!phase_count)
++        return false;
+     if (!ensure_pme_worker(p, f))
+         return false;
+ 
+@@ -2574,13 +2772,7 @@
+     }
+ 
+     pthread_mutex_lock(&p->pme_worker_mutex);
+-    int slot = -1;
+-    for (int i = 0; i < p->worker_count; i++) {
+-        if (p->jobs[i].state == PME_JOB_FREE) {
+-            slot = i;
+-            break;
+-        }
+-    }
++    const int slot = pme_find_free_job_locked(p);
+     if (slot < 0 || p->output_count >= PME_SCHEDULER_CAPACITY ||
+         p->input_barrier || p->pme_worker_shutdown) {
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2601,8 +2793,10 @@
+         .submitted_ms = get_time_ms(),
+         .prev_pts = prev->pts,
+         .curr_pts = curr->pts,
++        .phase_count = phase_count,
+         .source = *source,
+     };
++    memcpy(job->phases, phases, phase_count * sizeof(phases[0]));
+     *source = (struct mp_frame){0};
+     const int tail = (p->output_head + p->output_count) % PME_SCHEDULER_CAPACITY;
+     p->output_order[tail] = slot;
+@@ -2645,8 +2839,9 @@
+ {
+     if (job->metrics_published)
+         return;
+-    p->last_pme_success = job->metrics.pme_success;
+-    p->last_frame_generated = false;
++    p->last_pme_success = job->success && job->metrics.pme_success &&
++                          !job->deadline_missed;
++    p->last_frame_generated = job->generated_count > 0;
+     p->last_inference_ms = job->metrics.inference_ms;
+     p->preprocessing_ms = job->metrics.preprocessing_ms;
+     p->flow_preparation_ms = job->metrics.flow_preparation_ms;
+@@ -2657,18 +2852,11 @@
+     p->pipeline_ms = job->metrics.pipeline_ms;
+     record_inference_sample(p, job->metrics.inference_ms);
+ 
+-    if (job->interp && job->success) {
+-        if (record_deadline_miss(p, f, job->submitted_ms,
+-                                 job->prev_pts, job->curr_pts)) {
+-            job->success = false;
+-            p->last_pme_success = false;
+-            mp_image_unrefp(&job->interp);
+-        } else if (p->neural_probe_pending) {
+-            p->neural_probe_pending = false;
+-            p->neural_bypass_until_ms = 0.0;
+-            MP_INFO(f, "PME: Neural recovery probe met its frame deadline; resuming Neural output\n");
+-        }
+-    } else if (p->neural_probe_pending) {
++    if (job->success && job->generated_count > 0 && p->neural_probe_pending) {
++        p->neural_probe_pending = false;
++        p->neural_bypass_until_ms = 0.0;
++        MP_INFO(f, "PME: Neural recovery probe met its frame deadline; resuming Neural output\n");
++    } else if (!job->success && p->neural_probe_pending) {
+         start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
+     }
+     job->metrics_published = true;
+@@ -2686,18 +2874,38 @@
+         return false;
+     }
+     struct pme_scheduler_job *job = &p->jobs[slot];
+-    if (job->state != PME_JOB_READY) {
++    if (job->state != PME_JOB_READY && job->state != PME_JOB_RUNNING) {
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+         return false;
+     }
+ 
+-    if (job->output_kind == PME_OUTPUT_PAIR && !job->midpoint_emitted) {
+-        pme_publish_job_metrics_locked(p, f, job);
+-        if (job->interp && job->success) {
+-            struct mp_image *interp = job->interp;
+-            job->interp = NULL;
+-            job->midpoint_emitted = true;
++    if (job->output_kind == PME_OUTPUT_PAIR && !job->skip_interpolations &&
++        job->phase_emit_index < job->phase_ready_count) {
++        const int phase = job->phase_emit_index++;
++        struct mp_image *interp = job->interp[phase];
++        job->interp[phase] = NULL;
++        if (!job->deadline_missed &&
++            record_deadline_miss(p, f, job->submitted_ms, job->prev_pts,
++                                 job->phases[phase].pts)) {
++            job->deadline_missed = true;
++            job->success = false;
++            job->skip_interpolations = true;
++            p->last_pme_success = false;
++            mp_image_unrefp(&interp);
++            for (int i = job->phase_emit_index; i < job->phase_ready_count; i++)
++                mp_image_unrefp(&job->interp[i]);
++            job->phase_ready_count = job->phase_emit_index;
++            publish_pme_stats_locked(p);
++            if (job->state == PME_JOB_RUNNING) {
++                pthread_mutex_unlock(&p->pme_worker_mutex);
++                return false;
++            }
++        } else if (interp) {
++            if (job->state == PME_JOB_READY)
++                pme_publish_job_metrics_locked(p, f, job);
++            job->generated_count++;
+             p->last_frame_generated = true;
++            p->last_pme_success = !job->deadline_missed;
+             p->generated_frames++;
+             publish_pme_stats_locked(p);
+             pthread_mutex_unlock(&p->pme_worker_mutex);
+@@ -2707,6 +2915,13 @@
+         }
+     }
+ 
++    if (job->state == PME_JOB_RUNNING) {
++        pthread_mutex_unlock(&p->pme_worker_mutex);
++        return false;
++    }
++
++    if (job->output_kind == PME_OUTPUT_PAIR)
++        pme_publish_job_metrics_locked(p, f, job);
+     struct mp_frame source = job->source;
+     job->source = (struct mp_frame){0};
+     const bool was_signal = job->output_kind == PME_OUTPUT_SIGNAL;
+@@ -2851,6 +3066,8 @@
+     struct mp_frame frame = mp_pin_out_read(f->ppins[0]);
+     if (mp_frame_is_signaling(frame)) {
+         mp_image_unrefp(&p->prev);
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
+         if (queued_outputs > 0 &&
+             pme_queue_source(p, &frame, PME_OUTPUT_SIGNAL)) {
+             mp_filter_internal_mark_progress(f);
+@@ -2886,6 +3103,25 @@
+     const bool supported = w == 1920 && h == 1080 && mpi->imgfmt == IMGFMT_420P &&
+                            !(mpi->fields & MP_IMGFIELD_INTERLACED);
+     if (!supported) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
++        mp_image_unrefp(&p->prev);
++        p->prev = mp_image_new_ref(mpi);
++        if (queued_outputs > 0 &&
++            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
++            mp_filter_internal_mark_progress(f);
++        else {
++            mp_pin_in_write(f->ppins[1], frame);
++            mp_filter_internal_mark_progress(f);
++        }
++        return;
++    }
++
++    // Stream metadata can claim 24/30 fps while individual timestamps are
++    // variable. Preserve source cadence and restart slot diffusion on a break.
++    if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
++        p->display_phase_error = 0.0;
++        p->display_phase_fps = 0.0;
+         mp_image_unrefp(&p->prev);
+         p->prev = mp_image_new_ref(mpi);
+         if (queued_outputs > 0 &&
+@@ -2897,6 +3133,8 @@
+         }
+         return;
+     }
++    struct pme_output_phase phases[PME_MAX_OUTPUT_PHASES] = {0};
++    const int phase_count = pme_plan_output_phases(p, f, p->prev, mpi, phases);
+ 
+     start_pme_init(p, f, w, h);
+     int pme_checked, pme_ready;
+@@ -2936,22 +3174,6 @@
+         return;
+     }
+ 
+-    // Stream metadata can claim 24/30 fps while individual timestamps are
+-    // variable. Only synthesize on pairs that satisfy the actual supported
+-    // cadence; otherwise preserve the decoded source frame unchanged.
+-    if (!frame_pair_matches_supported_cadence(p->prev, mpi)) {
+-        mp_image_unrefp(&p->prev);
+-        p->prev = mp_image_new_ref(mpi);
+-        if (queued_outputs > 0 &&
+-            pme_queue_source(p, &frame, PME_OUTPUT_SOURCE))
+-            mp_filter_internal_mark_progress(f);
+-        else {
+-            mp_pin_in_write(f->ppins[1], frame);
+-            mp_filter_internal_mark_progress(f);
+-        }
+-        return;
+-    }
+-
+     const AVMotionVector *mvs = NULL;
+     int n_mvs = 0;
+     for (int n = 0; n < mpi->num_ff_side_data; n++) {
+@@ -3004,7 +3226,7 @@
+     }
+ 
+     const bool submitted = pme_submit_pair(p, f, p->prev, mpi, mvs, n_mvs,
+-                                           &frame);
++                                           phases, phase_count, &frame);
+     mp_image_unrefp(&p->prev);
+     p->prev = mp_image_new_ref(mpi);
+     if (submitted) {
+@@ -3027,6 +3249,8 @@
+ static void f_reset(struct mp_filter *f)
+ {
+     struct priv *p = f->priv;
++    p->display_phase_error = 0.0;
++    p->display_phase_fps = 0.0;
+     const bool worker_busy = pme_worker_cancel_for_reset(p);
+     mp_image_unrefp(&p->prev);
+     if (!p->pme_worker_sync_initialized && !worker_busy)
