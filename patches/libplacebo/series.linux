@@ -2,8 +2,9 @@
 # pin in overrides.linux. One pool filename per line; order is authoritative.
 #
 # Shared with series.android (see there for why this is not series.common).
-# The linux build is OpenGL-only (-Dvulkan=disabled), and on a GLES context --
-# the aarch64 boards whose EGL offers no desktop GL -- this patch is the only
-# way an array too large for plain uniforms reaches the shader at all; desktop
-# GL is untouched.
+# Linux enables Vulkan for the separate PME compute device and keeps the
+# Wayland display plane on libmpv's existing EGL/OpenGL renderer. On a GLES
+# context -- the aarch64 boards whose EGL offers no desktop GL -- this patch is
+# the only way an array too large for plain uniforms reaches the shader at all;
+# desktop GL rendering is unchanged.
 0002-opengl-enable-ubos-on-gles.patch
