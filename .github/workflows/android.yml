@@ -26,7 +26,11 @@ on:
         type: string
         default: private
       reuse-arm64-run:
-        description: Trusted successful starter run with the exact same Android content keys
+        description: Trusted successful starter run with the same native Android content key
+        type: string
+        default: ''
+      reuse-x86-run:
+        description: Trusted prior run containing a successful x86 native build
         type: string
         default: ''
       device-tests:
@@ -67,12 +71,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate the reusable ARM64 run
-        if: matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != ''
+      - name: Validate the reusable native run
+        if: (matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') || (matrix.abi == 'x86' && inputs.reuse-x86-run != '')
         id: reuse
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_RUN: ${{ inputs.reuse-arm64-run }}
+          REUSE_RUN: ${{ matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run || inputs.reuse-x86-run }}
+          REUSE_ABI: ${{ matrix.abi }}
         run: |
           python3 - <<'PYCODE'
           import json, os, re, subprocess
@@ -81,10 +86,22 @@ jobs:
               raise SystemExit('reuse run must be a numeric GitHub run ID')
           repo = os.environ['GITHUB_REPOSITORY']
           data = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}']))
-          if data['conclusion'] != 'success' or data['head_repository']['full_name'] != repo:
-              raise SystemExit('reuse requires a successful run from this trusted repository')
+          if data['head_repository']['full_name'] != repo:
+              raise SystemExit('reuse requires a run from this trusted repository')
+          abi = os.environ['REUSE_ABI']
+          if abi == 'arm64-v8a':
+              if data['conclusion'] != 'success':
+                  raise SystemExit('the ARM64 starter run must have succeeded')
+              artifact = 'bundled-android-arm64'
+          else:
+              jobs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100']))['jobs']
+              if not any((job['name'] == 'Build android x86' or job['name'].endswith(' / Build android x86')) and job['conclusion'] == 'success' for job in jobs):
+                  raise SystemExit('the prior x86 native build must have succeeded')
+              artifact = 'android-x86'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               print('sha=' + data['head_sha'], file=output)
+              print('run=' + run_id, file=output)
+              print('artifact=' + artifact, file=output)
           PYCODE
       - uses: actions/checkout@v4
         if: steps.reuse.outputs.sha != ''
@@ -99,15 +116,15 @@ jobs:
           import json, subprocess
           def keys(script):
               return json.loads(subprocess.check_output(['python3', script, 'keys', '--platform-group', 'android']))
-          if keys('scripts/keys.py') != keys('previous-native-inputs/scripts/keys.py'):
+          if keys('scripts/keys.py')['libmpv-android'] != keys('previous-native-inputs/scripts/keys.py')['libmpv-android']:
               raise SystemExit('prior Android artifacts have different source/build inputs; refusing reuse')
           PYCODE
       - uses: actions/download-artifact@v4
         if: steps.reuse.outputs.sha != ''
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.reuse-arm64-run }}
-          name: bundled-android-arm64
+          run-id: ${{ steps.reuse.outputs.run }}
+          name: ${{ steps.reuse.outputs.artifact }}
           path: dist/release
 
       # sdkmanager is a Java program, even though the native cross-build no
@@ -146,7 +163,11 @@ jobs:
 
       - name: Fetch and patch pinned sources
         if: steps.reuse.outputs.sha == ''
-        run: bash platforms/android/download.sh
+        run: |
+          if [[ '${{ inputs.runner-pool }}' == public ]]; then
+            python3 scripts/prepare_android_lua.py
+          fi
+          bash platforms/android/download.sh
 
       - name: Build libmpv-android (${{ matrix.abi }})
         if: steps.reuse.outputs.sha == ''
@@ -187,7 +208,7 @@ jobs:
 
       - name: Provision and verify artifact tools
         shell: bash
-        run: bash scripts/prepare_linux_artifacts.sh
+        run: bash scripts/prepare_linux_artifacts.sh ${{ inputs.runner-pool == 'public' && '--public' || '' }}
 
       - uses: actions/setup-java@v4
         with:
