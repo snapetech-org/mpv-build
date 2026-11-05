@@ -22,12 +22,16 @@ on:
         description: Select the native validation to run
         type: choice
         default: checks
-        options: [checks, windows, windows-diagnostics, android-release, apple-libmpv]
+        options: [checks, windows, windows-diagnostics, android-release, apple-libmpv, apple-assemble]
       windows_arch:
         description: Windows architecture to validate without repeating another active build
         type: choice
         default: all
         options: [all, x86_64, aarch64]
+      reuse_apple_run:
+        description: Successful six-slice Apple build to assemble without recompiling
+        type: string
+        default: ''
       reuse_arm64_run:
         description: Successful starter run to reuse without compiling ARM64 twice
         type: string
@@ -761,6 +765,101 @@ jobs:
         with:
           name: apple-${{ matrix.name }}
           path: |
+            ./dist/release/*.zip
+            ./dist/release/*.checksum.txt
+          if-no-files-found: error
+
+
+  apple-assemble:
+    name: Assemble verified Apple libmpv
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'apple-assemble' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify all source slices and their content keys
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN: ${{ inputs.reuse_apple_run }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          run = os.environ['REUSE_RUN']
+          if not re.fullmatch(r'[0-9]+', run):
+              raise SystemExit('reuse_apple_run must be a numeric run ID')
+          repo = os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run}' + path]))
+          data = api('')
+          if data['head_repository']['full_name'] != repo:
+              raise SystemExit('Apple reuse requires this trusted repository')
+          jobs = api('/jobs?per_page=100')['jobs']
+          for platform in ('macos', 'maccatalyst', 'iphoneos', 'iphonesimulator', 'tvos', 'tvsimulator'):
+              if not any(j['name'] == 'Build ordered PCM apple ' + platform and j['conclusion'] == 'success' for j in jobs):
+                  raise SystemExit('Apple source slice is not successful: ' + platform)
+          subprocess.run(['git', 'fetch', '--no-tags', 'origin', data['head_sha']], check=True)
+          def keys():
+              return json.loads(subprocess.check_output(['python3', 'scripts/keys.py', 'keys', '--platform-group', 'apple']))
+          current = keys()
+          subprocess.run(['git', 'worktree', 'add', '--detach', 'previous-native-inputs', data['head_sha']], check=True)
+          previous = json.loads(subprocess.check_output(['python3', 'scripts/keys.py', 'keys', '--platform-group', 'apple'], cwd='previous-native-inputs'))
+          subprocess.run(['git', 'worktree', 'remove', 'previous-native-inputs'], check=True)
+          if current != previous:
+              raise SystemExit('Apple source/build content keys differ; refusing artifact reuse')
+          PYCODE
+
+      - name: Download platform builds
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_apple_run }}
+          pattern: apple-*
+          path: ./dist/partials
+
+      - name: Merge platform XCFrameworks
+        run: python3 scripts/merge_xcframeworks.py dist/partials dist/release
+
+      - name: Check the merged XCFrameworks for a build date
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Name frameworks by content and record them
+        run: python3 scripts/keys.py record-frameworks --platform-group apple --release-dir dist/release
+
+      - name: Render Package.swift from the manifest
+        run: python3 scripts/keys.py render --platform-group apple
+
+      - name: Verify manifest matches this commit
+        run: python3 scripts/keys.py verify --platform-group apple
+
+      # Pinned by release and archive checksum, since it gates publish-assets.
+      - name: Install XcodeGen 2.46.0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" \
+            | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Link Objective-C-only SwiftPM consumers on iOS and tvOS
+        run: bash scripts/test_spatial_swiftpm.sh dist/release
+
+      - name: Upload manifest for the commit job
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-assembled
+          path: |
+            ./artifacts.json
+            ./Package.swift
             ./dist/release/*.zip
             ./dist/release/*.checksum.txt
           if-no-files-found: error
