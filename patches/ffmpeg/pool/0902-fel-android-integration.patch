@@ -1,7 +1,5 @@
-Subject: [PATCH] retain the Android playback patch stack with bundled FEL
-
 diff --git a/configure b/configure
-index eec1c1c441bc85df449863990d854af91b2dc6c2..dea09a31d7f9ff364faa1eb2a7522c0f286db6ab 100755
+index eec1c1c..dea09a3 100755
 --- a/configure
 +++ b/configure
 @@ -3586,6 +3586,7 @@ av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
@@ -13,7 +11,7 @@ index eec1c1c441bc85df449863990d854af91b2dc6c2..dea09a31d7f9ff364faa1eb2a7522c0f
  av1_mediacodec_encoder_select="extract_extradata_bsf"
  av1_mf_encoder_deps="mediafoundation"
 diff --git a/libavcodec/Makefile b/libavcodec/Makefile
-index 0130207438b1bfcc3633d1f1d0e18398e59eb03c..481ebf2bd442172ae096162e74b2a22af9af70da 100644
+index 0130207..481ebf2 100644
 --- a/libavcodec/Makefile
 +++ b/libavcodec/Makefile
 @@ -141,7 +141,7 @@ OBJS-$(CONFIG_LPC)                     += lpc.o
@@ -35,7 +33,7 @@ index 0130207438b1bfcc3633d1f1d0e18398e59eb03c..481ebf2bd442172ae096162e74b2a22a
  SKIPHEADERS-$(CONFIG_NVDEC)            += nvdec.h
  SKIPHEADERS-$(CONFIG_NVENC)            += nvenc.h
 diff --git a/libavcodec/ffjni.h b/libavcodec/ffjni.h
-index d1e86f8329910dc5a9b27d472210df414f45921d..84b14d7d65ddaa4cbad21b1be8a343bf4ac7f1ff 100644
+index d1e86f8..84b14d7 100644
 --- a/libavcodec/ffjni.h
 +++ b/libavcodec/ffjni.h
 @@ -83,6 +83,16 @@ int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error
@@ -56,7 +54,7 @@ index d1e86f8329910dc5a9b27d472210df414f45921d..84b14d7d65ddaa4cbad21b1be8a343bf
   * Jni field type.
   */
 diff --git a/libavcodec/jni.c b/libavcodec/jni.c
-index fcb483741316ef13f890cbbba17d0b13d58d4b8c..1e3fe2a0b00c5060dfd74bda699fec28accec4a9 100644
+index fcb4837..1e3fe2a 100644
 --- a/libavcodec/jni.c
 +++ b/libavcodec/jni.c
 @@ -36,6 +36,7 @@
@@ -113,7 +111,7 @@ index fcb483741316ef13f890cbbba17d0b13d58d4b8c..1e3fe2a0b00c5060dfd74bda699fec28
 +
  #endif
 diff --git a/libavcodec/jni.h b/libavcodec/jni.h
-index 955cd28096b7eceafefce306681d9225673bb459..e4ba8ea7ca20906838ffcc2d9a60d69d854b3dc2 100644
+index 955cd28..e4ba8ea 100644
 --- a/libavcodec/jni.h
 +++ b/libavcodec/jni.h
 @@ -64,4 +64,44 @@ int av_jni_set_android_app_ctx(void *app_ctx, void *log_ctx);
@@ -162,7 +160,7 @@ index 955cd28096b7eceafefce306681d9225673bb459..e4ba8ea7ca20906838ffcc2d9a60d69d
 +
  #endif /* AVCODEC_JNI_H */
 diff --git a/libavcodec/mediacodec.c b/libavcodec/mediacodec.c
-index 2701f35ef002728730ed8afa8b0e655b34cb64be..b7ae8c98fc486564e26c6136682167ad85f71797 100644
+index 2701f35..b7ae8c9 100644
 --- a/libavcodec/mediacodec.c
 +++ b/libavcodec/mediacodec.c
 @@ -29,13 +29,48 @@
@@ -427,7 +425,7 @@ index 2701f35ef002728730ed8afa8b0e655b34cb64be..b7ae8c98fc486564e26c6136682167ad
 +
  #endif
 diff --git a/libavcodec/mediacodec.h b/libavcodec/mediacodec.h
-index 5382302a4c0a17067e59ada25e35bffa6bce6b44..06113cf3f5b7197eced3accba48b5c51d74dbecb 100644
+index 5382302..06113cf 100644
 --- a/libavcodec/mediacodec.h
 +++ b/libavcodec/mediacodec.h
 @@ -102,4 +102,141 @@ int av_mediacodec_release_buffer(AVMediaCodecBuffer *buffer, int render);
@@ -574,7 +572,7 @@ index 5382302a4c0a17067e59ada25e35bffa6bce6b44..06113cf3f5b7197eced3accba48b5c51
  #endif /* AVCODEC_MEDIACODEC_H */
 diff --git a/libavcodec/mediacodec_reorder.c b/libavcodec/mediacodec_reorder.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..7b513e094a10d93700ad3dba5f364e2e66c3f93c
+index 0000000..7b513e0
 --- /dev/null
 +++ b/libavcodec/mediacodec_reorder.c
 @@ -0,0 +1,278 @@
@@ -858,7 +856,7 @@ index 0000000000000000000000000000000000000000..7b513e094a10d93700ad3dba5f364e2e
 +}
 diff --git a/libavcodec/mediacodec_reorder.h b/libavcodec/mediacodec_reorder.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..16825cb0b3c25cb7bc487efeaf7897a092d7ed68
+index 0000000..16825cb
 --- /dev/null
 +++ b/libavcodec/mediacodec_reorder.h
 @@ -0,0 +1,124 @@
@@ -988,7 +986,7 @@ index 0000000000000000000000000000000000000000..16825cb0b3c25cb7bc487efeaf7897a0
 +#endif /* AVCODEC_MEDIACODEC_REORDER_H */
 diff --git a/libavcodec/mediacodec_shed.c b/libavcodec/mediacodec_shed.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..9e6f7e6928ebc6ea2a5ae78bae95c02e132d203d
+index 0000000..9e6f7e6
 --- /dev/null
 +++ b/libavcodec/mediacodec_shed.c
 @@ -0,0 +1,491 @@
@@ -1485,7 +1483,7 @@ index 0000000000000000000000000000000000000000..9e6f7e6928ebc6ea2a5ae78bae95c02e
 +}
 diff --git a/libavcodec/mediacodec_shed.h b/libavcodec/mediacodec_shed.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a68c5e06ca47baca4b1c6a14602d7adbfd5961ce
+index 0000000..a68c5e0
 --- /dev/null
 +++ b/libavcodec/mediacodec_shed.h
 @@ -0,0 +1,89 @@
@@ -1579,7 +1577,7 @@ index 0000000000000000000000000000000000000000..a68c5e06ca47baca4b1c6a14602d7adb
 +
 +#endif /* AVCODEC_MEDIACODEC_SHED_H */
 diff --git a/libavcodec/mediacodec_wrapper.c b/libavcodec/mediacodec_wrapper.c
-index 895b9aaa206624d64cfcf1c0f0bc7192068b208f..d9ed91217390b8e21d62663bcc00ba87aba9ba4b 100644
+index 895b9aa..d9ed912 100644
 --- a/libavcodec/mediacodec_wrapper.c
 +++ b/libavcodec/mediacodec_wrapper.c
 @@ -22,12 +22,15 @@
@@ -2318,7 +2316,7 @@ index 895b9aaa206624d64cfcf1c0f0bc7192068b208f..d9ed91217390b8e21d62663bcc00ba87
  
  FFAMediaFormat *ff_AMediaFormat_new(int ndk)
 diff --git a/libavcodec/mediacodec_wrapper.h b/libavcodec/mediacodec_wrapper.h
-index 18d07964453416d654b7f6778dca5484ef899d72..2170f33bce288facbc9f4a9e29505d4749a97591 100644
+index 18d0796..2170f33 100644
 --- a/libavcodec/mediacodec_wrapper.h
 +++ b/libavcodec/mediacodec_wrapper.h
 @@ -57,7 +57,8 @@
@@ -2409,7 +2407,7 @@ index 18d07964453416d654b7f6778dca5484ef899d72..2170f33bce288facbc9f4a9e29505d47
  
  enum FFAMediaFormatColorRange {
 diff --git a/libavcodec/mediacodecdec.c b/libavcodec/mediacodecdec.c
-index 0551370a544022def879397e4913318bee19ebe2..ef1129cea5e51e6842bf42faf33d279789d9d9b0 100644
+index 0551370..ef1129c 100644
 --- a/libavcodec/mediacodecdec.c
 +++ b/libavcodec/mediacodecdec.c
 @@ -26,6 +26,7 @@
@@ -3351,7 +3349,7 @@ index 0551370a544022def879397e4913318bee19ebe2..ef1129cea5e51e6842bf42faf33d2797
      .close          = mediacodec_decode_close,                                                 \
      .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_HARDWARE, \
 diff --git a/libavcodec/mediacodecdec_common.c b/libavcodec/mediacodecdec_common.c
-index 4fe89982da9cc04dd786c2fa71ee5f156941ec74..fbeed7de7b47e4658af45ff37fd5bcf2788000ef 100644
+index 4fe8998..6a43c92 100644
 --- a/libavcodec/mediacodecdec_common.c
 +++ b/libavcodec/mediacodecdec_common.c
 @@ -22,7 +22,7 @@
@@ -4110,7 +4108,7 @@ index 4fe89982da9cc04dd786c2fa71ee5f156941ec74..fbeed7de7b47e4658af45ff37fd5bcf2
      }
  
 -    profile = ff_AMediaCodecProfile_getProfileFromAVCodecContext(avctx);
-+    profile = s->profile_override > 0
++    int profile = s->profile_override > 0
 +        ? s->profile_override
 +        : ff_AMediaCodecProfile_getProfileFromAVCodecContext(avctx);
      if (profile < 0) {
@@ -4365,6 +4363,15 @@ index 4fe89982da9cc04dd786c2fa71ee5f156941ec74..fbeed7de7b47e4658af45ff37fd5bcf2
          if (info.flags & ff_AMediaCodec_getBufferFlagEndOfStream(codec)) {
              s->eos = 1;
          }
+@@ -1044,7 +1719,7 @@ int ff_mediacodec_dec_receive(AVCodecContext *avctx, MediaCodecDecContext *s,
+                  * video fetches that format at init.
+                  */
+                 s->has_output_format = true;
+-                if ((ret = mediacodec_dec_parse_format(avctx, s)) < 0) {
++                if ((ret = mediacodec_dec_parse_format(avctx, s, 0)) < 0) {
+                     av_log(avctx, AV_LOG_ERROR, "Failed to parse output format\n");
+                     ff_AMediaCodec_releaseOutputBuffer(codec, index, 0);
+                     return ret;
 @@ -1052,7 +1727,10 @@ int ff_mediacodec_dec_receive(AVCodecContext *avctx, MediaCodecDecContext *s,
              }
  
@@ -4493,7 +4500,7 @@ index 4fe89982da9cc04dd786c2fa71ee5f156941ec74..fbeed7de7b47e4658af45ff37fd5bcf2
 +    *pending = s->pending_drops;
 +}
 diff --git a/libavcodec/mediacodecdec_common.h b/libavcodec/mediacodecdec_common.h
-index 15a35390e0511d2b2c7f5503da779056b8a56b5a..77f0963c44572c0245eac0990af1999c7c0377fc 100644
+index 15a3539..77f0963 100644
 --- a/libavcodec/mediacodecdec_common.h
 +++ b/libavcodec/mediacodecdec_common.h
 @@ -28,12 +28,31 @@
