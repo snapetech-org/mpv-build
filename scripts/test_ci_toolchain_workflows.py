@@ -259,3 +259,12 @@ for workflow, job in ((CI, "android"), (CI, "bundled-android-release"), (PUBLISH
     assert "      actions: read" in job_section(workflow, job), (
         f"{job} must allow the Android callee to read verified prior-run artifacts"
     )
+
+# Artifact reuse has no installed prefix. Inspect the actual reused archive and
+# allow its ARM64 starter to accompany the other three successful native jobs.
+natives = job_section(ANDROID, "natives")
+assert "if: steps.reuse.outputs.sha == ''" in named_step(natives, "Require Plezy ordered PCM ABI (${{ matrix.abi }})")
+reused_pcm = named_step(natives, "Require ordered PCM in reused native package (${{ matrix.abi }})")
+assert "if: steps.reuse.outputs.sha != ''" in reused_pcm
+assert 'scripts/inspect_pcm_package.py' in reused_pcm and '--expected 1' in reused_pcm
+assert "REUSE_ALL: ${{ inputs.reuse-native-run != '' && !(matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') }}" in natives

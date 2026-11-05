@@ -80,9 +80,9 @@ jobs:
         id: reuse
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_RUN: ${{ inputs.reuse-native-run != '' && inputs.reuse-native-run || matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run || inputs.reuse-x86-run }}
+          REUSE_RUN: ${{ matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '' && inputs.reuse-arm64-run || inputs.reuse-native-run != '' && inputs.reuse-native-run || inputs.reuse-x86-run }}
           REUSE_ABI: ${{ matrix.abi }}
-          REUSE_ALL: ${{ inputs.reuse-native-run != '' }}
+          REUSE_ALL: ${{ inputs.reuse-native-run != '' && !(matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') }}
         run: |
           python3 - <<'PYCODE'
           import json, os, re, subprocess
@@ -181,7 +181,12 @@ jobs:
         run: bash platforms/android/build.sh --arch ${{ matrix.arch }}
 
       - name: Require Plezy ordered PCM ABI (${{ matrix.abi }})
+        if: steps.reuse.outputs.sha == ''
         run: python3 scripts/check_plezy_audio_tap_export.py "platforms/android/prefix/${{ matrix.abi }}/lib/libmpv.so"
+
+      - name: Require ordered PCM in reused native package (${{ matrix.abi }})
+        if: steps.reuse.outputs.sha != ''
+        run: python3 scripts/inspect_pcm_package.py "dist/release/libmpv-android-${{ matrix.abi }}.tar.gz" --expected 1
 
       # package.sh emits the unkeyed name (libmpv-android-<abi>.tar.gz): the
       # content key covers the published driver, which this leg cannot know is
