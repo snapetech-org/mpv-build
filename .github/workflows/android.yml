@@ -95,8 +95,9 @@ jobs:
               raise SystemExit('reuse requires a run from this trusted repository')
           abi = os.environ['REUSE_ABI']
           if abi == 'arm64-v8a' and os.environ['REUSE_ALL'] != 'true':
-              if data['conclusion'] != 'success':
-                  raise SystemExit('the ARM64 starter run must have succeeded')
+              jobs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100']))['jobs']
+              if not any(job['name'] == 'android-arm64' and job['conclusion'] == 'success' for job in jobs):
+                  raise SystemExit('the ARM64 starter job must have succeeded')
               artifact = 'bundled-android-arm64'
           else:
               jobs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100']))['jobs']
