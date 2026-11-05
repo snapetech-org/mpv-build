@@ -4,46 +4,46 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "baa248ffbf2d",
+          "key": "9417884ebdb1",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-baa248ffbf2d-arm64-v8a.tar.gz",
-              "checksum": "512165621235ef6b860caa27358c2c7b694576dca42cc8c7427ac297b10306e2"
+              "asset": "libmpv-android-9417884ebdb1-arm64-v8a.tar.gz",
+              "checksum": "91165b323e9a167994353b61401ec0fcbc1fd573f8c0950b3c089ad609c6e97d"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-baa248ffbf2d-armeabi-v7a.tar.gz",
-              "checksum": "1dbd2230c29f34dfa9aad291d4a4a021c7f6454f3b0ecfb09dc1dd441e143e6e"
+              "asset": "libmpv-android-9417884ebdb1-armeabi-v7a.tar.gz",
+              "checksum": "47635a0b0f56a4414310eaa2472cdc01ca932d38a64630d3e9d22a1c2f21f992"
             },
             "x86": {
-              "asset": "libmpv-android-baa248ffbf2d-x86.tar.gz",
-              "checksum": "6853b716053da6e74d1e5f1bd5471dd0f95bdffd737c127f556b1a53451dea8a"
+              "asset": "libmpv-android-9417884ebdb1-x86.tar.gz",
+              "checksum": "045cf7d5cd6e1f83cdcda909475df1923fd99c20073e734c7fcd7baa6ae9e637"
             },
             "x86_64": {
-              "asset": "libmpv-android-baa248ffbf2d-x86_64.tar.gz",
-              "checksum": "5dc246c3ecf083205b858af92c5164d522a4239fd6b0759aad1e06200d816761"
+              "asset": "libmpv-android-9417884ebdb1-x86_64.tar.gz",
+              "checksum": "de7c9680e9e4040775cef28787dbc9ae77172cf7159982fa47e7fb008d933164"
             }
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-f4dc64da4397.aar",
-          "checksum": "c250af536c7cff7d47fc66d8ada978cf6bc50f19a2a3cd1039ad41a589b92f7e",
-          "key": "f4dc64da4397",
+          "asset": "mpv-android-142593606dc0.aar",
+          "checksum": "a3fa34a66fbce3467aa01e2b6b09f146636a4a2a8846b1368d6c43784fdbef7c",
+          "key": "142593606dc0",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-f4dc64da4397-arm64-v8a-symbols.zip",
-              "checksum": "3546a79637d6a1aacc0539c69908648af9d11d35f5493e13868f3e066e97f42c"
+              "asset": "mpv-android-142593606dc0-arm64-v8a-symbols.zip",
+              "checksum": "40c8b62f2efbc89bf625d6094863ed49519e80751b5212810dfcd889aa7002ad"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-f4dc64da4397-armeabi-v7a-symbols.zip",
-              "checksum": "203bf4e79965681a886349774f3f37566ff4559470689071bdff1029d30fd592"
+              "asset": "mpv-android-142593606dc0-armeabi-v7a-symbols.zip",
+              "checksum": "a2f56e2524bff4b4dbd96aa4ea4d64d6712b9a73faff60bf9c78320d47c2f1cb"
             },
             "x86": {
-              "asset": "mpv-android-f4dc64da4397-x86-symbols.zip",
-              "checksum": "a0821b0ed863af6ef6b2bde32508daf8a0108f093b012d9a669dc2ccd2746d06"
+              "asset": "mpv-android-142593606dc0-x86-symbols.zip",
+              "checksum": "a1bf96e374066f9308e8cce839b376fbc4ceacb381bcd97a17259e41ddc9914b"
             },
             "x86_64": {
-              "asset": "mpv-android-f4dc64da4397-x86_64-symbols.zip",
-              "checksum": "3d68b33cbcf2f1119b5f15a5506f65c0531270d814457b76e5a5a74b3a708499"
+              "asset": "mpv-android-142593606dc0-x86_64-symbols.zip",
+              "checksum": "27b6699a38154129d66d0bb17df06f8bbf8e604faee0005ebba74edbd36be81d"
             }
           }
         }
@@ -133,25 +133,25 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
-          "key": "9d2c2fe13669",
+          "key": "8b31222bfff8",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-linux-9d2c2fe13669-aarch64.tar.zst",
-              "checksum": "9a7a68bb6895b43db801b74b6bea7141b24520d30f2203e846178d47fef00ace"
+              "asset": "libmpv-linux-8b31222bfff8-aarch64.tar.zst",
+              "checksum": "317447c91f91b0ed33b4702ce980a64d319d1e07134bd3940dd09ce2bf0e57bc"
             },
             "x86_64": {
-              "asset": "libmpv-linux-9d2c2fe13669-x86_64.tar.zst",
-              "checksum": "16ed0ff26543c44553f03727aa8db9027328b3aef3f5ec526f524839b67a45a4"
+              "asset": "libmpv-linux-8b31222bfff8-x86_64.tar.zst",
+              "checksum": "636ab6cbab7006ca9c25bcbbc71d7c37a855a947479ac049c4caf4b9b21644be"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-linux-9d2c2fe13669-aarch64-symbols.zip",
-              "checksum": "1183b3e007598f9eefcb509335ac61339f7018fdbe2ae46f4fb717c73ed7be6c"
+              "asset": "libmpv-linux-8b31222bfff8-aarch64-symbols.zip",
+              "checksum": "97de8f7080452edc6a61080b2df921976874b8ce37f33eb870f8515d33845f3d"
             },
             "x86_64": {
-              "asset": "libmpv-linux-9d2c2fe13669-x86_64-symbols.zip",
-              "checksum": "d524a6f4e8775ba8764e63b2d3b600eb959876ab3694861f900e53aabd23c799"
+              "asset": "libmpv-linux-8b31222bfff8-x86_64-symbols.zip",
+              "checksum": "0f20ade68b44fc90a3d6699f032dcebc3d879af0e270d7aa2f3a5466a9848dc2"
             }
           }
         }
