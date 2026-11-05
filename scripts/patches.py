@@ -102,10 +102,21 @@ def read_series(path):
     return entries
 
 
-def series_files(component, platform):
+def series_files(component, platform, *, root=None):
     """The series files that make up one resolved series, in order."""
-    root = PATCHES_DIR / component
-    return [root / "series.common", root / f"series.{platform}"]
+    versions = VERSIONS_PATH if root is None else root / VERSIONS_PATH
+    directory = PATCHES_DIR / component if root is None else root / PATCHES_DIR / component
+    variant = None
+    if versions.is_file():
+        entry = json.loads(versions.read_text(encoding="utf-8")).get("components", {}).get(component, {})
+        variant = ((entry.get("overrides") or {}).get(platform) or {}).get("patchSet", entry.get("patchSet"))
+    if variant is not None and (not isinstance(variant, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", variant)):
+        fail(f"{component}: invalid patchSet for {platform}: {variant!r}")
+    suffix = f".{variant}" if variant else ""
+    paths = [directory / f"series.common{suffix}", directory / f"series.{platform}{suffix}"]
+    if variant and any(not path.is_file() for path in paths):
+        fail(f"{component}: missing required {variant} patch series for {platform}")
+    return paths
 
 
 def resolve(component, platform):
@@ -516,6 +527,9 @@ def cmd_check():
                 pool_files.add(entry.name)
 
         known_series = {"series.common"} | {f"series.{p}" for p in PLATFORMS}
+        if VERSIONS_PATH.is_file():
+            for platform in PLATFORMS:
+                known_series.update(path.name for path in series_files(component, platform))
         for entry in sorted(component_dir.iterdir()):
             if entry.name.startswith(".") or entry == pool_dir:
                 continue

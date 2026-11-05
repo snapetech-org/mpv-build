@@ -84,6 +84,15 @@ if [ -z "$libmpv_so" ]; then
   exit 1
 fi
 libmpv_dir="$(dirname "$libmpv_so")"
+# A shared library can link successfully with unresolved C++ symbols. Catch
+# those against the exact runtime bundle before publishing a broken engine.
+link_check="$(LD_LIBRARY_PATH="$PREFIX/lib:$(dirname "$libmpv_so"):${LD_LIBRARY_PATH:-}" ldd -r "$libmpv_so" 2>&1)"
+if [[ "$link_check" == *"undefined symbol:"* || "$link_check" == *"not found"* ]]; then
+  printf '%s\n' "$link_check" >&2
+  echo "libmpv has unresolved runtime dependencies" >&2
+  exit 1
+fi
+
 if ! compgen -G "$PREFIX/lib/libshaderc_shared.so*" >/dev/null; then
   echo "no libshaderc_shared.so* under $PREFIX/lib; the build did not complete" >&2
   exit 1

@@ -82,7 +82,9 @@ jobs:
       # it), and it is the only gate on the mpv/ffmpeg configure flags whose
       # loss still compiles, links and plays -- just degraded.
       - name: Test linux build plan
-        run: bash platforms/linux/test.sh
+        run: |
+          bash platforms/linux/test.sh
+          python3 platforms/linux/test_commit_checkout.py
 
       # Every nonempty (component, group) series must still apply cleanly to
       # the exact source tree versions.json pins for it, otherwise the next

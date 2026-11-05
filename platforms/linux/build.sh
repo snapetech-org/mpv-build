@@ -80,6 +80,10 @@ NV_CODEC_HEADERS_VERSION nv-codec-headers version
 NV_CODEC_HEADERS_URL nv-codec-headers url
 NV_CODEC_HEADERS_REF nv-codec-headers ref
 NV_CODEC_HEADERS_COMMIT nv-codec-headers commit
+WAYLAND_PROTOCOLS_VERSION wayland-protocols version
+WAYLAND_PROTOCOLS_URL wayland-protocols url
+WAYLAND_PROTOCOLS_REF wayland-protocols ref
+WAYLAND_PROTOCOLS_COMMIT wayland-protocols commit
 """.strip().splitlines()
 
 with open(sys.argv[1], encoding="utf-8") as source:
@@ -116,7 +120,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git libplacebo:git libass:git mpv:git
+resolve_pins wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -143,9 +147,18 @@ checkout_verified_ref() {
   rm -rf "$destination"
   for source in "$url" ${mirror:+"$mirror"}; do
     for attempt in 1 2 3; do
-      if git clone --quiet --depth 1 --branch "$ref" --no-checkout \
-        "$source" "$destination"; then
-        break 2
+      if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+        if git init --quiet "$destination" \
+          && git -C "$destination" remote add origin "$source" \
+          && git -C "$destination" fetch --quiet --depth 1 origin "$ref" \
+          && git -C "$destination" checkout --quiet --detach FETCH_HEAD; then
+          break 2
+        fi
+      else
+        if git clone --quiet --depth 1 --branch "$ref" --no-checkout \
+          "$source" "$destination"; then
+          break 2
+        fi
       fi
       rm -rf "$destination"
       # No point pausing before giving up on this source.
@@ -302,7 +315,7 @@ main() {
     --enable-muxer=spdif \
     --disable-devices \
     --disable-bsfs \
-    --enable-bsf=aac_adtstoasc,av1_metadata,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
+    --enable-bsf=aac_adtstoasc,av1_metadata,dovi_split,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
     --disable-filters \
     --enable-filter=aformat,aresample,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
     --enable-gnutls \
@@ -354,11 +367,18 @@ main() {
     --default-library=static \
     -Dvulkan=disabled \
     -Dd3d11=disabled \
+    -Dopengl=enabled \
+    -Ddovi=enabled \
+    -Dlibdovi=disabled \
     -Ddemos=false \
     -Dtests=false
 
   ninja -C build -j"$jobs"
   ninja -C build install
+  # Static libplacebo's shader compiler uses C++ charconv symbols. Its pkg
+  # config metadata omits the C++ runtime on this Linux toolchain; propagate
+  # it explicitly rather than leaving a shared libmpv with unresolved symbols.
+  find "$prefix" -name libplacebo.pc -exec sed -i '/^Libs:/ s|$| -lstdc++|' {} \;
   finish_step libplacebo
 
   # ─── Step 6: libass (static library, our fork) ─────────────────────────────
@@ -392,6 +412,20 @@ main() {
   make -j"$jobs"
   make install
   finish_step libass
+
+  # New HDR/color protocol descriptions are build-time inputs, not a newer
+  # system Wayland ABI. Keep the pinned Ubuntu client library; the mpv patch
+  # uses unnamed event queues (identical dispatch semantics, no debug label).
+  echo "==> Installing Wayland protocol descriptions $WAYLAND_PROTOCOLS_VERSION..."
+  checkout_verified_ref \
+    "$WAYLAND_PROTOCOLS_URL" "$WAYLAND_PROTOCOLS_REF" "$WAYLAND_PROTOCOLS_COMMIT" \
+    "$srcdir/wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}"
+  cd "wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}"
+  meson setup build --prefix="$prefix" -Dtests=false
+  ninja -C build -j"$jobs"
+  ninja -C build install
+  export PKG_CONFIG_PATH="$prefix/share/pkgconfig:$PKG_CONFIG_PATH"
+  finish_step wayland-protocols
 
   # ─── Step 7: mpv (shared libmpv) ───────────────────────────────────────────
   echo "==> Building mpv $MPV_VERSION (shared libmpv only)..."

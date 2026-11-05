@@ -468,9 +468,7 @@ def _series_entries(path: Path) -> list[str]:
 def patch_entries(root: Path, component: str, group: str) -> list[tuple[str, str]]:
     """(name, sha256) of every patch in the component's resolved series, in order."""
     directory = root / PATCHES_ROOT / component
-    names = _series_entries(directory / "series.common") + _series_entries(
-        directory / f"series.{group}"
-    )
+    names = [name for path in patches.series_files(component, group, root=root) for name in _series_entries(path)]
     entries = []
     for name in names:
         pool_file = directory / "pool" / name

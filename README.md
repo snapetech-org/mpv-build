@@ -1021,3 +1021,19 @@ If you want the demo app to use the local build version, you need to modify `Pac
 ## License
 
 The bundles (`frameworks`, `xcframeworks`), which include both `libmpv` and `FFmpeg` libraries, are licensed under the GPL v3.0.
+
+### Bundled Dolby Vision experiments
+
+Normal Android, Linux and Windows engines include the pinned Profile 7 FEL
+implementation. PlezyNG's saved Settings preference controls activation and
+remains off by default. Device/pixel qualification is reported independently
+from engine availability. Apple keeps its existing mpv pin; PlezyNG bundles a
+separate, lazily loaded Apple runtime in the ordinary app package.
+
+`versions.json` selects the `fel` patch series for the three affected platforms.
+These series retain the existing production playback changes, rebased onto the
+FEL sources; they do not use the earlier Android prototype that removed the
+MediaCodec callback and OSD paths. The Android AAR carries matching installed
+FFmpeg headers and all four ABI identities. Linux keeps the Ubuntu 24.04 client
+ABI and builds pinned HDR protocol definitions; package validation rejects
+unresolved runtime symbols. Content keys include the selected patch series.

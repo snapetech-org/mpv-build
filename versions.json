@@ -23,7 +23,35 @@
         "linux",
         "windows"
       ],
-      "overrides": {}
+      "overrides": {
+        "linux": {
+          "kind": "git",
+          "version": "fel-16563d120f32",
+          "url": "https://github.com/kakulukia/mpv",
+          "ref": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "commit": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        },
+        "windows": {
+          "kind": "git",
+          "version": "fel-16563d120f32",
+          "url": "https://github.com/kakulukia/mpv",
+          "ref": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "commit": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        },
+        "android": {
+          "kind": "git",
+          "version": "fel-16563d120f32",
+          "url": "https://github.com/kakulukia/mpv",
+          "ref": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "commit": "16563d120f3260cdc0beb1b07f199818fc32dd8c",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        }
+      }
     },
     "ffmpeg": {
       "kind": "git",
@@ -38,7 +66,35 @@
         "linux",
         "windows"
       ],
-      "overrides": {}
+      "overrides": {
+        "linux": {
+          "kind": "git",
+          "version": "fel-46f23be8b197",
+          "url": "https://github.com/FFmpeg/FFmpeg",
+          "ref": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "commit": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        },
+        "windows": {
+          "kind": "git",
+          "version": "fel-46f23be8b197",
+          "url": "https://github.com/FFmpeg/FFmpeg",
+          "ref": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "commit": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        },
+        "android": {
+          "kind": "git",
+          "version": "fel-46f23be8b197",
+          "url": "https://github.com/FFmpeg/FFmpeg",
+          "ref": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "commit": "46f23be8b1976ed4c8ec85584daabcf0e57a7b9e",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        }
+      }
     },
     "libass": {
       "kind": "git",
@@ -356,21 +412,30 @@
       "overrides": {
         "android": {
           "kind": "git",
-          "version": "7.360.1",
-          "url": "https://code.videolan.org/videolan/libplacebo.git",
-          "mirror": "https://github.com/haasn/libplacebo.git",
-          "ref": "v7.360.1",
-          "commit": "cee9b076f2c63104ccfd497fa79c39a867293ec4",
-          "provenance": "Official VideoLAN GitLab annotated tag object 719cc95244a1f1d648dd72459822e026e6530f22 (v7.360.1, PGP-signed by llyyr) dereferences to this root commit; upstream's own author repository (haasn/libplacebo, not a fork) reports the same tag object and commit. Its gitlinks are identical to v7.360.0's, which the android driver already cloned recursively. Ships the OpenGL sync-object leak fix (upstream c93aa134) the android series used to carry."
+          "version": "fel-275f7dea2792",
+          "url": "https://github.com/haasn/libplacebo",
+          "ref": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "commit": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
         },
         "linux": {
           "kind": "git",
-          "version": "7.360.1",
-          "url": "https://code.videolan.org/videolan/libplacebo.git",
-          "mirror": "https://github.com/haasn/libplacebo.git",
-          "ref": "v7.360.1",
-          "commit": "cee9b076f2c63104ccfd497fa79c39a867293ec4",
-          "provenance": "Same pin as overrides.android: official VideoLAN GitLab annotated tag object 719cc95244a1f1d648dd72459822e026e6530f22 (v7.360.1, PGP-signed by llyyr) dereferences to this root commit, and haasn/libplacebo reports the same tag object and commit. Gitlinks are identical to v7.360.0's. The mirror is consulted only after the primary fails, and the commit pin is verified identically either way. Brings the OpenGL sync-object leak fix (mpv#12708) to this GL-only build."
+          "version": "fel-275f7dea2792",
+          "url": "https://github.com/haasn/libplacebo",
+          "ref": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "commit": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
+        },
+        "windows": {
+          "kind": "git",
+          "version": "fel-275f7dea2792",
+          "url": "https://github.com/haasn/libplacebo",
+          "ref": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "commit": "275f7dea27924cdd34ab2e6c20e448b6bc4fab65",
+          "patchSet": "fel",
+          "provenance": "Pinned experimental Dolby Vision implementation bundled in normal builds; runtime Settings control opt-in. Common production playback patches are retained in the FEL series."
         }
       }
     },
@@ -411,6 +476,17 @@
       "platforms": [
         "apple"
       ]
+    },
+    "wayland-protocols": {
+      "kind": "git",
+      "version": "1.44",
+      "url": "https://gitlab.freedesktop.org/wayland/wayland-protocols.git",
+      "ref": "1.44",
+      "commit": "810f1adaf33521cc55fc510566efba2a1418174f",
+      "platforms": [
+        "linux"
+      ],
+      "provenance": "Official 1.44 annotated tag 275ac7222f219052458729e81175ca66704f0750 resolves to 810f1adaf33521cc55fc510566efba2a1418174f; verified 2026-11-05 with git ls-remote. Build-time protocol descriptions only; retain the Ubuntu 24.04 Wayland client ABI."
     }
   }
 }

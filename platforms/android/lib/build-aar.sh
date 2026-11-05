@@ -123,5 +123,6 @@ done
 
 mkdir -p "$root/dist/release"
 cp "$aar" "$root/dist/release/mpv-android.aar"
+python3 "$here/bundle-engine-metadata.py" "$root/dist/release/mpv-android.aar" "$here/build/mpv"
 mv "$work/out/"*.zip "$root/dist/release/"
 echo "built dist/release/mpv-android.aar and its mpv-android-<abi>-symbols.zip from $tarballs"

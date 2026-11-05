@@ -205,6 +205,10 @@ manifest="$temporary/versions.json"
 cat >"$manifest" <<JSON
 {
   "components": {
+    "wayland-protocols": {
+      "kind": "git", "version": "1.44", "url": "file://$libplacebo_repository",
+      "ref": "release", "commit": "$libplacebo_commit"
+    },
     "ffmpeg": {
       "kind": "git",
       "version": "$ffmpeg_version",

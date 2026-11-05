@@ -9,8 +9,20 @@
   ],
   "artifacts": {
     "libmpv-linux": {
-      "components": ["mpv", "ffmpeg", "libass", "libplacebo", "dav1d", "shaderc", "nv-codec-headers"],
-      "variants": ["x86_64", "aarch64"],
+      "components": [
+        "mpv",
+        "ffmpeg",
+        "libass",
+        "libplacebo",
+        "dav1d",
+        "shaderc",
+        "nv-codec-headers",
+        "wayland-protocols"
+      ],
+      "variants": [
+        "x86_64",
+        "aarch64"
+      ],
       "assetPattern": "libmpv-linux-{key}-{variant}.tar.zst",
       "symbolsPattern": "libmpv-linux-{key}-{variant}-symbols.zip"
     }
