@@ -37,12 +37,21 @@ class BundledEngineTests(unittest.TestCase):
             data = json.loads(archive.read('META-INF/plezyng-dv-engine.json'))
             self.assertEqual(data['abis'], list(metadata.ABIS))
             self.assertEqual(data['activation'], 'runtime-settings-default-off')
-            self.assertEqual(archive.read(metadata.PREFIX + 'libavcodec/avcodec.h'), b'reviewed matching header\n')
+            self.assertEqual(data['schema_version'], 2)
+            for abi in metadata.ABIS:
+                self.assertEqual(archive.read(metadata.PREFIX + abi + '/libavcodec/avcodec.h'), b'reviewed matching header\n')
 
-    def test_rejects_mixed_abi_headers_without_changing_source(self):
+    def test_generated_architecture_headers_are_preserved_per_abi(self):
+        (self.natives / 'x86/include/libavutil/avconfig.h').write_bytes(b'AV_HAVE_FAST_UNALIGNED 0')
+        metadata.bundle(self.aar, self.natives)
+        with zipfile.ZipFile(self.aar) as archive:
+            self.assertEqual(archive.read(metadata.PREFIX + 'x86/libavutil/avconfig.h'), b'AV_HAVE_FAST_UNALIGNED 0')
+            self.assertEqual(archive.read(metadata.PREFIX + 'arm64-v8a/libavutil/avconfig.h'), b'reviewed matching header\n')
+
+    def test_rejects_mixed_source_headers_without_changing_source(self):
         before = self.aar.read_bytes()
-        (self.natives / 'x86/include/libavutil/avconfig.h').write_bytes(b'different ABI')
-        with self.assertRaisesRegex(ValueError, 'ABI headers differ'):
+        (self.natives / 'x86/include/libavcodec/avcodec.h').write_bytes(b'different source')
+        with self.assertRaisesRegex(ValueError, 'non-generated FFmpeg headers differ'):
             metadata.bundle(self.aar, self.natives)
         self.assertEqual(self.aar.read_bytes(), before)
 

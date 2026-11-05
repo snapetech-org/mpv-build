@@ -33,6 +33,10 @@ on:
         description: Trusted prior run containing a successful x86 native build
         type: string
         default: ''
+      reuse-native-run:
+        description: Reassemble all four successful native ABI artifacts without recompiling
+        type: string
+        default: ''
       device-tests:
         description: Also build the device tests' APK and upload it.
         type: boolean
@@ -72,12 +76,13 @@ jobs:
           persist-credentials: false
 
       - name: Validate the reusable native run
-        if: (matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') || (matrix.abi == 'x86' && inputs.reuse-x86-run != '')
+        if: inputs.reuse-native-run != '' || (matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') || (matrix.abi == 'x86' && inputs.reuse-x86-run != '')
         id: reuse
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_RUN: ${{ matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run || inputs.reuse-x86-run }}
+          REUSE_RUN: ${{ inputs.reuse-native-run != '' && inputs.reuse-native-run || matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run || inputs.reuse-x86-run }}
           REUSE_ABI: ${{ matrix.abi }}
+          REUSE_ALL: ${{ inputs.reuse-native-run != '' }}
         run: |
           python3 - <<'PYCODE'
           import json, os, re, subprocess
@@ -89,15 +94,16 @@ jobs:
           if data['head_repository']['full_name'] != repo:
               raise SystemExit('reuse requires a run from this trusted repository')
           abi = os.environ['REUSE_ABI']
-          if abi == 'arm64-v8a':
+          if abi == 'arm64-v8a' and os.environ['REUSE_ALL'] != 'true':
               if data['conclusion'] != 'success':
                   raise SystemExit('the ARM64 starter run must have succeeded')
               artifact = 'bundled-android-arm64'
           else:
               jobs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100']))['jobs']
-              if not any((job['name'] == 'Build android x86' or job['name'].endswith(' / Build android x86')) and job['conclusion'] == 'success' for job in jobs):
-                  raise SystemExit('the prior x86 native build must have succeeded')
-              artifact = 'android-x86'
+              name = 'Build android ' + abi
+              if not any((job['name'] == name or job['name'].endswith(' / ' + name)) and job['conclusion'] == 'success' for job in jobs):
+                  raise SystemExit('the prior native ABI build must have succeeded: ' + abi)
+              artifact = 'android-' + abi
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               print('sha=' + data['head_sha'], file=output)
               print('run=' + run_id, file=output)

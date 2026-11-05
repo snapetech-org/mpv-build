@@ -32,14 +32,20 @@ def bundle(aar: Path, natives: Path):
                 raise ValueError(f'{abi}: missing matching installed header {required}')
         trees[abi] = headers
     reference = trees[ABIS[0]]
-    if any(headers != reference for headers in trees.values()):
-        raise ValueError('Android ABI headers differ; package per-ABI headers before publishing')
+    # avconfig.h is generated for the target architecture (including
+    # AV_HAVE_FAST_UNALIGNED). Preserve each ABI's value instead of applying
+    # one architecture's inline-code assumptions to all Media3 JNI builds.
+    for abi, headers in trees.items():
+        if set(headers) != set(reference) or any(headers[name] != reference[name]
+             for name in reference if name != 'libavutil/avconfig.h'):
+            raise ValueError(f'{abi}: non-generated FFmpeg headers differ from the source pin')
     metadata = {
-        'schema_version': 1, 'engine_id': ENGINE, 'abis': list(ABIS),
+        'schema_version': 2, 'engine_id': ENGINE, 'abis': list(ABIS),
         'ffmpeg_commit': pin('ffmpeg')['commit'], 'mpv_commit': pin('mpv')['commit'],
         'libplacebo_commit': pin('libplacebo')['commit'], 'ffmpeg_headers': PREFIX,
         'activation': 'runtime-settings-default-off', 'qualification': 'unqualified',
-        'header_sha256': {name: hashlib.sha256(data).hexdigest() for name, data in sorted(reference.items())},
+        'header_sha256': {abi: {name: hashlib.sha256(data).hexdigest() for name, data in sorted(headers.items())}
+                          for abi, headers in trees.items()},
     }
     with tempfile.TemporaryDirectory(dir=aar.parent) as temporary:
         output = Path(temporary) / 'bundled.aar'
@@ -58,8 +64,9 @@ def bundle(aar: Path, natives: Path):
                 entry.external_attr = 0o100644 << 16
                 target.writestr(entry, data)
             write('META-INF/plezyng-dv-engine.json', (json.dumps(metadata, sort_keys=True, indent=2) + '\n').encode())
-            for name, data in sorted(reference.items()):
-                write(PREFIX + name, data)
+            for abi, headers in trees.items():
+                for name, data in sorted(headers.items()):
+                    write(PREFIX + abi + '/' + name, data)
         output.replace(aar)
 
 

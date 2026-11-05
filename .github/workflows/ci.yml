@@ -36,6 +36,10 @@ on:
         description: Prior run with a successful x86 native job to reuse without recompiling it
         type: string
         default: ''
+      reuse_native_run:
+        description: Reassemble every successful native ABI from this trusted run
+        type: string
+        default: ''
 
 jobs:
   patches:
@@ -583,3 +587,4 @@ jobs:
       runner-pool: public
       reuse-arm64-run: ${{ inputs.reuse_arm64_run }}
       reuse-x86-run: ${{ inputs.reuse_x86_run }}
+      reuse-native-run: ${{ inputs.reuse_native_run }}
