@@ -87,5 +87,6 @@ for arch in "${archs[@]}"; do
 		--mtime='2020-01-01 00:00:00 UTC' \
 		-C "$staging" -cf - lib include | gzip -n -9 > "$release_dir/$asset"
 	rm -rf "$staging"
+	python3 "$root/scripts/inspect_pcm_package.py" "$release_dir/$asset" --expected 1
 	echo "packaged $asset"
 done

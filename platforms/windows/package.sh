@@ -82,3 +82,5 @@ rm -f "$ASSET"
   && find . -type f | LC_ALL=C sort | zip -q -X -9 "$ASSET" -@)
 echo "$ASSET"
 echo "$SYMBOLS"
+
+python3 "$ROOT/scripts/inspect_pcm_package.py" "$ASSET" --expected 1
