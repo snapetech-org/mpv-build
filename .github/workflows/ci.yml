@@ -22,7 +22,7 @@ on:
         description: Select the native validation to run
         type: choice
         default: checks
-        options: [checks, windows, android-release]
+        options: [checks, windows, windows-diagnostics, android-release]
       windows_arch:
         description: Windows architecture to validate without repeating another active build
         type: choice
@@ -408,7 +408,7 @@ jobs:
 
   bundled-windows:
     name: Build windows ${{ matrix.arch }}
-    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && inputs.target == 'windows'
+    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && (inputs.target == 'windows' || inputs.target == 'windows-diagnostics')
     # Both target arches cross-compile from an x86_64 host: winbuild's
     # GCC_ARCH probe runs the HOST compiler with -march=x86-64 and fails on
     # arm64 hosts, and aarch64-w64-mingw32 only needs the clang toolchain,
@@ -516,7 +516,44 @@ jobs:
       - name: Restore the compiler cache workspace alias
         run: python3 scripts/windows_cache_workspace.py ${{ matrix.arch }}
 
+      - name: Retain compiler failure diagnostics without rebuilding
+        if: inputs.target == 'windows-diagnostics'
+        shell: bash
+        run: |
+          root="$MPV_WINDOWS_WORKSPACE/build/windows/${{ matrix.arch }}"
+          mkdir -p diagnostics
+          runtime="$root/toolchain/llvm-libcxx-prefix/src/llvm-libcxx-build"
+          cp "$runtime/build.ninja" diagnostics/
+          cp "$runtime/CMakeCache.txt" diagnostics/
+          ninja -C "$runtime" -t commands > diagnostics/commands.txt
+          cp "$root/exec" diagnostics/exec.sh
+          cp -r "$root/install/bin" diagnostics/wrappers
+          find diagnostics/wrappers -type f -size +100k -delete
+          tar -czf diagnostics/headers.tar.gz -C "$root/install/${{ matrix.arch }}-w64-mingw32" include
+          cp "$root/toolchain/llvm-libcxx-prefix/src/llvm-libcxx-stamp/"*.log diagnostics/
+          env RUNTIME="$runtime" ROOT="$root" python3 - <<'PYDIAG'
+          import os,pathlib,shlex,subprocess
+          output=pathlib.Path('diagnostics').resolve()
+          command=next(line for line in (output/'commands.txt').read_text().splitlines() if 'cxa_default_handlers.cpp' in line)
+          parts=shlex.split(command)
+          assert '&&' not in parts
+          index=parts.index('-o');del parts[index:index+2]
+          parts.remove('-c')
+          parts.extend(['-E','-H','-v','-o',str(output/'preprocessed.i')])
+          with (output/'header-search.log').open('w') as log:
+              result=subprocess.run([os.environ['ROOT']+'/exec','LTO=0',*parts],cwd=os.environ['RUNTIME'],stdout=log,stderr=log)
+          (output/'preprocess-result.txt').write_text(str(result.returncode)+'\n')
+          PYDIAG
+      - uses: actions/upload-artifact@v4
+        if: inputs.target == 'windows-diagnostics'
+        with:
+          name: windows-diagnostics-${{ matrix.arch }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Add temporary swap for compiler memory spikes
+        if: inputs.target == 'windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -539,6 +576,7 @@ jobs:
           df -h /var/tmp
 
       - name: Build libmpv-windows (${{ matrix.arch }})
+        if: inputs.target == 'windows'
         run: |
           cd "$MPV_WINDOWS_WORKSPACE"
           bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/build.sh" ${{ matrix.arch }}
@@ -548,6 +586,7 @@ jobs:
       # goes the unkeyed libmpv-windows-<arch>-symbols.zip (libmpv-2.pdb),
       # which record-platform names by the same key; *.zip below carries it.
       - name: Package dev zip and symbols (${{ matrix.arch }})
+        if: inputs.target == 'windows'
         run: |
           cd "$MPV_WINDOWS_WORKSPACE"
           bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/package.sh" ${{ matrix.arch }}
@@ -557,10 +596,11 @@ jobs:
       # reaches back to 2020: a restored build tree keeps the stamps of the
       # runs that compiled each package, weeks before this one.
       - name: Check the zips for a build date (${{ matrix.arch }})
+        if: inputs.target == 'windows'
         run: bash scripts/test_build_date.sh dist/release/*.zip
 
       - name: Save build state cache
-        if: always()
+        if: always() && inputs.target == 'windows'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -570,6 +610,7 @@ jobs:
           key: windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ github.run_id }}
 
       - name: Upload platform build (${{ matrix.arch }})
+        if: inputs.target == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
