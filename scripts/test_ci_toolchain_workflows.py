@@ -252,3 +252,10 @@ assert "python3 scripts/test_linux_arm64_runtime_workflow.py" in CI
 assert "python3 scripts/test_ci_toolchain_workflows.py" in PUBLISH
 
 print("Private Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")
+
+# GitHub validates reusable workflow permissions before evaluating job ifs.
+# A skipped legacy caller must still allow the callee's artifact read scope.
+for workflow, job in ((CI, "android"), (CI, "bundled-android-release"), (PUBLISH, "build-android")):
+    assert "      actions: read" in job_section(workflow, job), (
+        f"{job} must allow the Android callee to read verified prior-run artifacts"
+    )

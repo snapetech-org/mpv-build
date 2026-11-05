@@ -541,6 +541,7 @@ jobs:
     if: contains(needs.plan.outputs.stale_groups, ',android,')
     permissions:
       contents: read
+      actions: read
     # The tarball legs only when libmpv-android is stale; the AAR always, from
     # this run's tarballs or the published ones artifacts.json pins.
     uses: ./.github/workflows/android.yml

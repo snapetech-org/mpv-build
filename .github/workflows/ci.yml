@@ -247,6 +247,7 @@ jobs:
     needs: android-plan
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/android.yml
     with:
       natives: ${{ needs.android-plan.outputs.natives == 'true' }}
