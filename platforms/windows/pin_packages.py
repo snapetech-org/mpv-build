@@ -100,6 +100,7 @@ COMPONENTS = ("mpv", "ffmpeg", "libass")
 EXTRA_COMPONENTS = {
     "mingw-w64": "toolchain/mingw-w64.cmake",
     "llvm": "toolchain/llvm/llvm.cmake",
+    "fontconfig": "packages/fontconfig.cmake",
     "svt-av1": "packages/svtav1.cmake",
     "nv-codec-headers": "packages/nvcodec-headers.cmake",
     "openssl": "packages/openssl.cmake",

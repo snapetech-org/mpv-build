@@ -487,6 +487,18 @@
         "linux"
       ],
       "provenance": "Official 1.44 annotated tag 275ac7222f219052458729e81175ca66704f0750 resolves to 810f1adaf33521cc55fc510566efba2a1418174f; verified 2026-11-05 with git ls-remote. Build-time protocol descriptions only; retain the Ubuntu 24.04 Wayland client ABI."
+    },
+    "fontconfig": {
+      "kind": "git",
+      "version": "2.18.3",
+      "url": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
+      "ref": "2.18.3",
+      "commit": "0f236723a3c26bd9745e32ba2b3ee21e5f809295",
+      "provenance": "Official Fontconfig 2.18.3 release tag, dated 2026-08-06 in NEWS. Verified both pinned winbuild Windows patches apply cleanly together; the moving main branch broke their fcdir.c context. Pin the compatible release instead of fetching a different dependency on each build.",
+      "platforms": [
+        "windows"
+      ],
+      "overrides": {}
     }
   }
 }

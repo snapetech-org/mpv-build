@@ -61,3 +61,6 @@
 
 # llvm-libcxx.cmake: fetched from the same pinned 87e22100 commit on 2026-11-05.
 # 3926fbe1fb01e70881800fd52089f67e3b47f83f5a8339f8a8ff68c34fbdf5d8  llvm-libcxx.cmake
+
+# fontconfig.cmake: fetched from pinned winbuild 87e22100 on 2026-11-05.
+# c20c10d75476bf1f99818e5dda7644c94ae157372b9fd396c09f1b2122b006aa  fontconfig.cmake
