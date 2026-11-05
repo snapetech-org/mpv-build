@@ -120,7 +120,7 @@ jobs:
           java-version: '17'
 
       - name: Configure Java for private runner downloads
-        if: steps.reuse.outputs.sha == ''
+        if: steps.reuse.outputs.sha == '' && inputs.runner-pool != 'public'
         run: python3 scripts/prepare_android_java.py proxy
 
       # Host build tools from apt plus the exact NDK pinned in
@@ -197,6 +197,7 @@ jobs:
       # Java does not consume HTTPS_PROXY. Configure it before setup-android
       # invokes sdkmanager, and retain the same settings for Gradle and its JVMs.
       - name: Configure Java for private runner downloads
+        if: inputs.runner-pool != 'public'
         run: python3 scripts/prepare_android_java.py proxy
 
       - name: Set up Android command-line tools
@@ -206,7 +207,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install and verify the AAR SDK toolchain
-        run: python3 scripts/prepare_android_java.py sdk
+        run: python3 scripts/prepare_android_java.py sdk ${{ inputs.runner-pool == 'public' && '--public' || '' }}
 
       - name: Download the tarballs this run built
         if: needs.natives.result == 'success'

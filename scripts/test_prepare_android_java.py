@@ -45,6 +45,22 @@ class AndroidJavaTests(unittest.TestCase):
                 toolchain.install_sdk({"HTTPS_PROXY": "http://proxy:3128"})
             run.assert_not_called()
 
+    def test_public_sdk_setup_needs_no_private_proxy_and_still_verifies_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = Path(directory)
+            manager = sdk / "cmdline-tools/latest/bin/sdkmanager"
+            manager.parent.mkdir(parents=True)
+            manager.touch()
+            _, required = toolchain.sdk_contract(toolchain.ROOT)
+            for filename in required:
+                path = sdk / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            with patch.object(subprocess, "run") as run:
+                toolchain.install_sdk({"ANDROID_HOME": str(sdk)}, public=True)
+                self.assertNotIn("JAVA_TOOL_OPTIONS", run.call_args.kwargs["env"])
+                self.assertTrue(run.call_args.kwargs["check"])
+
     def test_successful_sdkmanager_without_tools_is_a_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             sdk = Path(directory)

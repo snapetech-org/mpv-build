@@ -59,9 +59,9 @@ def sdk_contract(root):
     return packages, required
 
 
-def install_sdk(environ):
+def install_sdk(environ, *, public=False):
     # This process and sdkmanager both retain the JVM proxy configuration.
-    environ = dict(environ, JAVA_TOOL_OPTIONS=proxy_options(environ))
+    environ = dict(environ) if public else dict(environ, JAVA_TOOL_OPTIONS=proxy_options(environ))
     sdk_value = environ.get("ANDROID_HOME") or environ.get("ANDROID_SDK_ROOT")
     if not sdk_value:
         raise ValueError("setup-android did not provide an Android SDK root")
@@ -86,10 +86,10 @@ def main():
         with Path(os.environ["GITHUB_ENV"]).open("a") as output:
             output.write(f"JAVA_TOOL_OPTIONS={options}\n")
         print("Configured the private proxy for sdkmanager and Gradle JVMs")
-    elif sys.argv[1:] == ["sdk"]:
-        install_sdk(os.environ)
+    elif sys.argv[1:] in (["sdk"], ["sdk", "--public"]):
+        install_sdk(os.environ, public="--public" in sys.argv[1:])
     else:
-        raise ValueError("usage: prepare_android_java.py proxy|sdk")
+        raise ValueError("usage: prepare_android_java.py proxy|sdk [--public]")
 
 
 if __name__ == "__main__":
