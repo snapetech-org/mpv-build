@@ -22,7 +22,7 @@ on:
         description: Select the native validation to run
         type: choice
         default: checks
-        options: [checks, windows, windows-diagnostics, android-release]
+        options: [checks, windows, windows-diagnostics, android-release, apple-libmpv]
       windows_arch:
         description: Windows architecture to validate without repeating another active build
         type: choice
@@ -629,3 +629,139 @@ jobs:
       reuse-arm64-run: ${{ inputs.reuse_arm64_run }}
       reuse-x86-run: ${{ inputs.reuse_x86_run }}
       reuse-native-run: ${{ inputs.reuse_native_run }}
+
+  apple-libmpv:
+    name: Build ordered PCM apple ${{ matrix.name }}
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'apple-libmpv' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public'
+    permissions:
+      contents: read
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      # Public native Apple builds leave the private app runner available.
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      RUSTUP_AUTO_INSTALL: '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: macos
+            platforms: macos
+            platform_type: macos
+          - name: maccatalyst
+            platforms: maccatalyst
+            platform_type: maccatalyst
+          - name: iphoneos
+            platforms: ios-device
+            platform_type: ios
+          - name: iphonesimulator
+            platforms: ios-simulator
+            platform_type: isimulator
+          - name: tvos
+            platforms: tvos-device
+            platform_type: tvos
+          - name: tvsimulator
+            platforms: tvos-simulator
+            platform_type: tvsimulator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify Apple toolchain and install pinned Meson
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang python@3.12
+          for formula in autoconf automake libtool ninja python@3.12; do
+            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
+          done
+          for tool in autoconf automake glibtool ninja cmake pkg-config wget nasm sdl2-config glslang python3 xcodebuild xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          for sdk in macosx iphoneos iphonesimulator appletvos appletvsimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            test -d "$sdk_path" || { echo "missing Xcode SDK: $sdk" >&2; exit 1; }
+          done
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          meson_bin="$RUNNER_TEMP/meson-venv/bin"
+          "$meson_bin/python" -m pip install --disable-pip-version-check meson==1.4.2
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
+
+      # Only the stale libraries are compiled; the rest are restored from their
+      # published per-platform zips. No version= argument: the URLs the build
+      # script would spell from it are replaced by the manifest's
+      # content-addressed ones in the publish job.
+      - name: Bootstrap pinned rustup and install pinned Rust toolchain
+        run: |
+          bash scripts/install_pinned_rustup_macos.sh
+          rust_version="$(sed -n 's/^rust=//p' toolchain/apple.txt)"
+          test -n "$rust_version"
+          # What build_spatial.py runs, named instead of left to a profile:
+          # rustc and cargo, and rust-std for every target spatialTarget()
+          # returns (only the slices with spatial audio build Rust).
+          rustup toolchain install "$rust_version" --profile minimal --no-self-update \
+            --component rustc,cargo,rust-std \
+            --target aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,aarch64-apple-tvos,aarch64-apple-tvos-sim
+          # build_spatial.py resolves the toolchain's rustc through rustup, so
+          # no proxy has to be on the driver's PATH.
+          rustup which --toolchain "$rust_version" rustc
+          rustup which --toolchain "$rust_version" cargo
+
+      - name: Build GPL version (${{ matrix.name }})
+        run: |
+          make build use-prebuilt libs=libmpv platform=${{ matrix.platforms }}
+
+      - name: Require Plezy ordered PCM ABI (${{ matrix.platform_type }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=("dist/libmpv/${{ matrix.platform_type }}/thin/"*/lib/libmpv.a)
+          if (( ${#archives[@]} == 0 )); then
+            echo "No libmpv archives were produced for ${{ matrix.platform_type }}" >&2
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            python3 scripts/check_plezy_audio_tap_export.py "$archive"
+          done
+
+      # Each spatial slice: the prelinked core's exports, a link with libdovi's
+      # Rust runtime force-loaded, and an Objective-C consumer through the
+      # packaged mpv.pc. Slices without spatial audio are skipped. Only a leg
+      # that compiled libmpv has the patched source and packaged mpv.pc this
+      # needs; a libmpv restored from its published zips was checked when it
+      # was built. stale_apple has no delimiters, so add them for an exact test.
+      - name: Check spatial slices and combined archive links (${{ matrix.platform_type }})
+        shell: bash
+        run: |
+          mpv_version="$(python3 -c 'import json; print(json.load(open("versions.json"))["components"]["mpv"]["version"])')"
+          bash scripts/test_spatial_archives.sh "dist/libmpv-$mpv_version" "${{ matrix.platform_type }}"
+
+      - name: Name per-platform binaries by content (${{ matrix.platform_type }})
+        run: |
+          python3 scripts/keys.py record-platform \
+            --platform-group apple \
+            --platform ${{ matrix.platform_type }} \
+            --release-dir dist/release
+
+      # A rebuild of a published key has to reproduce its bytes (publish-assets
+      # refuses anything else), so no file may carry a build's clock. A stamp
+      # publishes fine once and fails only the rebuild, weeks later.
+      - name: Check the zips for a build date (${{ matrix.name }})
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Upload platform build (${{ matrix.name }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-${{ matrix.name }}
+          path: |
+            ./dist/release/*.zip
+            ./dist/release/*.checksum.txt
+          if-no-files-found: error
+
