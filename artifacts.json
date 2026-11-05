@@ -4,46 +4,186 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "9417884ebdb1",
+          "key": "671237322278",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-9417884ebdb1-arm64-v8a.tar.gz",
-              "checksum": "91165b323e9a167994353b61401ec0fcbc1fd573f8c0950b3c089ad609c6e97d"
+              "asset": "libmpv-android-671237322278-arm64-v8a.tar.gz",
+              "capabilities": {
+                "appleSlices": [],
+                "artifactSha256": "32f6085844b1388fb7d22ea575b08e25de8fbd41a7ed86f749024e789756c10f",
+                "binaries": [
+                  "lib/libmpv.so"
+                ],
+                "binaryArchitectures": {
+                  "lib/libmpv.so": [
+                    "arm64"
+                  ]
+                },
+                "binarySha256": {
+                  "lib/libmpv.so": "1a68d7447c82bb75e7708323d52340bbe93211768581b89d10dad5c3faf49b56"
+                },
+                "executionQualified": false,
+                "inspectionSchema": 3,
+                "orderedSubtitlePcmAbi": 1,
+                "requiredSymbols": [
+                  "mpv_plezy_audio_tap_version",
+                  "mpv_plezy_audio_tap_enable",
+                  "mpv_plezy_audio_tap_read",
+                  "mpv_plezy_audio_tap_read_next"
+                ],
+                "symbol": "mpv_plezy_audio_tap_read_next"
+              },
+              "checksum": "32f6085844b1388fb7d22ea575b08e25de8fbd41a7ed86f749024e789756c10f"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-9417884ebdb1-armeabi-v7a.tar.gz",
-              "checksum": "47635a0b0f56a4414310eaa2472cdc01ca932d38a64630d3e9d22a1c2f21f992"
+              "asset": "libmpv-android-671237322278-armeabi-v7a.tar.gz",
+              "capabilities": {
+                "appleSlices": [],
+                "artifactSha256": "914409147953dc5311f0d0d7077dcd274baadad22b85500eeca10dba46b7a69c",
+                "binaries": [
+                  "lib/libmpv.so"
+                ],
+                "binaryArchitectures": {
+                  "lib/libmpv.so": [
+                    "armv7"
+                  ]
+                },
+                "binarySha256": {
+                  "lib/libmpv.so": "e9a5a500156576d3326a8e1435975164558e74e67238a14e7aa98ab11680ac9b"
+                },
+                "executionQualified": false,
+                "inspectionSchema": 3,
+                "orderedSubtitlePcmAbi": 1,
+                "requiredSymbols": [
+                  "mpv_plezy_audio_tap_version",
+                  "mpv_plezy_audio_tap_enable",
+                  "mpv_plezy_audio_tap_read",
+                  "mpv_plezy_audio_tap_read_next"
+                ],
+                "symbol": "mpv_plezy_audio_tap_read_next"
+              },
+              "checksum": "914409147953dc5311f0d0d7077dcd274baadad22b85500eeca10dba46b7a69c"
             },
             "x86": {
-              "asset": "libmpv-android-9417884ebdb1-x86.tar.gz",
-              "checksum": "045cf7d5cd6e1f83cdcda909475df1923fd99c20073e734c7fcd7baa6ae9e637"
+              "asset": "libmpv-android-671237322278-x86.tar.gz",
+              "capabilities": {
+                "appleSlices": [],
+                "artifactSha256": "5a0260217be55d07611a7e4c5ebac6215e8d090dea15b03e721588d6779d9baa",
+                "binaries": [
+                  "lib/libmpv.so"
+                ],
+                "binaryArchitectures": {
+                  "lib/libmpv.so": [
+                    "i386"
+                  ]
+                },
+                "binarySha256": {
+                  "lib/libmpv.so": "37b78456a09d6d4340cc283edb21bcf779d33edfa973041e1e5252b6069bc15f"
+                },
+                "executionQualified": false,
+                "inspectionSchema": 3,
+                "orderedSubtitlePcmAbi": 1,
+                "requiredSymbols": [
+                  "mpv_plezy_audio_tap_version",
+                  "mpv_plezy_audio_tap_enable",
+                  "mpv_plezy_audio_tap_read",
+                  "mpv_plezy_audio_tap_read_next"
+                ],
+                "symbol": "mpv_plezy_audio_tap_read_next"
+              },
+              "checksum": "5a0260217be55d07611a7e4c5ebac6215e8d090dea15b03e721588d6779d9baa"
             },
             "x86_64": {
-              "asset": "libmpv-android-9417884ebdb1-x86_64.tar.gz",
-              "checksum": "de7c9680e9e4040775cef28787dbc9ae77172cf7159982fa47e7fb008d933164"
+              "asset": "libmpv-android-671237322278-x86_64.tar.gz",
+              "capabilities": {
+                "appleSlices": [],
+                "artifactSha256": "eec4f18713e9d7dee1be959da003ddd0b0f3d035d2e68eb23d8861a312395ed8",
+                "binaries": [
+                  "lib/libmpv.so"
+                ],
+                "binaryArchitectures": {
+                  "lib/libmpv.so": [
+                    "x86_64"
+                  ]
+                },
+                "binarySha256": {
+                  "lib/libmpv.so": "db87b36868cb5449658d69328abe5519998212efad22b691cb647020b7ca8a5c"
+                },
+                "executionQualified": false,
+                "inspectionSchema": 3,
+                "orderedSubtitlePcmAbi": 1,
+                "requiredSymbols": [
+                  "mpv_plezy_audio_tap_version",
+                  "mpv_plezy_audio_tap_enable",
+                  "mpv_plezy_audio_tap_read",
+                  "mpv_plezy_audio_tap_read_next"
+                ],
+                "symbol": "mpv_plezy_audio_tap_read_next"
+              },
+              "checksum": "eec4f18713e9d7dee1be959da003ddd0b0f3d035d2e68eb23d8861a312395ed8"
             }
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-142593606dc0.aar",
-          "checksum": "a3fa34a66fbce3467aa01e2b6b09f146636a4a2a8846b1368d6c43784fdbef7c",
-          "key": "142593606dc0",
+          "asset": "mpv-android-6e57fa25e340.aar",
+          "capabilities": {
+            "appleSlices": [],
+            "artifactSha256": "fbe27ef6cb401e55d4bb83b4c4a570f5cfcc6bf480bfdd9556703402a0062d1b",
+            "binaries": [
+              "jni/arm64-v8a/libmpv.so",
+              "jni/armeabi-v7a/libmpv.so",
+              "jni/x86/libmpv.so",
+              "jni/x86_64/libmpv.so"
+            ],
+            "binaryArchitectures": {
+              "jni/arm64-v8a/libmpv.so": [
+                "arm64"
+              ],
+              "jni/armeabi-v7a/libmpv.so": [
+                "armv7"
+              ],
+              "jni/x86/libmpv.so": [
+                "i386"
+              ],
+              "jni/x86_64/libmpv.so": [
+                "x86_64"
+              ]
+            },
+            "binarySha256": {
+              "jni/arm64-v8a/libmpv.so": "48bb589dc22c63a2e96415122c26b17c0cfe0a424866fec80bde2ee58d68181b",
+              "jni/armeabi-v7a/libmpv.so": "ff58a6e73714df58990d5bff3ee2d3aa3acaf1d5790641600c9b457918b8d2a0",
+              "jni/x86/libmpv.so": "54c9fddefa4b51127e22b6f5036f77201e094e94c3056ec4755954947a41b2b0",
+              "jni/x86_64/libmpv.so": "bc7676f1f32a1a71687f850d71cb5fb6f0063651f2c62b1e635ffa97c9031db3"
+            },
+            "executionQualified": false,
+            "inspectionSchema": 3,
+            "orderedSubtitlePcmAbi": 1,
+            "requiredSymbols": [
+              "mpv_plezy_audio_tap_version",
+              "mpv_plezy_audio_tap_enable",
+              "mpv_plezy_audio_tap_read",
+              "mpv_plezy_audio_tap_read_next"
+            ],
+            "symbol": "mpv_plezy_audio_tap_read_next"
+          },
+          "checksum": "fbe27ef6cb401e55d4bb83b4c4a570f5cfcc6bf480bfdd9556703402a0062d1b",
+          "key": "6e57fa25e340",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-142593606dc0-arm64-v8a-symbols.zip",
-              "checksum": "40c8b62f2efbc89bf625d6094863ed49519e80751b5212810dfcd889aa7002ad"
+              "asset": "mpv-android-6e57fa25e340-arm64-v8a-symbols.zip",
+              "checksum": "c68fcb108ec8eb918eb2ebdf41634e7b9da055afd1fbbe3495901ba2c5d2b8da"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-142593606dc0-armeabi-v7a-symbols.zip",
-              "checksum": "a2f56e2524bff4b4dbd96aa4ea4d64d6712b9a73faff60bf9c78320d47c2f1cb"
+              "asset": "mpv-android-6e57fa25e340-armeabi-v7a-symbols.zip",
+              "checksum": "875c08836bcaab03e93e2f73eae36d58011614281d2d95be8fad4f2d6ed72762"
             },
             "x86": {
-              "asset": "mpv-android-142593606dc0-x86-symbols.zip",
-              "checksum": "a1bf96e374066f9308e8cce839b376fbc4ceacb381bcd97a17259e41ddc9914b"
+              "asset": "mpv-android-6e57fa25e340-x86-symbols.zip",
+              "checksum": "956f09c2b627a7e7b90b22d1613218dd71103c1ed2ccbe12da4c958b5f21a8ea"
             },
             "x86_64": {
-              "asset": "mpv-android-142593606dc0-x86_64-symbols.zip",
-              "checksum": "27b6699a38154129d66d0bb17df06f8bbf8e604faee0005ebba74edbd36be81d"
+              "asset": "mpv-android-6e57fa25e340-x86_64-symbols.zip",
+              "checksum": "9d95faa751658d3ff77728a5081806a21d039ca1698bbd35d44f36f1eae42ca3"
             }
           }
         }
