@@ -268,3 +268,10 @@ reused_pcm = named_step(natives, "Require ordered PCM in reused native package (
 assert "if: steps.reuse.outputs.sha != ''" in reused_pcm
 assert 'scripts/inspect_pcm_package.py' in reused_pcm and '--expected 1' in reused_pcm
 assert "REUSE_ALL: ${{ inputs.reuse-native-run != '' && !(matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') }}" in natives
+
+# JNI and its packaged development headers must use the engine's exact PCM ABI.
+tap_patch = (ROOT / "patches/mpv/pool/0210-plezy-ordered-audio-tap.patch").read_text()
+tap_section = tap_patch.split("diff --git a/include/mpv/plezy_audio_tap.h", 1)[1].split("\ndiff --git", 1)[0]
+tap_header = "\n".join(line[1:] for line in tap_section.splitlines() if line.startswith("+") and not line.startswith("+++")) + "\n"
+assert (ROOT / "platforms/android/lib/src/main/headers/mpv/plezy_audio_tap.h").read_text() == tap_header
+assert 'from("src/main/headers") { into("$abi/include") }' in (ROOT / "platforms/android/lib/build.gradle.kts").read_text()

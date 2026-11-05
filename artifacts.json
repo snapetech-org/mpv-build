@@ -113,18 +113,127 @@
         "libmpv": {
           "frameworks": {
             "Libmpv": {
-              "asset": "Libmpv-87aadd8bfcac.xcframework.zip",
-              "checksum": "11101b059032e08cd66a2898582e46f37542e2d6163bbb56d99dadb1a7a7c8ad"
+              "asset": "Libmpv-c2a7967f85c6.xcframework.zip",
+              "capabilities": {
+                "appleSlices": [
+                  {
+                    "architectures": [
+                      "arm64"
+                    ],
+                    "binary": "Libmpv.xcframework/ios-arm64/Libmpv.framework/Libmpv",
+                    "platform": "ios",
+                    "variant": ""
+                  },
+                  {
+                    "architectures": [
+                      "arm64",
+                      "x86_64"
+                    ],
+                    "binary": "Libmpv.xcframework/ios-arm64_x86_64-maccatalyst/Libmpv.framework/Libmpv",
+                    "platform": "ios",
+                    "variant": "maccatalyst"
+                  },
+                  {
+                    "architectures": [
+                      "arm64",
+                      "x86_64"
+                    ],
+                    "binary": "Libmpv.xcframework/ios-arm64_x86_64-simulator/Libmpv.framework/Libmpv",
+                    "platform": "ios",
+                    "variant": "simulator"
+                  },
+                  {
+                    "architectures": [
+                      "arm64",
+                      "x86_64"
+                    ],
+                    "binary": "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv",
+                    "platform": "macos",
+                    "variant": ""
+                  },
+                  {
+                    "architectures": [
+                      "arm64",
+                      "arm64e"
+                    ],
+                    "binary": "Libmpv.xcframework/tvos-arm64_arm64e/Libmpv.framework/Libmpv",
+                    "platform": "tvos",
+                    "variant": ""
+                  },
+                  {
+                    "architectures": [
+                      "arm64",
+                      "x86_64"
+                    ],
+                    "binary": "Libmpv.xcframework/tvos-arm64_x86_64-simulator/Libmpv.framework/Libmpv",
+                    "platform": "tvos",
+                    "variant": "simulator"
+                  }
+                ],
+                "artifactSha256": "0fbf0c52558b4dc8e1b4720e5dae3e6b089a29e163d8a3f66fe54138e5a2f0e4",
+                "binaries": [
+                  "Libmpv.xcframework/ios-arm64/Libmpv.framework/Libmpv",
+                  "Libmpv.xcframework/ios-arm64_x86_64-maccatalyst/Libmpv.framework/Libmpv",
+                  "Libmpv.xcframework/ios-arm64_x86_64-simulator/Libmpv.framework/Libmpv",
+                  "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv",
+                  "Libmpv.xcframework/tvos-arm64_arm64e/Libmpv.framework/Libmpv",
+                  "Libmpv.xcframework/tvos-arm64_x86_64-simulator/Libmpv.framework/Libmpv"
+                ],
+                "binaryArchitectures": {
+                  "Libmpv.xcframework/ios-arm64/Libmpv.framework/Libmpv": [
+                    "arm64"
+                  ],
+                  "Libmpv.xcframework/ios-arm64_x86_64-maccatalyst/Libmpv.framework/Libmpv": [
+                    "arm64",
+                    "x86_64"
+                  ],
+                  "Libmpv.xcframework/ios-arm64_x86_64-simulator/Libmpv.framework/Libmpv": [
+                    "arm64",
+                    "x86_64"
+                  ],
+                  "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv": [
+                    "arm64",
+                    "x86_64"
+                  ],
+                  "Libmpv.xcframework/tvos-arm64_arm64e/Libmpv.framework/Libmpv": [
+                    "arm64",
+                    "arm64e"
+                  ],
+                  "Libmpv.xcframework/tvos-arm64_x86_64-simulator/Libmpv.framework/Libmpv": [
+                    "arm64",
+                    "x86_64"
+                  ]
+                },
+                "binarySha256": {
+                  "Libmpv.xcframework/ios-arm64/Libmpv.framework/Libmpv": "3844693fd0532dc0cd08b8c8126bc8770feee54f5eaa9abe82272993cee0b494",
+                  "Libmpv.xcframework/ios-arm64_x86_64-maccatalyst/Libmpv.framework/Libmpv": "3c5b0bfbf478fd56b22fabdac1ca60522eb9880c3782c3bda7a1bab6a7af2761",
+                  "Libmpv.xcframework/ios-arm64_x86_64-simulator/Libmpv.framework/Libmpv": "4ca3eb050b7114a1676d080bf4643b59c5960ca035717515c7d8b1edb6f357f8",
+                  "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv": "2ba4eedf19d329c76e27cfe27afb8be59fc223b46fe852723e1d4f8786d30389",
+                  "Libmpv.xcframework/tvos-arm64_arm64e/Libmpv.framework/Libmpv": "c0a871e80393ee3fd41af3ce3efd08f8844f2a79e759d0cd34d10b78bb3e0ab1",
+                  "Libmpv.xcframework/tvos-arm64_x86_64-simulator/Libmpv.framework/Libmpv": "ddf5396a7e43e9ae45cc722a5e94db57fd2522fc0d3c8e794c6c76bee6257617"
+                },
+                "executionQualified": false,
+                "inspectionSchema": 3,
+                "orderedSubtitlePcmAbi": 1,
+                "requiredSymbols": [
+                  "mpv_plezy_audio_tap_version",
+                  "mpv_plezy_audio_tap_enable",
+                  "mpv_plezy_audio_tap_read",
+                  "mpv_plezy_audio_tap_read_next"
+                ],
+                "symbol": "mpv_plezy_audio_tap_read_next"
+              },
+              "checksum": "0fbf0c52558b4dc8e1b4720e5dae3e6b089a29e163d8a3f66fe54138e5a2f0e4"
             }
           },
-          "key": "87aadd8bfcac",
+          "key": "c2a7967f85c6",
           "prebuilt": {
-            "ios": "libmpv-all-87aadd8bfcac-ios.zip",
-            "isimulator": "libmpv-all-87aadd8bfcac-isimulator.zip",
-            "maccatalyst": "libmpv-all-87aadd8bfcac-maccatalyst.zip",
-            "macos": "libmpv-all-87aadd8bfcac-macos.zip",
-            "tvos": "libmpv-all-87aadd8bfcac-tvos.zip",
-            "tvsimulator": "libmpv-all-87aadd8bfcac-tvsimulator.zip"
+            "ios": "libmpv-all-c2a7967f85c6-ios.zip",
+            "isimulator": "libmpv-all-c2a7967f85c6-isimulator.zip",
+            "maccatalyst": "libmpv-all-c2a7967f85c6-maccatalyst.zip",
+            "macos": "libmpv-all-c2a7967f85c6-macos.zip",
+            "tvos": "libmpv-all-c2a7967f85c6-tvos.zip",
+            "tvsimulator": "libmpv-all-c2a7967f85c6-tvsimulator.zip"
           }
         }
       }
