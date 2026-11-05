@@ -479,6 +479,17 @@ def pin_davs2_build_time(text):
     return text.replace(DAVS2_CONFIGURE_END, end, 1)
 
 
+def isolate_libcxx_bootstrap(text):
+    """Build against the new headers, excluding a cached installed libc++."""
+    anchor = "        -DCMAKE_CXX_COMPILER=${TARGET_ARCH}-clang++\n"
+    flags = "        -DCMAKE_CXX_FLAGS=-nostdinc++\n"
+    if text.count(anchor) != 1 or text.count(flags) > 1:
+        fail("llvm-libcxx.cmake: re-audit the runtime bootstrap compiler flags")
+    if flags in text:
+        return text
+    return text.replace(anchor, anchor + flags, 1)
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--winbuild", help="mpv-winbuild-cmake checkout to rewrite")
@@ -550,6 +561,13 @@ def main(argv):
             toolchain_file.write_text(pinned, encoding="utf-8")
         converted = ", upstream patch step converted to git apply" if patched else ""
         print(f"pinned {component} -> {pins['ref']} @ {pins['commit'][:10]}{converted}")
+
+    libcxx = winbuild / "toolchain/llvm/llvm-libcxx.cmake"
+    libcxx_text = libcxx.read_text(encoding="utf-8")
+    isolated = isolate_libcxx_bootstrap(libcxx_text)
+    if isolated != libcxx_text:
+        libcxx.write_text(isolated, encoding="utf-8")
+    print("isolated libc++ bootstrap from installed cached C++ headers")
 
     davs2 = packages_dir / "davs2.cmake"
     if not davs2.is_file():

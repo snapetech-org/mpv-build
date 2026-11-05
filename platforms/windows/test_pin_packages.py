@@ -33,6 +33,7 @@ CHECKOUT_FILES.update({Path(r).name: r for r in pin_packages.EXTRA_COMPONENTS.va
 CHECKOUT_FILES["custom_steps.cmake"] = "cmake/custom_steps.cmake"
 CHECKOUT_FILES["davs2.cmake"] = "packages/davs2.cmake"
 CHECKOUT_FILES["highway.cmake"] = "packages/highway.cmake"
+CHECKOUT_FILES["llvm-libcxx.cmake"] = "toolchain/llvm/llvm-libcxx.cmake"
 COMPONENT_FILES = {c: f"{c}.cmake" for c in pin_packages.COMPONENTS}
 COMPONENT_FILES.update({c: Path(r).name for c, r in pin_packages.EXTRA_COMPONENTS.items()})
 IDIOM_FIXTURE = "mbedtls.cmake"
@@ -179,7 +180,7 @@ class PinPackagesTest(unittest.TestCase):
             '    UPDATE_COMMAND ""\n'
             "    GIT_REMOTE_NAME origin\n"
             f"    GIT_TAG {pins['commit']}\n"
-            f"    GIT_RESET {pins['commit']} # {pins['version']}\n",
+            f"    GIT_RESET {pins['commit']} # {pins['ref']} {pins['version']}\n",
             pinned,
         )
 
@@ -228,6 +229,15 @@ class PinPackagesTest(unittest.TestCase):
         self.assertIn(pin_packages.DAVS2_BUILD_TIME, davs2)
         highway = (self.winbuild / "packages/highway.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.HIGHWAY_TESTS_STANDALONE, highway)
+        self.assertIn("-nostdinc++", (self.winbuild / "toolchain/llvm/llvm-libcxx.cmake").read_text())
+
+    def test_libcxx_bootstrap_excludes_cached_standard_headers(self):
+        original = (TESTDATA / 'llvm-libcxx.cmake').read_text()
+        fixed = pin_packages.isolate_libcxx_bootstrap(original)
+        self.assertIn('-DCMAKE_CXX_FLAGS=-nostdinc++', fixed)
+        self.assertEqual(pin_packages.isolate_libcxx_bootstrap(fixed), fixed)
+        with self.assertRaises(SystemExit):
+            pin_packages.isolate_libcxx_bootstrap(original.replace('-DCMAKE_CXX_COMPILER=', '-DRENAMED_COMPILER='))
 
     def test_main_converges_on_a_second_run(self):
         self.run_main()
