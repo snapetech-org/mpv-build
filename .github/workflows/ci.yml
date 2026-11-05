@@ -1,4 +1,3 @@
-# ng-runner-policy: private-jit-only-v1
 # Public pull requests stay off trusted runners until a disposable,
 # secret-free JIT route is available.
 name: CI
@@ -15,10 +14,15 @@ on:
         type: choice
         options: [ci]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Compatible runner pool
         required: true
         type: choice
-        options: [private]
+        options: [private, public]
+      target:
+        description: Select the native validation to run
+        type: choice
+        default: checks
+        options: [checks, windows]
 
 jobs:
   patches:
@@ -383,3 +387,161 @@ jobs:
       - name: Build Succeeded
         run: |
           echo "Build completed successfully."
+
+  bundled-windows:
+    name: Build windows ${{ matrix.arch }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && inputs.target == 'windows'
+    # Both target arches cross-compile from an x86_64 host: winbuild's
+    # GCC_ARCH probe runs the HOST compiler with -march=x86-64 and fails on
+    # arm64 hosts, and aarch64-w64-mingw32 only needs the clang toolchain,
+    # which build.sh hardcodes.
+    # Pinned to the host environment the cached toolchain was built on: the
+    # LLVM bootstrap links host clang against libc++, so the cached clang
+    # needs the matching libc++/libunwind (LLVM 18) at run time. A different
+    # system library generation fails with "libunwind.so.1: cannot open
+    # shared object file" and meson reports "Unknown compiler(s)". The cache
+    # key does not name the host, so moving this runner means a new cache epoch
+    # (windows-ep3) and a cold, hours-long toolchain bootstrap.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Core set validated through the pinned configure (git..libtool;
+      # unzip+patch are hard configure requirements, zip is for package.sh),
+      # plus the winbuild README ubuntu set the full ~60-package graph needs.
+      # libc++-dev and lld: the llvm bootstrap compiles with the host clang
+      # against libc++. meson comes from pip, exactly as the winbuild README
+      # instructs: apt meson (1.3.2 on noble) passes winbuild's >=1.3.0
+      # configure gate but the branch-tip packages want current meson --
+      # fontconfig main already requires >= 1.11.0.
+      - name: Install dependencies
+        run: |
+          # The runner image ships Google's Chrome apt source, which has
+          # served a mismatching index more than once; nothing here uses it.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            git cmake ninja-build build-essential pkg-config curl unzip \
+            zip patch ca-certificates python3 python3-pip autoconf automake libtool \
+            libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \
+            gcc-multilib g++-multilib clang lld libc++-dev libc++abi-dev \
+            libgmp-dev libmpfr-dev libmpc-dev libgcrypt-dev gperf ragel \
+            texinfo autopoint re2c asciidoc rst2pdf python3-docutils \
+            python3-mako python3-jsonschema p7zip-full ccache
+          python3 -m pip install --break-system-packages --user meson
+          meson_bin="$(python3 -m site --user-base)/bin"
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
+
+      # pin_packages.py is the one place that resolves the windows pin, so the
+      # cache key below cannot describe a different commit than build.sh
+      # fetches.
+      - name: Resolve the winbuild pin
+        id: winbuild
+        run: |
+          read -r _ commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      # The llvm/rust bootstrap takes hours and the dependency graph builds
+      # ~60 packages, so the whole build state is cached, mirroring upstream
+      # winbuild's own CI (mpv_clang.yml caches src_packages, clang_root and
+      # the entire per-arch build tree). Skipping is stamp-driven ninja:
+      # an ExternalProject step re-runs only when its stamp is missing/older
+      # or its command line changed, and ninja treats an edge absent from
+      # .ninja_log as changed -- so the per-arch tree (stamps + .ninja_log +
+      # installed prefix + ccache) is the unit of caching, not a hand-picked
+      # subset. pin_packages.py suppresses upstream's check-git step, which
+      # is otherwise absent from cold graphs and cascades a full rebuild on
+      # its first warm appearance.
+      # Correctness of reuse: dep sources can only move through the winbuild
+      # commit, and the three packages pin_packages.py rewrites get new step
+      # command lines whenever versions.json pins or the patch series change,
+      # which dirties exactly those packages; build.sh fullcleans mpv every
+      # run (upstream's BUILDDATE naming dirties its packaging steps daily,
+      # and libmpv must relink against whatever changed underneath it anyway)
+      # and always runs the toolchain targets -- no-ops when clean -- which
+      # makes the last, pin-free restore tier safe across winbuild bumps.
+      # The pins tier prefers a completed state over an older one; the run_id
+      # suffix keeps every run's save unique so failed bootstraps still
+      # checkpoint their progress.
+      - name: Restore build state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/windows/${{ matrix.arch }}
+            build/windows/src
+            build/windows/rustup
+          key: windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ github.run_id }}
+          restore-keys: |
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+
+      # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
+      # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
+      # process can exceed physical RAM, while retaining free space for the
+      # build and package outputs.
+      - name: Add temporary swap for compiler memory spikes
+        shell: bash
+        run: |
+          set -euo pipefail
+          swap_file=/var/tmp/gha-windows-build.swap
+          swap_size_gib=8
+          keep_free_gib=4
+          available_kib="$(df -Pk /var/tmp | awk 'NR == 2 {print $4}')"
+          required_kib="$(( (swap_size_gib + keep_free_gib) * 1024 * 1024 ))"
+          if (( available_kib < required_kib )); then
+            echo "need $((swap_size_gib + keep_free_gib)) GiB free on /var/tmp for compiler swap and build outputs; found $((available_kib / 1024 / 1024)) GiB" >&2
+            exit 1
+          fi
+          sudo fallocate -l "${swap_size_gib}G" "$swap_file"
+          sudo chmod 0600 "$swap_file"
+          sudo mkswap "$swap_file"
+          sudo swapon "$swap_file"
+          sudo sysctl vm.swappiness=100
+          free -h
+          swapon --show
+          df -h /var/tmp
+
+      - name: Build libmpv-windows (${{ matrix.arch }})
+        run: bash platforms/windows/build.sh ${{ matrix.arch }}
+
+      # package.sh names the zip by content key itself, so the build leg
+      # uploads it as-is; publish records every variant at once. Beside it
+      # goes the unkeyed libmpv-windows-<arch>-symbols.zip (libmpv-2.pdb),
+      # which record-platform names by the same key; *.zip below carries it.
+      - name: Package dev zip and symbols (${{ matrix.arch }})
+        run: bash platforms/windows/package.sh ${{ matrix.arch }}
+
+      # A rebuild of a published key has to reproduce its bytes (publish-assets
+      # refuses anything else), so no file may carry a build's clock. The scan
+      # reaches back to 2020: a restored build tree keeps the stamps of the
+      # runs that compiled each package, weeks before this one.
+      - name: Check the zips for a build date (${{ matrix.arch }})
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Save build state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/windows/${{ matrix.arch }}
+            build/windows/src
+            build/windows/rustup
+          key: windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ github.run_id }}
+
+      - name: Upload platform build (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: ./dist/release/*.zip
+          if-no-files-found: error
+
