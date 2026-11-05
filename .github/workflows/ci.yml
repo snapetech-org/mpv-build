@@ -489,6 +489,9 @@ jobs:
       # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
       # process can exceed physical RAM, while retaining free space for the
       # build and package outputs.
+      - name: Restore the compiler cache workspace alias
+        run: python3 scripts/windows_cache_workspace.py ${{ matrix.arch }}
+
       - name: Add temporary swap for compiler memory spikes
         shell: bash
         run: |
@@ -512,14 +515,18 @@ jobs:
           df -h /var/tmp
 
       - name: Build libmpv-windows (${{ matrix.arch }})
-        run: bash platforms/windows/build.sh ${{ matrix.arch }}
+        run: |
+          cd "$MPV_WINDOWS_WORKSPACE"
+          bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/build.sh" ${{ matrix.arch }}
 
       # package.sh names the zip by content key itself, so the build leg
       # uploads it as-is; publish records every variant at once. Beside it
       # goes the unkeyed libmpv-windows-<arch>-symbols.zip (libmpv-2.pdb),
       # which record-platform names by the same key; *.zip below carries it.
       - name: Package dev zip and symbols (${{ matrix.arch }})
-        run: bash platforms/windows/package.sh ${{ matrix.arch }}
+        run: |
+          cd "$MPV_WINDOWS_WORKSPACE"
+          bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/package.sh" ${{ matrix.arch }}
 
       # A rebuild of a published key has to reproduce its bytes (publish-assets
       # refuses anything else), so no file may carry a build's clock. The scan
