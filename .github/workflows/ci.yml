@@ -23,6 +23,11 @@ on:
         type: choice
         default: checks
         options: [checks, windows, android-release]
+      windows_arch:
+        description: Windows architecture to validate without repeating another active build
+        type: choice
+        default: all
+        options: [all, x86_64, aarch64]
       reuse_arm64_run:
         description: Successful starter run to reuse without compiling ARM64 twice
         type: string
@@ -412,7 +417,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
+        arch: ${{ fromJSON(inputs.windows_arch == 'aarch64' && '["aarch64"]' || inputs.windows_arch == 'x86_64' && '["x86_64"]' || '["x86_64","aarch64"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -427,12 +432,18 @@ jobs:
       # configure gate but the branch-tip packages want current meson --
       # fontconfig main already requires >= 1.11.0.
       - name: Install dependencies
+        timeout-minutes: 12
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           # The runner image ships Google's Chrome apt source, which has
           # served a mismatching index more than once; nothing here uses it.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            apt_options+=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          fi
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
             git cmake ninja-build build-essential pkg-config curl unzip \
             zip patch ca-certificates python3 python3-pip autoconf automake libtool \
             libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \
