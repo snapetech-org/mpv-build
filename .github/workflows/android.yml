@@ -1,4 +1,3 @@
-# ng-runner-policy: private-jit-only-v1
 name: Android build
 
 # The android group's build, one definition for publish.yml and ci.yml: the
@@ -22,6 +21,14 @@ on:
           tarballs artifacts.json pins.
         type: boolean
         required: true
+      runner-pool:
+        description: Compatible runner pool; existing private callers remain supported
+        type: string
+        default: private
+      reuse-arm64-run:
+        description: Trusted successful starter run with the exact same Android content keys
+        type: string
+        default: ''
       device-tests:
         description: Also build the device tests' APK and upload it.
         type: boolean
@@ -29,6 +36,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   natives:
@@ -36,7 +44,7 @@ jobs:
     if: inputs.natives
     # The Android NDK is pinned. nasm, meson and autotools come from the
     # private JIT image, and the release artifacts must reproduce those inputs.
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-natives"]}}', github.run_id, strategy.job-index)) }}
+    runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-natives"]}}', github.run_id, strategy.job-index)) }}
     # One job per ABI: the driver builds one architecture per --arch invocation
     # (platforms/android/build.sh), the ABIs share nothing but sources, and the
     # dependency graph is expensive enough that four runners beat one.
@@ -59,29 +67,89 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate the reusable ARM64 run
+        if: matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != ''
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN: ${{ inputs.reuse-arm64-run }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          run_id = os.environ['REUSE_RUN']
+          if not re.fullmatch(r'[0-9]+', run_id):
+              raise SystemExit('reuse run must be a numeric GitHub run ID')
+          repo = os.environ['GITHUB_REPOSITORY']
+          data = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}']))
+          if data['conclusion'] != 'success' or data['head_repository']['full_name'] != repo:
+              raise SystemExit('reuse requires a successful run from this trusted repository')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('sha=' + data['head_sha'], file=output)
+          PYCODE
+      - uses: actions/checkout@v4
+        if: steps.reuse.outputs.sha != ''
+        with:
+          ref: ${{ steps.reuse.outputs.sha }}
+          path: previous-native-inputs
+          persist-credentials: false
+      - name: Verify reusable artifact content keys
+        if: steps.reuse.outputs.sha != ''
+        run: |
+          python3 - <<'PYCODE'
+          import json, subprocess
+          def keys(script):
+              return json.loads(subprocess.check_output(['python3', script, 'keys', '--platform-group', 'android']))
+          if keys('scripts/keys.py') != keys('previous-native-inputs/scripts/keys.py'):
+              raise SystemExit('prior Android artifacts have different source/build inputs; refusing reuse')
+          PYCODE
+      - uses: actions/download-artifact@v4
+        if: steps.reuse.outputs.sha != ''
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse-arm64-run }}
+          name: bundled-android-arm64
+          path: dist/release
+
       # sdkmanager is a Java program, even though the native cross-build no
       # longer uses Gradle or the Android platform/build-tools packages.
       - name: Set up Java for Android SDK manager
+        if: steps.reuse.outputs.sha == ''
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Configure Java for private runner downloads
+        if: steps.reuse.outputs.sha == ''
         run: python3 scripts/prepare_android_java.py proxy
 
       # Host build tools from apt plus the exact NDK pinned in
       # toolchain/android.txt (part of every android content key).
+      - uses: actions/cache/restore@v4
+        if: steps.reuse.outputs.sha == ''
+        id: ndk-cache
+        with:
+          path: platforms/android/sdk
+          key: dv-android-sdk-${{ runner.os }}-${{ hashFiles('toolchain/android.txt') }}
       - name: Install host toolchain and pinned NDK
+        if: steps.reuse.outputs.sha == ''
         run: bash platforms/android/include/download-sdk.sh
+      - uses: actions/cache/save@v4
+        if: steps.reuse.outputs.sha == '' && steps.ndk-cache.outputs.cache-hit != 'true'
+        with:
+          path: platforms/android/sdk
+          key: dv-android-sdk-${{ runner.os }}-${{ hashFiles('toolchain/android.txt') }}
 
       - name: Install pinned Rust for libdovi
+        if: steps.reuse.outputs.sha == ''
         run: bash scripts/install_pinned_rustup_linux.sh
 
       - name: Fetch and patch pinned sources
+        if: steps.reuse.outputs.sha == ''
         run: bash platforms/android/download.sh
 
       - name: Build libmpv-android (${{ matrix.abi }})
+        if: steps.reuse.outputs.sha == ''
         run: bash platforms/android/build.sh --arch ${{ matrix.arch }}
 
       # package.sh emits the unkeyed name (libmpv-android-<abi>.tar.gz): the
@@ -89,6 +157,7 @@ jobs:
       # final yet. The build leg uploads it as-is and record-platform renames
       # it to the group.json assetPattern's content-addressed spelling.
       - name: Package per-ABI tarball (${{ matrix.abi }})
+        if: steps.reuse.outputs.sha == ''
         run: bash platforms/android/package.sh --arch ${{ matrix.arch }}
 
       # A rebuild of a published key has to reproduce its bytes (publish-assets
@@ -110,7 +179,7 @@ jobs:
     # always(): natives is skipped when the tarballs are published already;
     # a failed tarball leg leaves nothing to pack.
     if: always() && !cancelled() && needs.natives.result != 'failure'
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-aar"]}}', github.run_id)) }}
+    runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-aar"]}}', github.run_id)) }}
     steps:
       - uses: actions/checkout@v4
         with:
