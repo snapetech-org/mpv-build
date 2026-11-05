@@ -1,7 +1,5 @@
-Subject: [PATCH] retain the Android playback patch stack with bundled FEL
-
 diff --git a/DOCS/man/ao.rst b/DOCS/man/ao.rst
-index 7eb7c97d6b729beb3dde6237ad3405b0e4e42fdc..f5858bb663b4a5059cf5f530051efa6bbeee563b 100644
+index 7eb7c97..f5858bb 100644
 --- a/DOCS/man/ao.rst
 +++ b/DOCS/man/ao.rst
 @@ -225,6 +225,36 @@ Available audio output drivers are:
@@ -42,7 +40,7 @@ index 7eb7c97d6b729beb3dde6237ad3405b0e4e42fdc..f5858bb663b4a5059cf5f530051efa6b
      SDL 2.0+ audio output driver. Should work on any platform supported by SDL
      2.0, but may require the ``SDL_AUDIODRIVER`` environment variable to be set
 diff --git a/DOCS/man/input.rst b/DOCS/man/input.rst
-index cb003713ab26675a8fa04fd2b401799422b8cd5d..5b17e9ea51563bc61a2617d0c217c939bdb608c8 100644
+index cb00371..5b17e9e 100644
 --- a/DOCS/man/input.rst
 +++ b/DOCS/man/input.rst
 @@ -3901,6 +3901,15 @@ Property list
@@ -62,7 +60,7 @@ index cb003713ab26675a8fa04fd2b401799422b8cd5d..5b17e9ea51563bc61a2617d0c217c939
      Contains introspection about the VO's active render passes and their
      execution times. Not implemented by all VOs.
 diff --git a/DOCS/man/vo.rst b/DOCS/man/vo.rst
-index 277c4572daeee0fcc86935e195f29d02925b4cd3..bc00dd3302f64677c3714718e9f7882dbed67277 100644
+index 277c457..bc00dd3 100644
 --- a/DOCS/man/vo.rst
 +++ b/DOCS/man/vo.rst
 @@ -686,10 +686,83 @@ Available video output drivers are:
@@ -151,7 +149,7 @@ index 277c4572daeee0fcc86935e195f29d02925b4cd3..bc00dd3302f64677c3714718e9f7882d
      Since this video output driver uses native decoding and rendering routines,
      many of mpv's features (subtitle rendering, OSD/OSC, video filters, etc)
 diff --git a/audio/out/ao.c b/audio/out/ao.c
-index 4e5e9e3df7942f3a2a1385446db9fa514862a344..896dd6a2e2338d064d3264713ee3fa07b541d8a1 100644
+index 4e5e9e3..896dd6a 100644
 --- a/audio/out/ao.c
 +++ b/audio/out/ao.c
 @@ -384,6 +384,12 @@ void ao_request_reload(struct ao *ao)
@@ -168,7 +166,7 @@ index 4e5e9e3df7942f3a2a1385446db9fa514862a344..896dd6a2e2338d064d3264713ee3fa07
  void ao_hotplug_event(struct ao *ao)
  {
 diff --git a/audio/out/ao.h b/audio/out/ao.h
-index ce044fdc473a7090da019036f8ec219a6f77e63b..fb697a5cf02e138ad4a62f0c46176aa9422d4b8e 100644
+index ce044fd..fb697a5 100644
 --- a/audio/out/ao.h
 +++ b/audio/out/ao.h
 @@ -43,6 +43,10 @@ enum aocontrol {
@@ -191,7 +189,7 @@ index ce044fdc473a7090da019036f8ec219a6f77e63b..fb697a5cf02e138ad4a62f0c46176aa9
  
  struct ao_hotplug;
 diff --git a/audio/out/ao_audiotrack.c b/audio/out/ao_audiotrack.c
-index f483ccc8e8d8b70f4daf9f1e2c26aa54b80e3fd5..4ac514f482e69bf8bf282611e1381902b2725645 100644
+index f483ccc..4ac514f 100644
 --- a/audio/out/ao_audiotrack.c
 +++ b/audio/out/ao_audiotrack.c
 @@ -21,6 +21,14 @@
@@ -4390,7 +4388,7 @@ index f483ccc8e8d8b70f4daf9f1e2c26aa54b80e3fd5..4ac514f482e69bf8bf282611e1381902
      },
      .options_prefix = "audiotrack",
 diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
-index 347062e4ba346994e73688d923197acf52aaf83e..87b6b658815596a27bc2adfea26e3d0bbbb02b11 100644
+index 347062e..87b6b65 100644
 --- a/filters/f_decoder_wrapper.c
 +++ b/filters/f_decoder_wrapper.c
 @@ -150,6 +150,10 @@ const struct m_sub_options dec_wrapper_conf = {
@@ -4508,7 +4506,7 @@ index 347062e4ba346994e73688d923197acf52aaf83e..87b6b658815596a27bc2adfea26e3d0b
              MP_WARN(f, "could not consume packet\n");
              mp_pin_out_unread(f->ppins[0], frame);
 diff --git a/filters/f_decoder_wrapper.h b/filters/f_decoder_wrapper.h
-index b39d3f5f2a90dc65187084a0c4c4563102b215e1..f1ee3e24a95419117a846242a8464751df173262 100644
+index b39d3f5..f1ee3e2 100644
 --- a/filters/f_decoder_wrapper.h
 +++ b/filters/f_decoder_wrapper.h
 @@ -19,6 +19,7 @@
@@ -4570,7 +4568,7 @@ index b39d3f5f2a90dc65187084a0c4c4563102b215e1..f1ee3e24a95419117a846242a8464751
  void lavc_process(struct mp_filter *f, struct lavc_state *state,
                    int (*send)(struct mp_filter *f, struct demux_packet *pkt),
 diff --git a/meson.build b/meson.build
-index c25eef42d1bc49d0813878852ec3588872e58765..1fd96084c546e7a0005ba0a83349b8c5b59fa25a 100644
+index c25eef4..1fd9608 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -499,6 +499,7 @@ if features['android']
@@ -4582,7 +4580,7 @@ index c25eef42d1bc49d0813878852ec3588872e58765..1fd96084c546e7a0005ba0a83349b8c5
  endif
  
 diff --git a/options/options.c b/options/options.c
-index 0fc7e588ec760d905c4d4361c1672ba4c050e6fd..4b5011c9e17a2092b03d37bc8a79465c304a79a4 100644
+index 0fc7e58..4b5011c 100644
 --- a/options/options.c
 +++ b/options/options.c
 @@ -252,6 +252,9 @@ static const m_option_t mp_vo_opt_list[] = {
@@ -4596,7 +4594,7 @@ index 0fc7e588ec760d905c4d4361c1672ba4c050e6fd..4b5011c9e17a2092b03d37bc8a79465c
  #if HAVE_D3D11
      {"d3d11-composition-size", OPT_SIZE_BOX(d3d11_composition_size)},
 diff --git a/options/options.h b/options/options.h
-index 38e49fc8a7a568968b83815ccd92d9dc77b5512f..1adb6c6c5fb1deb5f004224e2a340f85451e5266 100644
+index 38e49fc..1adb6c6 100644
 --- a/options/options.h
 +++ b/options/options.h
 @@ -87,6 +87,7 @@ typedef struct mp_vo_opts {
@@ -4608,7 +4606,7 @@ index 38e49fc8a7a568968b83815ccd92d9dc77b5512f..1adb6c6c5fb1deb5f004224e2a340f85
      struct m_geometry d3d11_composition_size;
  
 diff --git a/player/audio.c b/player/audio.c
-index d3387e55947176930c0304f40d89666d290d3e2c..10f339ea63f08412f3ab96474a87996746dbd41e 100644
+index d3387e5..10f339e 100644
 --- a/player/audio.c
 +++ b/player/audio.c
 @@ -875,6 +875,19 @@ void fill_audio_out_buffers(struct MPContext *mpctx)
@@ -4632,7 +4630,7 @@ index d3387e55947176930c0304f40d89666d290d3e2c..10f339ea63f08412f3ab96474a879967
          reload_audio_output(mpctx);
  
 diff --git a/player/client.c b/player/client.c
-index 6dd746d9b41b27c6b2a602560d4431b964738c4d..7fad8da6b5af74cdb9bbb9e3ad388b7194698ca6 100644
+index 6dd746d..7fad8da 100644
 --- a/player/client.c
 +++ b/player/client.c
 @@ -21,6 +21,7 @@
@@ -4663,7 +4661,7 @@ index 6dd746d9b41b27c6b2a602560d4431b964738c4d..7fad8da6b5af74cdb9bbb9e3ad388b71
      while (!mpctx->initialized && mpctx->stop_play != PT_QUIT)
          mp_idle(mpctx);
 diff --git a/player/command.c b/player/command.c
-index 1ceecba9a02a15a07d90c15567a844f90b701aa5..3b809c0df3a9bb034035a1775137d2c1965352cc 100644
+index 1ceecba..3b809c0 100644
 --- a/player/command.c
 +++ b/player/command.c
 @@ -3072,6 +3072,16 @@ static int mp_property_vo_configured(void *ctx, struct m_property *prop,
@@ -4715,7 +4713,7 @@ index 1ceecba9a02a15a07d90c15567a844f90b701aa5..3b809c0df3a9bb034035a1775137d2c1
          struct track *track = mpctx->current_track[0][STREAM_VIDEO];
          uninit_video_out(mpctx);
 diff --git a/player/core.h b/player/core.h
-index 2889d352bdd53a91d072097e96fe35ea4804ecb0..31c61ebc9d4a74ead50406734d9a7e7f2e612754 100644
+index 2889d35..31c61eb 100644
 --- a/player/core.h
 +++ b/player/core.h
 @@ -180,6 +180,10 @@ struct vo_chain {
@@ -4730,7 +4728,7 @@ index 2889d352bdd53a91d072097e96fe35ea4804ecb0..31c61ebc9d4a74ead50406734d9a7e7f
  
  // Like vo_chain, for audio.
 diff --git a/player/video.c b/player/video.c
-index 60430224d10b15da28a13556d25ccb223ad541f8..22de1314a09ac48aff36fd97780e30325915324f 100644
+index 6043022..22de131 100644
 --- a/player/video.c
 +++ b/player/video.c
 @@ -163,10 +163,17 @@ static void vo_chain_uninit(struct vo_chain *vo_c)
@@ -4863,7 +4861,7 @@ index 60430224d10b15da28a13556d25ccb223ad541f8..22de1314a09ac48aff36fd97780e3032
          mpctx->delay = 0;
          mpctx->last_av_difference = 0;
 diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
-index 6ecb233b49d837a33474777fcc305590264b5543..ca8cd9e45eadf126c1ced3d56d65ef1b323aa92e 100644
+index 6ecb233..ca8cd9e 100644
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
 @@ -22,6 +22,7 @@
@@ -5081,7 +5079,7 @@ index 6ecb233b49d837a33474777fcc305590264b5543..ca8cd9e45eadf126c1ced3d56d65ef1b
  }
  
 diff --git a/video/out/android_common.c b/video/out/android_common.c
-index 6b9ef67db17979038206156d8b3e711990076f3c..9db80ebca39e52bdb89e0a029554bd51cb1037f1 100644
+index 6b9ef67..9db80eb 100644
 --- a/video/out/android_common.c
 +++ b/video/out/android_common.c
 @@ -48,7 +48,7 @@ bool vo_android_init(struct vo *vo)
@@ -5094,7 +5092,7 @@ index 6b9ef67db17979038206156d8b3e711990076f3c..9db80ebca39e52bdb89e0a029554bd51
      if (!ctx->native_window) {
          MP_FATAL(ctx, "Failed to create ANativeWindow\n");
 diff --git a/video/out/opengl/context_android.c b/video/out/opengl/context_android.c
-index 0a12cf8add4b98f475dc109dff46cf34f09f457a..85fb427cbca79d7d98beba442a326c97738d16e9 100644
+index 0a12cf8..85fb427 100644
 --- a/video/out/opengl/context_android.c
 +++ b/video/out/opengl/context_android.c
 @@ -23,6 +23,13 @@
@@ -5144,7 +5142,7 @@ index 0a12cf8add4b98f475dc109dff46cf34f09f457a..85fb427cbca79d7d98beba442a326c97
      if (p->egl_surface == EGL_NO_SURFACE) {
          MP_FATAL(ctx, "Could not create EGL surface!\n");
 diff --git a/video/out/vo.c b/video/out/vo.c
-index 183fa68a3d1eaae4b3bf536d010a561c28ce6e2c..c3f7fb4493f326ea2613b9d3cd6df0c54f47a312 100644
+index 183fa68..c3f7fb4 100644
 --- a/video/out/vo.c
 +++ b/video/out/vo.c
 @@ -47,6 +47,7 @@
@@ -5318,7 +5316,7 @@ index 183fa68a3d1eaae4b3bf536d010a561c28ce6e2c..c3f7fb4493f326ea2613b9d3cd6df0c5
  bool vo_has_frame(struct vo *vo)
  {
 diff --git a/video/out/vo.h b/video/out/vo.h
-index f24918d4607e08ff4eeb0f6fdf9823ded0670c3b..bb0c72c2b4a7417a23e687d70aca98da623d08a4 100644
+index f24918d..bb0c72c 100644
 --- a/video/out/vo.h
 +++ b/video/out/vo.h
 @@ -123,6 +123,11 @@ enum mp_voctrl {
@@ -5393,7 +5391,7 @@ index f24918d4607e08ff4eeb0f6fdf9823ded0670c3b..bb0c72c2b4a7417a23e687d70aca98da
  int64_t vo_get_drop_count(struct vo *vo);
 diff --git a/video/out/vo_mediacodec.c b/video/out/vo_mediacodec.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..eaca622b6151cd6cbfa9a2badc4b5354f570903e
+index 0000000..6acb96e
 --- /dev/null
 +++ b/video/out/vo_mediacodec.c
 @@ -0,0 +1,3561 @@
@@ -8272,7 +8270,7 @@ index 0000000000000000000000000000000000000000..eaca622b6151cd6cbfa9a2badc4b5354
 +
 +    // Initial preparation horizon, independent of the codec submission lead.
 +    p->queue_offset = MP_TIME_MS_TO_NS(50);
-+    vo_set_queue_params(vo, p->queue_offset, 1);
++    vo_set_queue_params(vo, p->queue_offset, 1, 2);
 +
 +    return 0;
 +}
@@ -8416,7 +8414,7 @@ index 0000000000000000000000000000000000000000..eaca622b6151cd6cbfa9a2badc4b5354
 +        return;
 +
 +    p->queue_offset = offset;
-+    vo_set_queue_params(vo, offset, 1);
++    vo_set_queue_params(vo, offset, 1, 2);
 +    if (period) {
 +        MP_VERBOSE(vo, "Timed release: %.3f Hz, prepare %.1f ms, codec %.1f ms ahead.\n",
 +                   1e9 / period, offset / 1e6, MEDIACODEC_CODEC_LEAD_NS / 1e6);
@@ -8959,7 +8957,7 @@ index 0000000000000000000000000000000000000000..eaca622b6151cd6cbfa9a2badc4b5354
 +    .global_opts = &mediacodec_conf,
 +};
 diff --git a/video/out/vo_mediacodec_embed.c b/video/out/vo_mediacodec_embed.c
-index 985b52660f21d7fb906fb86f12df5039d3f050f4..f13bf19ef232b9007ff38a39baaa7bd293c0eddc 100644
+index 985b526..f13bf19 100644
 --- a/video/out/vo_mediacodec_embed.c
 +++ b/video/out/vo_mediacodec_embed.c
 @@ -31,14 +31,16 @@ struct priv {
