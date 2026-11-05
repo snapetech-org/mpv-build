@@ -64,3 +64,17 @@ if fetch_pinned_git dav1d "$temporary/missing-primary.git" "$mirror_repo" 1.5.4 
 fi
 test ! -e "$temporary/mismatch"
 echo "Android Git source fallback uses the mirror and enforces the commit pin"
+
+# FEL sources name exact commits, including commits behind the default tip.
+printf 'newer tip\n' >> "$source_repo/source.txt"
+git -C "$source_repo" commit --quiet -am 'newer tip'
+git -C "$source_repo" push --quiet "$mirror_repo" HEAD:refs/heads/new-tip
+git -C "$mirror_repo" symbolic-ref HEAD refs/heads/new-tip
+fetch_pinned_git ffmpeg "$temporary/missing-primary.git" "$mirror_repo" "$expected_commit" "$expected_commit" "$temporary/commit-pin"
+test "$(git -C "$temporary/commit-pin" rev-parse HEAD)" = "$expected_commit"
+if fetch_pinned_git ffmpeg "$mirror_repo" "" "$expected_commit" "$(printf '0%.0s' {1..40})" "$temporary/commit-mismatch" >/dev/null 2>&1; then
+  echo >&2 "raw commit acquisition ignored a mismatched pin"
+  exit 1
+fi
+test ! -e "$temporary/commit-mismatch"
+echo "Android raw-commit pins fetch the exact object and reject mismatches"
