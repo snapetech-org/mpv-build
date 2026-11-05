@@ -421,7 +421,7 @@ jobs:
     # key does not name the host, so moving this runner means a new cache epoch
     # (windows-ep3) and a cold, hours-long toolchain bootstrap.
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
