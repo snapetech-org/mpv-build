@@ -10,7 +10,7 @@ pinned as the versions.json component `mpv-winbuild-cmake`.
 
 `build.sh` shallow-fetches the pinned winbuild commit, runs `pin_packages.py`
 to rewrite every source winbuild builds onto the versions.json pins -- the
-payload packages (`packages/{mpv,ffmpeg,libass}.cmake`, whose upstream tracks
+payload packages (`packages/{mpv,ffmpeg,libass,libplacebo}.cmake`, whose upstream tracks
 master) plus winbuild's live-fetch toolchain and ffmpeg-side packages
 (`toolchain/mingw-w64.cmake`, `toolchain/llvm/llvm.cmake`,
 `packages/svtav1.cmake`, `packages/nvcodec-headers.cmake`) and OpenSSL
@@ -32,7 +32,7 @@ sets `-Dgl=disabled -Degl-angle=disabled` for that target.
 
 ## Key coarseness
 
-`group.json` lists components `mpv`, `ffmpeg`, `libass`,
+`group.json` lists components `mpv`, `ffmpeg`, `libass`, `libplacebo`,
 `mpv-winbuild-cmake`, `mingw-w64`, `llvm`, `svt-av1`, `nv-codec-headers`
 and `openssl` (the last five being the packages
 `pin_packages.EXTRA_COMPONENTS` pins). The winbuild graph builds ~60 more dependencies (freetype,
@@ -51,8 +51,38 @@ toolchain-bootstrap time, and it defines the target ABI (headers + CRT), so
 dirty toolchain subgraph through the always-run toolchain targets. The pin
 exists because the 2026-08-29 secure-API header restructure on mingw-w64
 master broke libvpl's MinGW compat macros mid-day; llvm's `release/22.x`
-branch is the remaining live-fetch in the toolchain and freezes only inside
-a warm cache -- pin it the same way if it ever bites.
+branch is also pinned through `versions.json`; a warm cache must still match
+that exact source revision.
+
+## Building on a local Linux host
+
+The Windows dependency producer can run directly on a compatible Linux host.
+Use the dependency packages listed by the Windows job in `.github/workflows/ci.yml`,
+check out the exact producer revision, then run the same drivers used by CI:
+
+```sh
+platforms/windows/build.sh x86_64
+platforms/windows/package.sh x86_64
+platforms/windows/build.sh aarch64
+platforms/windows/package.sh aarch64
+```
+
+Run the two architectures sequentially when they share `build/windows/src`.
+Keep the complete compiler and dependency cache between attempts. Record the
+source revision, container image digest, logs and output checksums. Packaging
+verifies the ordered PCM exports and the DLL/PDB pair before an artifact can
+be recorded or published. Application jobs still require their compatible
+Windows OS and architecture.
+
+If GitHub rejects dispatch with `Actions has been disabled for this repository`,
+inspect the failed check annotations and repository/workflow permissions once.
+An active workflow and `enabled: true` can coexist with a separate GitHub-controlled
+restriction. Repeated enable requests or dispatches do not repair that state;
+retain the evidence for GitHub Support, as described in
+[GitHub's Actions settings documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
+A local build uses the owner's own compute and the same source/packaging
+checks. Do not move the workflow to another repository to evade an Actions
+restriction.
 
 ## CI build-state caching
 
