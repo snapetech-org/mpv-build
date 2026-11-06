@@ -157,7 +157,8 @@ jobs:
           TARBALLS: ${{ needs.natives.result == 'success' && 'dist/tarballs' || '' }}
           DEVICE_TESTS: ${{ inputs.device-tests && 'assembleDebugAndroidTest' || '' }}
         run: |
-          bash platforms/android/lib/build-aar.sh ${TARBALLS:+--tarballs "$TARBALLS"} \
+          python3 scripts/run_with_dependency_retry.py -- \
+            bash platforms/android/lib/build-aar.sh ${TARBALLS:+--tarballs "$TARBALLS"} \
             -- testDebugUnitTest ${DEVICE_TESTS}
 
       # The symbols zips are named one by one so a missing ABI fails here,
