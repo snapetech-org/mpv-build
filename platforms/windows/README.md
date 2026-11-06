@@ -104,6 +104,12 @@ compiler route; preserve its partial build directory. Never replace a running
 compiler or copy donor stamps. This cache establishes toolchain reuse and
 compiled architecture, without claiming native Windows execution qualification.
 
+The cache overlay preserves the pinned recipe's Clang resource version for
+target runtime installation. Every build then links a real Windows C++ consumer
+against its own CRT and standard library before starting package dependencies.
+FFmpeg patching materializes sparse-checkout FATE references required by the
+complete patch series.
+
 If GitHub rejects dispatch with `Actions has been disabled for this repository`,
 inspect the failed check annotations and repository/workflow permissions once.
 An active workflow and `enabled: true` can coexist with a separate GitHub-controlled

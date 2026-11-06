@@ -6,12 +6,30 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
-from host_llvm_cache import normalized_config, unpack
+from host_llvm_cache import normalized_config, prepare, unpack
 
 
 class HostCacheTest(unittest.TestCase):
+    def test_cache_recipe_preserves_target_runtime_resource_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            recipe = root / 'toolchain/llvm/llvm.cmake'
+            recipe.parent.mkdir(parents=True)
+            recipe.write_text('set(clang_version "22")\nExternalProject_Add(llvm)\n')
+            config = root / 'config.txt'; config.write_text('original configure inputs')
+            args = SimpleNamespace(build=root/'build', winbuild=root, config=config,
+                                   archive=root/'cache.tar.gz', source=root/'llvm',
+                                   image='pinned-image', sha256='a'*64, prefix=root/'install')
+            with patch('host_llvm_cache.consume'):
+                prepare(args)
+            self.assertIn('set(clang_version "22")\n', recipe.read_text())
+            self.assertIn('INSTALL_COMMAND', recipe.read_text())
+            self.assertEqual((args.build/'host-llvm-cache/expected-config.txt').read_text(), config.read_text())
+
     def bundle(self, root, files, contents, extra=()):
         archive = root / 'cache.tar.gz'
         receipt = {'schema': 1, 'files': files}

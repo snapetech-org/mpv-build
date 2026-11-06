@@ -350,6 +350,33 @@ ninja -C "$BUILD" llvm
 ninja -C "$BUILD" rustup
 ninja -C "$BUILD" llvm-clang
 
+# Verify this target's CRT/C++ runtime and resource layout before dependencies.
+link_probe="$BUILD/toolchain-link-check"
+mkdir -p "$link_probe"
+cat > "$link_probe/consumer.cpp" <<'CPP'
+#include <windows.h>
+#include <string>
+#include <vector>
+int main() {
+    std::vector<std::string> values{std::to_string(GetCurrentProcessId())};
+    return static_cast<int>(values.front().size());
+}
+CPP
+"$BUILD/install/bin/$ARCH-w64-mingw32-g++" "$link_probe/consumer.cpp" -o "$link_probe/consumer.exe"
+python3 - "$link_probe/consumer.exe" "$ARCH" <<'PY'
+from pathlib import Path
+import hashlib, json, struct, sys
+path, arch = Path(sys.argv[1]), sys.argv[2]
+binary = path.read_bytes()
+offset = struct.unpack_from('<I', binary, 60)[0]
+assert binary[:2] == b'MZ' and binary[offset:offset + 4] == b'PE\0\0'
+assert struct.unpack_from('<H', binary, offset + 4)[0] == {'x86_64': 0x8664, 'aarch64': 0xaa64}[arch]
+path.with_suffix('.json').write_text(json.dumps({'architecture': arch,
+    'sha256': hashlib.sha256(binary).hexdigest(), 'linked': True,
+    'executionQualified': False}, indent=2) + '\n')
+print(f'{arch}: Windows C/C++ runtime consumer linked successfully')
+PY
+
 # mpv is rebuilt from scratch on every run. A restored tree may carry clean
 # mpv stamps whose build directory upstream's postremovebuild step already
 # deleted, and upstream's packaging steps embed BUILDDATE in their command

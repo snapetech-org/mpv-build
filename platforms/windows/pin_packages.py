@@ -278,12 +278,15 @@ def rewrite(text, component, pins, have_patches):
     ]
     before = []
     if have_patches:
+        # FFmpeg's sparse checkout excludes FATE references our FEL patches
+        # update. Materialize the pinned tree before applying the full series.
+        materialize = '&& git sparse-checkout disable ' if component == 'ffmpeg' else ''
         # One quoted argument: ${EXEC} is `eval $*`, so the compound runs in a
         # shell. The reset makes a re-run of the patch step alone (series-only
         # change, or a step cascade) converge instead of double-applying.
         before = [
             f'{pad}PATCH_COMMAND ${{EXEC}} "git reset --hard {pins["commit"]} -q '
-            f'&& git apply ${{CMAKE_CURRENT_SOURCE_DIR}}/{component}-*.patch"'
+            f'{materialize}&& git apply ${{CMAKE_CURRENT_SOURCE_DIR}}/{component}-*.patch"'
         ]
     lines[at:at + 1] = before + [lines[at]] + after
     return "\n".join(lines) + "\n"

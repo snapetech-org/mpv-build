@@ -12,6 +12,7 @@ Run: python3 platforms/windows/test_pin_packages.py
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -85,6 +86,33 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_ffmpeg_patch_step_restores_sparse_fate_references(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/'source'; source.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(source), *args], text=True).strip()
+            git('init', '-q')
+            reference = source/'tests/ref/fate/hdr_dynamic_metadata'
+            reference.parent.mkdir(parents=True); reference.write_text('before\n')
+            (source/'source.c').write_text('int main(void) { return 0; }\n')
+            git('add', '.')
+            git('-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
+            commit = git('rev-parse', 'HEAD')
+            git('sparse-checkout', 'set', '--no-cone', '/*', '!/tests')
+            self.assertFalse(reference.exists())
+            patch_file = root/'ffmpeg-0001-fate.patch'
+            patch_file.write_text('--- a/tests/ref/fate/hdr_dynamic_metadata\n'
+                                  '+++ b/tests/ref/fate/hdr_dynamic_metadata\n'
+                                  '@@ -1 +1 @@\n-before\n+after\n')
+            pins = {'url': 'https://example.invalid/ffmpeg', 'ref': commit,
+                    'commit': commit, 'version': 'fixture'}
+            rewritten = pin_packages.rewrite((TESTDATA/'ffmpeg.cmake').read_text(), 'ffmpeg', pins, True)
+            command = next(line for line in rewritten.splitlines() if line.strip().startswith('PATCH_COMMAND'))
+            command = command.split('${EXEC} "', 1)[1].rsplit('"', 1)[0]
+            command = command.replace('${CMAKE_CURRENT_SOURCE_DIR}', str(root))
+            subprocess.run(['bash', '-c', command], cwd=source, check=True)
+            self.assertEqual(reference.read_text(), 'after\n')
+
     def test_windows_uses_the_selected_fel_sources_and_patches(self):
         self.assertEqual(pin_packages.resolve_series(REPO, "ffmpeg"), [
             "0900-fel-common-integration.patch", "0901-fel-windows-libssh-host-key.patch"])

@@ -222,6 +222,10 @@ def consume(args):
 
 def prepare(args):
     consume(args)
+    recipe = args.winbuild / 'toolchain/llvm/llvm.cmake'
+    version = re.search(r'(?m)^set\(clang_version "([0-9]+)"\)', recipe.read_text())
+    if not version:
+        raise ValueError('Pinned LLVM recipe does not declare its runtime resource version')
     evidence = args.build / 'host-llvm-cache'
     evidence.mkdir(parents=True, exist_ok=True)
     snapshot = evidence / 'expected-config.txt'
@@ -236,6 +240,7 @@ def prepare(args):
     def command(verb, extra=()):
         return ' '.join(quote(x) for x in [sys.executable, common[0], verb, *common[1:], *extra])
     overlay = ('# Verified host compiler cache; target runtimes still build locally.\n'
+               f'set(clang_version "{version[1]}")\n'
                'ExternalProject_Add(llvm\n'
                '    SOURCE_DIR ${SOURCE_LOCATION}\n'
                '    DOWNLOAD_COMMAND "" UPDATE_COMMAND "" PATCH_COMMAND ""\n'
@@ -244,7 +249,7 @@ def prepare(args):
                f'    INSTALL_COMMAND {command("install", ["--prefix", str(args.prefix.resolve())])}\n'
                '    LOG_BUILD 1 LOG_INSTALL 1\n)\n'
                'get_property(LLVM_SRC TARGET llvm PROPERTY _EP_SOURCE_DIR)\n')
-    (args.winbuild / 'toolchain/llvm/llvm.cmake').write_text(overlay)
+    recipe.write_text(overlay)
     print('Prepared explicit host LLVM cache validation/import steps; no donor stamps copied')
 
 
