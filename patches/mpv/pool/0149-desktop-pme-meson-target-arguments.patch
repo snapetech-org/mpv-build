@@ -1,0 +1,34 @@
+From: PlezyNG
+Subject: [PATCH] PME: pass filter defines to the libmpv target
+
+Meson rejects project arguments added after a build target has been declared.
+Keep PME feature defines in the mpv library target's C arguments instead; the
+filter registry and filter implementation are compiled in that target.
+
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -1343,11 +1343,12 @@
+ 
+ # Plezy Motion Engine neural interpolation. The filter uses Vulkan to prepare
+ # frame pairs and dynamically loads Plezy's provider-neutral C runtime.
++pme_c_args = []
+ if host_machine.system() in ['linux', 'windows']
+-    add_project_arguments('-DPLEZY_HAVE_PME', language: 'c')
++    pme_c_args += ['-DPLEZY_HAVE_PME']
+     sources += files('video/filter/vf_plezy_pme.c')
+     if features['vulkan']
+-        add_project_arguments('-DPLEZY_HAVE_PME_VULKAN', language: 'c')
++        pme_c_args += ['-DPLEZY_HAVE_PME_VULKAN']
+     endif
+ endif
+ 
+@@ -1793,7 +1794,7 @@
+ minor = client_h_define.split('|')[1].strip('() ')
+ client_api_version = major + '.' + minor + '.0'
+ 
+-libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
++libmpv = library('mpv', sources, c_args: pme_c_args, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
+                  include_directories: incdir_public,
+                  link_args: cc.get_supported_link_arguments(['-Wl,-Bsymbolic']),
+                  version: client_api_version, install: get_option('libmpv'),

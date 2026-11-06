@@ -1,0 +1,995 @@
+diff --git a/meson.build b/meson.build
+index 5748825..43fa0b5 100644
+--- a/meson.build
++++ b/meson.build
+@@ -833,6 +833,6 @@
+ endif
+ 
+-vo_avfoundation_frameworks = ['AVFoundation', 'CoreMedia', 'CoreVideo',
++vo_avfoundation_frameworks = ['AVFoundation', 'CoreMedia', 'CoreVideo', 'VideoToolbox',
+                              'CoreImage', 'QuartzCore', 'Metal']
+ if cc.has_header('UIKit/UIKit.h')
+     vo_avfoundation_frameworks += ['UIKit']
+@@ -845,6 +845,7 @@
+ if features['vo-avfoundation']
+     dependencies += vo_avfoundation
+-    sources += files('video/out/vo_avfoundation.m')
++    sources += files('video/out/vo_avfoundation.m',
++                     'video/out/avfoundation_motion.m')
+ endif
+ 
+ coreaudio = dependency('appleframeworks', modules: ['CoreFoundation', 'CoreAudio',
+diff --git a/player/command.c b/player/command.c
+index be75261..56b57ef 100644
+--- a/player/command.c
++++ b/player/command.c
+@@ -3052,5 +3052,15 @@
+ }
+ 
++static int mp_property_vo_interpolation(void *ctx, struct m_property *p,
++                                        int action, void *arg)
++{
++    MPContext *mpctx = ctx;
++    struct voctrl_motion_interpolation status = {.state = "off"};
++    if (mpctx->video_out)
++        vo_control(mpctx->video_out, VOCTRL_GET_MOTION_INTERPOLATION, &status);
++    return m_property_strdup_ro(action, arg, status.state ? status.state : "off");
++}
++
+ static int mp_property_gpu_context(void *ctx, struct m_property *p, int action, void *arg)
+ {
+     MPContext *mpctx = ctx;
+@@ -4505,5 +4515,6 @@
+     {"perf-info", mp_property_perf_info},
+     {"current-vo", mp_property_vo},
++    {"video-out-interpolation", mp_property_vo_interpolation},
+     {"current-gpu-context", mp_property_gpu_context},
+     {"container-fps", mp_property_fps},
+     {"estimated-vf-fps", mp_property_vf_fps},
+diff --git a/video/out/avfoundation_motion.h b/video/out/avfoundation_motion.h
+new file mode 100644
+index 0000000..7b3bf6d
+--- /dev/null
++++ b/video/out/avfoundation_motion.h
+@@ -0,0 +1,30 @@
++/*
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#pragma once
++
++#import <CoreVideo/CoreVideo.h>
++
++#include <stdbool.h>
++#include <stdint.h>
++
++struct avf_motion_interpolator;
++
++struct avf_motion_interpolator *avf_motion_create(void);
++void avf_motion_destroy(struct avf_motion_interpolator *motion);
++void avf_motion_configure(struct avf_motion_interpolator *motion, bool enabled,
++                          int width, int height, int interpolated_frames);
++void avf_motion_set_stream_eligible(struct avf_motion_interpolator *motion, bool eligible);
++const char *avf_motion_status(struct avf_motion_interpolator *motion);
++int avf_motion_process(struct avf_motion_interpolator *motion,
++                       CVPixelBufferRef previous, CVPixelBufferRef source,
++                       int64_t previous_pts_ns, int64_t source_pts_ns,
++                       int64_t deadline_budget_ns, int display_slots,
++                       CVPixelBufferRef outputs[7], int64_t output_pts_ns[7]);
++void avf_motion_mark_presented(struct avf_motion_interpolator *motion);
+diff --git a/video/out/avfoundation_motion.m b/video/out/avfoundation_motion.m
+new file mode 100644
+index 0000000..e67dbcc
+--- /dev/null
++++ b/video/out/avfoundation_motion.m
+@@ -0,0 +1,554 @@
++/*
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#import <Foundation/Foundation.h>
++#import <TargetConditionals.h>
++#import <VideoToolbox/VTFrameProcessor.h>
++#import <VideoToolbox/VTFrameProcessor_LowLatencyFrameInterpolation.h>
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++#import <VideoToolbox/VTFrameProcessor_FrameRateConversion.h>
++#endif
++#import <CoreVideo/CoreVideo.h>
++
++#include <stdlib.h>
++#include <time.h>
++
++#include "avfoundation_motion.h"
++
++enum motion_state {
++    MOTION_OFF,
++    MOTION_INITIALIZING,
++    MOTION_READY,
++    MOTION_ACTIVE,
++    MOTION_UNAVAILABLE,
++};
++
++@interface MPVAVFMotionSession : NSObject {
++@public
++    dispatch_queue_t queue;
++    VTFrameProcessor *processor;
++    CVPixelBufferPoolRef output_pool;
++    NSArray *supported_formats;
++    NSUInteger generation;
++    int width;
++    int height;
++    int frame_count;
++    int state;
++    int64_t worst_process_ns;
++    bool requested;
++    bool stream_eligible;
++    bool sequential_submission;
++    bool uses_frame_rate_conversion;
++}
++- (void)configureEnabled:(bool)enabled width:(int)frameWidth
++                  height:(int)frameHeight frameCount:(int)frames;
++- (void)setStreamEligible:(bool)eligible;
++- (const char *)statusName;
++- (int)processPrevious:(CVPixelBufferRef)previous source:(CVPixelBufferRef)source
++        previousTime:(int64_t)previousPTS sourceTime:(int64_t)sourcePTS
++          deadlineNs:(int64_t)deadline displaySlots:(int)displaySlots
++            outputs:(CVPixelBufferRef[7])outputs
++          timestamps:(int64_t[7])timestamps;
++@end
++
++static int64_t monotonic_time_ns(void)
++{
++    struct timespec now = {0};
++    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
++        return 0;
++    return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
++}
++
++@implementation MPVAVFMotionSession
++
++- (instancetype)init
++{
++    self = [super init];
++    if (self) {
++        queue = dispatch_queue_create("mpv avfoundation motion", DISPATCH_QUEUE_SERIAL);
++        state = MOTION_OFF;
++        // Do not attempt the first expensive inference with no scheduling
++        // history. This value is deliberately conservative and is raised to
++        // the slowest recent successful call.
++        worst_process_ns = 30000000;
++    }
++    return self;
++}
++
++- (void)dealloc
++{
++    if (processor) {
++        [processor endSession];
++        [processor release];
++    }
++    if (output_pool)
++        CVPixelBufferPoolRelease(output_pool);
++    [supported_formats release];
++    if (queue)
++        dispatch_release(queue);
++    [super dealloc];
++}
++
++- (void)configureEnabled:(bool)enabled width:(int)frameWidth
++                  height:(int)frameHeight frameCount:(int)frames
++{
++    frames = frames == 3 || frames == 7 ? frames : 1;
++    int configurationDepth = frames == 7 ? 3 : frames == 3 ? 2 : 1;
++    NSUInteger requestGeneration;
++
++    @synchronized (self) {
++        if (requested == enabled && (!enabled ||
++            (width == frameWidth && height == frameHeight && frame_count == frames &&
++             (state == MOTION_INITIALIZING || state == MOTION_READY || state == MOTION_ACTIVE))))
++            return;
++
++        generation++;
++        requestGeneration = generation;
++        requested = enabled;
++        width = frameWidth;
++        height = frameHeight;
++        frame_count = frames;
++        stream_eligible = false;
++        sequential_submission = false;
++        uses_frame_rate_conversion = false;
++        state = enabled ? MOTION_INITIALIZING : MOTION_OFF;
++    }
++
++    if (!enabled || frameWidth < 1 || frameHeight < 1) {
++        @synchronized (self) {
++            if (generation == requestGeneration) {
++                requested = false;
++                state = enabled ? MOTION_UNAVAILABLE : MOTION_OFF;
++            }
++        }
++    }
++
++    dispatch_async(queue, ^{
++        @autoreleasepool {
++            if (!enabled || frameWidth < 1 || frameHeight < 1) {
++                VTFrameProcessor *oldProcessor = nil;
++                CVPixelBufferPoolRef oldPool = NULL;
++                NSArray *oldFormats = nil;
++                @synchronized (self) {
++                    if (generation == requestGeneration) {
++                        oldProcessor = processor;
++                        processor = nil;
++                        oldPool = output_pool;
++                        output_pool = NULL;
++                        oldFormats = supported_formats;
++                        supported_formats = nil;
++                    }
++                }
++                if (oldProcessor) {
++                    [oldProcessor endSession];
++                    [oldProcessor release];
++                }
++                if (oldPool)
++                    CVPixelBufferPoolRelease(oldPool);
++                [oldFormats release];
++                return;
++            }
++
++            if (@available(macOS 15.4, iOS 26.0, tvOS 26.0,
++                           macCatalyst 26.0, visionOS 26.0, *)) {
++                id configuration = nil;
++                bool usesFrameRateConversion = false;
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++                if ([VTFrameRateConversionConfiguration isSupported]) {
++                    VTFrameRateConversionConfigurationQualityPrioritization priority =
++                        frames == 7
++                            ? VTFrameRateConversionConfigurationQualityPrioritizationQuality
++                            : VTFrameRateConversionConfigurationQualityPrioritizationNormal;
++                    VTFrameRateConversionConfiguration *frameRateConfiguration =
++                        [[VTFrameRateConversionConfiguration alloc]
++                            initWithFrameWidth:frameWidth
++                            frameHeight:frameHeight
++                            usePrecomputedFlow:NO
++                            qualityPrioritization:priority
++                            revision:VTFrameRateConversionConfigurationRevision1];
++                    if (frameRateConfiguration) {
++                        configuration = frameRateConfiguration;
++                        usesFrameRateConversion = true;
++                    }
++                }
++#endif
++                if (!configuration &&
++                    [VTLowLatencyFrameInterpolationConfiguration isSupported]) {
++                    VTLowLatencyFrameInterpolationConfiguration *lowLatencyConfiguration =
++                        [[VTLowLatencyFrameInterpolationConfiguration alloc]
++                            initWithFrameWidth:frameWidth
++                            frameHeight:frameHeight
++                            numberOfInterpolatedFrames:configurationDepth];
++                    configuration = lowLatencyConfiguration;
++                }
++
++                VTFrameProcessor *newProcessor = [[VTFrameProcessor alloc] init];
++                CVPixelBufferPoolRef newPool = NULL;
++                NSError *error = nil;
++                bool ok = configuration && newProcessor &&
++                    [newProcessor startSessionWithConfiguration:configuration error:&error];
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++                if (!ok && usesFrameRateConversion) {
++                    [newProcessor endSession];
++                    [newProcessor release];
++                    newProcessor = [[VTFrameProcessor alloc] init];
++                    [configuration release];
++                    configuration = nil;
++                    usesFrameRateConversion = false;
++                    error = nil;
++                    if ([VTLowLatencyFrameInterpolationConfiguration isSupported]) {
++                        VTLowLatencyFrameInterpolationConfiguration *lowLatencyConfiguration =
++                            [[VTLowLatencyFrameInterpolationConfiguration alloc]
++                                initWithFrameWidth:frameWidth
++                                frameHeight:frameHeight
++                                numberOfInterpolatedFrames:configurationDepth];
++                        configuration = lowLatencyConfiguration;
++                        ok = configuration && newProcessor &&
++                            [newProcessor startSessionWithConfiguration:configuration error:&error];
++                    }
++                }
++#endif
++                NSArray *newFormats = nil;
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++                if (usesFrameRateConversion) {
++                    newFormats = [((VTFrameRateConversionConfiguration *)configuration).supportedPixelFormats copy];
++                } else
++#endif
++                {
++                    newFormats = [((VTLowLatencyFrameInterpolationConfiguration *)configuration).supportedPixelFormats copy];
++                }
++                ok = ok && newFormats;
++                if (ok) {
++                    NSDictionary *attributes = [configuration destinationPixelBufferAttributes];
++                    ok = attributes && CVPixelBufferPoolCreate(
++                        kCFAllocatorDefault, NULL, (CFDictionaryRef)attributes,
++                        &newPool) == kCVReturnSuccess;
++                }
++
++                if (configuration)
++                    [configuration release];
++
++                VTFrameProcessor *oldProcessor = nil;
++                CVPixelBufferPoolRef oldPool = NULL;
++                NSArray *oldFormats = nil;
++                @synchronized (self) {
++                    if (generation == requestGeneration && requested && ok) {
++                        oldProcessor = processor;
++                        processor = newProcessor;
++                        newProcessor = nil;
++                        oldPool = output_pool;
++                        output_pool = newPool;
++                        newPool = NULL;
++                        oldFormats = supported_formats;
++                        supported_formats = newFormats;
++                        newFormats = nil;
++                        sequential_submission = false;
++                        uses_frame_rate_conversion = usesFrameRateConversion;
++                        state = MOTION_READY;
++                        worst_process_ns = 30000000;
++                    } else if (generation == requestGeneration && requested) {
++                        state = MOTION_UNAVAILABLE;
++                        uses_frame_rate_conversion = false;
++                        oldProcessor = processor;
++                        processor = nil;
++                        oldPool = output_pool;
++                        output_pool = NULL;
++                        oldFormats = supported_formats;
++                        supported_formats = nil;
++                    }
++                }
++
++                if (oldProcessor) {
++                    [oldProcessor endSession];
++                    [oldProcessor release];
++                }
++                if (oldPool)
++                    CVPixelBufferPoolRelease(oldPool);
++                [oldFormats release];
++                if (newProcessor) {
++                    [newProcessor endSession];
++                    [newProcessor release];
++                }
++                if (newPool)
++                    CVPixelBufferPoolRelease(newPool);
++                [newFormats release];
++                if (!ok && error)
++                    NSLog(@"VideoToolbox frame interpolation session failed: %@", error);
++            } else {
++                @synchronized (self) {
++                    if (generation == requestGeneration)
++                        state = MOTION_UNAVAILABLE;
++                }
++            }
++        }
++    });
++}
++
++- (const char *)statusName
++{
++    @synchronized (self) {
++        if ((state == MOTION_READY || state == MOTION_ACTIVE) && !stream_eligible)
++            return "unavailable";
++        switch (state) {
++        case MOTION_INITIALIZING: return "initializing";
++        case MOTION_READY: return "ready";
++        case MOTION_ACTIVE: return "active";
++        case MOTION_UNAVAILABLE: return "unavailable";
++        default: return "off";
++        }
++    }
++}
++
++- (void)setStreamEligible:(bool)eligible
++{
++    @synchronized (self) {
++        if (!eligible && state == MOTION_ACTIVE)
++            state = MOTION_READY;
++        if (!eligible)
++            sequential_submission = false;
++        stream_eligible = eligible;
++    }
++}
++
++- (int)processPrevious:(CVPixelBufferRef)previous source:(CVPixelBufferRef)source
++        previousTime:(int64_t)previousPTS sourceTime:(int64_t)sourcePTS
++          deadlineNs:(int64_t)deadline displaySlots:(int)displaySlots
++            outputs:(CVPixelBufferRef[7])outputs
++          timestamps:(int64_t[7])timestamps
++{
++    for (int i = 0; i < 7; i++) {
++        outputs[i] = NULL;
++        timestamps[i] = 0;
++    }
++    if (!previous || !source || sourcePTS <= previousPTS)
++        return 0;
++
++    @synchronized (self) {
++        if (!requested || (state != MOTION_READY && state != MOTION_ACTIVE) ||
++            !processor || !output_pool)
++            return 0;
++
++        if (deadline <= 0 || deadline < worst_process_ns * 2 + 3000000) {
++            state = MOTION_READY;
++            return 0;
++        }
++
++        OSType previousFormat = CVPixelBufferGetPixelFormatType(previous);
++        OSType sourceFormat = CVPixelBufferGetPixelFormatType(source);
++        if (previousFormat != sourceFormat ||
++            CVPixelBufferGetWidth(previous) != width ||
++            CVPixelBufferGetHeight(previous) != height ||
++            CVPixelBufferGetWidth(source) != width ||
++            CVPixelBufferGetHeight(source) != height) {
++            if (state == MOTION_ACTIVE)
++                state = MOTION_READY;
++            stream_eligible = false;
++            return 0;
++        }
++
++        NSNumber *pixelFormat = [NSNumber numberWithUnsignedInt:sourceFormat];
++        if (!supported_formats || ![supported_formats containsObject:pixelFormat]) {
++            if (state == MOTION_ACTIVE)
++                state = MOTION_READY;
++            stream_eligible = false;
++            return 0;
++        }
++
++        int outputCount = frame_count;
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++        if (uses_frame_rate_conversion && displaySlots > 0) {
++            int candidates = displaySlots > 0 ? displaySlots - 1 : 0;
++            outputCount = candidates < frame_count ? candidates : frame_count;
++        }
++#endif
++        if (outputCount <= 0)
++            return 0;
++
++        NSMutableArray *phases = [NSMutableArray arrayWithCapacity:outputCount];
++        NSMutableArray *destinationFrames = [NSMutableArray arrayWithCapacity:outputCount];
++        CVPixelBufferRef allocated[7] = {0};
++        VTFrameProcessorFrame *previousFrame = nil;
++        VTFrameProcessorFrame *sourceFrame = nil;
++        id<VTFrameProcessorParameters> parameters = nil;
++        NSError *error = nil;
++        int64_t started = monotonic_time_ns();
++        int resultCount = 0;
++
++        previousFrame = [[VTFrameProcessorFrame alloc]
++            initWithBuffer:previous
++            presentationTimeStamp:CMTimeMake(previousPTS, 1000000000)];
++        sourceFrame = [[VTFrameProcessorFrame alloc]
++            initWithBuffer:source
++            presentationTimeStamp:CMTimeMake(sourcePTS, 1000000000)];
++
++        bool ok = previousFrame && sourceFrame;
++        for (int i = 0; ok && i < outputCount; i++) {
++            CVReturn poolResult = CVPixelBufferPoolCreatePixelBuffer(
++                kCFAllocatorDefault, output_pool, &allocated[i]);
++            if (poolResult != kCVReturnSuccess || !allocated[i]) {
++                ok = false;
++                break;
++            }
++            float phase;
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++            if (uses_frame_rate_conversion && displaySlots > 0) {
++                int candidates = displaySlots - 1;
++                int candidateIndex;
++                if (outputCount == 1) {
++                    candidateIndex = candidates / 2;
++                } else if (outputCount == candidates) {
++                    candidateIndex = i;
++                } else {
++                    candidateIndex = (i * (candidates - 1) + (outputCount - 1) / 2) /
++                                     (outputCount - 1);
++                }
++                phase = (float)(candidateIndex + 1) / (float)displaySlots;
++            } else {
++                phase = (float)(i + 1) / (float)(outputCount + 1);
++            }
++#else
++            phase = (float)(i + 1) / (float)(outputCount + 1);
++#endif
++            int64_t pts = previousPTS + (int64_t)((sourcePTS - previousPTS) * phase);
++            VTFrameProcessorFrame *destination = [[VTFrameProcessorFrame alloc]
++                initWithBuffer:allocated[i]
++                presentationTimeStamp:CMTimeMake(pts, 1000000000)];
++            if (!destination) {
++                ok = false;
++                break;
++            }
++            [phases addObject:[NSNumber numberWithFloat:phase]];
++            [destinationFrames addObject:destination];
++            [destination release];
++            timestamps[i] = pts;
++        }
++
++        if (ok) {
++#if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
++            if (uses_frame_rate_conversion) {
++                parameters = [[VTFrameRateConversionParameters alloc]
++                    initWithSourceFrame:previousFrame
++                    nextFrame:sourceFrame
++                    opticalFlow:nil
++                    interpolationPhase:phases
++                    submissionMode:sequential_submission
++                        ? VTFrameRateConversionParametersSubmissionModeSequential
++                        : VTFrameRateConversionParametersSubmissionModeRandom
++                    destinationFrames:destinationFrames];
++            } else
++#endif
++            {
++                parameters = [[VTLowLatencyFrameInterpolationParameters alloc]
++                    initWithSourceFrame:sourceFrame
++                    previousFrame:previousFrame
++                    interpolationPhase:phases
++                    destinationFrames:destinationFrames];
++            }
++            ok = parameters && [processor processWithParameters:parameters error:&error];
++        }
++
++        int64_t elapsed = monotonic_time_ns() - started;
++        if (elapsed > worst_process_ns)
++            worst_process_ns = elapsed;
++        if (ok) {
++            resultCount = outputCount;
++            for (int i = 0; i < resultCount; i++)
++                outputs[i] = CVPixelBufferRetain(allocated[i]);
++            sequential_submission = true;
++            state = MOTION_READY;
++        } else {
++            sequential_submission = false;
++            state = MOTION_READY;
++        }
++
++        for (int i = 0; i < 7; i++) {
++            if (allocated[i])
++                CVPixelBufferRelease(allocated[i]);
++        }
++        [parameters release];
++        [previousFrame release];
++        [sourceFrame release];
++        return resultCount;
++    }
++}
++
++- (void)markPresented
++{
++    @synchronized (self) {
++        if (requested && state == MOTION_READY)
++            state = MOTION_ACTIVE;
++    }
++}
++
++@end
++
++struct avf_motion_interpolator {
++    MPVAVFMotionSession *session;
++};
++
++struct avf_motion_interpolator *avf_motion_create(void)
++{
++    struct avf_motion_interpolator *motion = calloc(1, sizeof(*motion));
++    if (motion)
++        motion->session = [[MPVAVFMotionSession alloc] init];
++    return motion;
++}
++
++void avf_motion_destroy(struct avf_motion_interpolator *motion)
++{
++    if (!motion)
++        return;
++    [motion->session release];
++    free(motion);
++}
++
++void avf_motion_configure(struct avf_motion_interpolator *motion, bool enabled,
++                          int width, int height, int interpolated_frames)
++{
++    if (motion)
++        [motion->session configureEnabled:enabled width:width height:height
++                               frameCount:interpolated_frames];
++}
++
++void avf_motion_set_stream_eligible(struct avf_motion_interpolator *motion, bool eligible)
++{
++    if (motion)
++        [motion->session setStreamEligible:eligible];
++}
++
++const char *avf_motion_status(struct avf_motion_interpolator *motion)
++{
++    return motion ? [motion->session statusName] : "off";
++}
++
++int avf_motion_process(struct avf_motion_interpolator *motion,
++                       CVPixelBufferRef previous, CVPixelBufferRef source,
++                       int64_t previous_pts_ns, int64_t source_pts_ns,
++                       int64_t deadline_budget_ns, int display_slots,
++                       CVPixelBufferRef outputs[7], int64_t output_pts_ns[7])
++{
++    if (!motion) {
++        for (int i = 0; i < 7; i++) {
++            outputs[i] = NULL;
++            output_pts_ns[i] = 0;
++        }
++        return 0;
++    }
++    return [motion->session processPrevious:previous source:source
++                               previousTime:previous_pts_ns sourceTime:source_pts_ns
++                                 deadlineNs:deadline_budget_ns displaySlots:display_slots
++                                   outputs:outputs
++                                 timestamps:output_pts_ns];
++}
++
++void avf_motion_mark_presented(struct avf_motion_interpolator *motion)
++{
++    if (motion)
++        [motion->session markPresented];
++}
+diff --git a/video/out/vo.h b/video/out/vo.h
+index 160d860..8b96b53 100644
+--- a/video/out/vo.h
++++ b/video/out/vo.h
+@@ -117,5 +117,6 @@
+     VOCTRL_GET_AMBIENT_LUX,             // double*
+     VOCTRL_GET_DISPLAY_FPS,             // double*
++    VOCTRL_GET_MOTION_INTERPOLATION,    // struct voctrl_motion_interpolation*
+     VOCTRL_GET_HIDPI_SCALE,             // double*
+     VOCTRL_GET_DISPLAY_RES,             // int[2]
+     VOCTRL_GET_WINDOW_ID,               // int64_t*
+@@ -136,5 +137,10 @@
+ };
+ 
++struct voctrl_motion_interpolation {
++    // Static VO-owned string, valid until the next control call.
++    const char *state;
++};
++
+ // Helper to expose what kind of content is currently playing to the VO.
+ enum mp_content_type {
+     MP_CONTENT_NONE, // used for force-window
+diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
+index 93e801e..bf3e0b8 100644
+--- a/video/out/vo_avfoundation.m
++++ b/video/out/vo_avfoundation.m
+@@ -39,5 +39,6 @@
+ #include "video/hwdec.h"
+ #include "sub/osd.h"
++#include "avfoundation_motion.h"
+ 
+ #import <CoreMedia/CoreMedia.h>
+ #import <AVFoundation/AVFoundation.h>
+@@ -130,5 +131,7 @@
+     bool composite_osd;
+     bool pip_composite_osd;
++    bool motion_interpolation;
++    int motion_preset;
+     int queue_lead_ms;
+     int presentation;
+     int osd_max_height;
+@@ -352,5 +355,16 @@
+     struct mp_image *next_image;
+     double next_pts;
++    struct avf_motion_interpolator *motion;
++    CVPixelBufferRef motion_previous_frame;
++    double motion_previous_source_pts;
++    double motion_previous_interval;
++    int64_t motion_previous_present_pts_ns;
++    int64_t motion_previous_present_host_ns;
++    int motion_previous_vsyncs;
++    int next_motion_vsyncs;
++    bool motion_previous_valid;
++    bool motion_format_valid;
++    int motion_width, motion_height;
+     CMTimebaseRef timebase;
+     int64_t next_present_host_ns;
+     // Latest host stamp given to a video frame; see avf_host_present_ns().
+@@ -1385,5 +1397,84 @@
+ }
+ 
++static int motion_interpolated_frame_count(int preset)
++{
++    switch (preset) {
++    case 0: return 1; // Performance: 2x output.
++    case 2: return 7; // Quality: 8x output.
++    default: return 3; // Balanced: 4x output.
++    }
++}
++
++static bool motion_params_are_supported(const struct mp_image_params *params)
++{
++    if (!params || params->w < 1 || params->h < 1 ||
++        (int64_t)params->w * params->h > INT64_C(1920) * 1080 ||
++        MPMAX(params->w, params->h) > 1920 ||
++        params->repr.sys == PL_COLOR_SYSTEM_DOLBYVISION ||
++        params->sys_orig == PL_COLOR_SYSTEM_DOLBYVISION)
++        return false;
++
++    switch (params->color.transfer) {
++    case PL_COLOR_TRC_BT_1886:
++    case PL_COLOR_TRC_SRGB:
++    case PL_COLOR_TRC_GAMMA22:
++    case PL_COLOR_TRC_GAMMA28:
++        return true;
++    default:
++        return false;
++    }
++}
++
++static bool motion_source_cadence_supported(double interval, double previous)
++{
++    bool target_cadence = fabs(interval - 1.0 / 24.0) <= 0.0015 ||
++                          fabs(interval - 1.0 / 30.0) <= 0.0015;
++    return target_cadence && (previous <= 0.0 || fabs(interval - previous) <= 0.001);
++}
++
++static bool motion_presentation_cadence_supported(int64_t interval_ns,
++                                                   double source_interval)
++{
++    if (interval_ns <= 0 || source_interval <= 0.0)
++        return false;
++    double presentation_interval = interval_ns / 1000000000.0;
++    // The current timestamp mapping assumes normal-speed playback. At a
++    // changed rate the source cadence and display timestamps no longer
++    // describe the same interval, so pass the source frame through.
++    return fabs(presentation_interval - source_interval) <= 0.002;
++}
++
++static void reset_motion_reference(struct priv *p)
++{
++    if (p->motion_previous_frame) {
++        CVPixelBufferRelease(p->motion_previous_frame);
++        p->motion_previous_frame = NULL;
++    }
++    p->motion_previous_source_pts = MP_NOPTS_VALUE;
++    p->motion_previous_interval = 0.0;
++    p->motion_previous_present_pts_ns = 0;
++    p->motion_previous_present_host_ns = 0;
++    p->motion_previous_vsyncs = -1;
++    p->next_motion_vsyncs = -1;
++    p->motion_previous_valid = false;
++    if (p->motion)
++        avf_motion_set_stream_eligible(p->motion, false);
++}
++
++static void configure_motion_for_current_format(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!p->motion || !p->opts)
++        return;
++
++    int width = p->motion_format_valid ? p->motion_width : 0;
++    int height = p->motion_format_valid ? p->motion_height : 0;
++    avf_motion_configure(p->motion, p->opts->motion_interpolation,
++                         width, height,
++                         motion_interpolated_frame_count(p->opts->motion_preset));
++    reset_motion_reference(p);
++}
++
+ static void update_avfoundation_options(struct vo *vo)
+ {
+     struct priv *p = vo->priv;
+@@ -1397,5 +1484,7 @@
+     int old_osd_max_height = p->opts->osd_max_height;
+     bool old_osd_video_res = p->opts->osd_video_res;
++    bool old_motion_interpolation = p->opts->motion_interpolation;
++    int old_motion_preset = p->opts->motion_preset;
+ 
+     if (!m_config_cache_update(p->opts_cache))
+         return;
+@@ -1409,5 +1498,14 @@
+     bool osd_scale_changed = old_osd_max_height != p->opts->osd_max_height ||
+         old_osd_video_res != p->opts->osd_video_res;
++    bool motion_changed = old_motion_interpolation != p->opts->motion_interpolation ||
++        old_motion_preset != p->opts->motion_preset;
++
++    if (motion_changed) {
++        MP_VERBOSE(vo, "VideoToolbox interpolation updated: %s, preset %d\n",
++                   p->opts->motion_interpolation ? "yes" : "no",
++                   p->opts->motion_preset);
++        configure_motion_for_current_format(vo);
++    }
+ 
+     if (!composite_changed && !osd_scale_changed)
+         return;
+@@ -4061,5 +4159,8 @@
+     p->opts_cache = m_config_cache_alloc(p, vo->global, &avfoundation_conf);
+     p->opts = p->opts_cache->opts;
++    p->motion = avf_motion_create();
++    if (!p->motion)
++        MP_WARN(vo, "Could not allocate VideoToolbox motion processor state\n");
+     m_config_cache_set_wakeup_cb(p->opts_cache, avfoundation_opts_wakeup, vo);
+ 
+     if (vo->opts->WinID == -1) {
+@@ -4423,7 +4524,57 @@
+         CMSampleBufferRef video_buf = create_video_sample_buffer(vo, p->next_image);
+         p->perf.video_sample_ns += mp_time_ns() - t;
++        CVPixelBufferRef current_pixel = video_buf
++            ? CMSampleBufferGetImageBuffer(video_buf) : NULL;
++        CVPixelBufferRef interpolated[7] = {0};
++        int64_t interpolated_pts[7] = {0};
++        CMSampleBufferRef generated[7] = {0};
++        int interpolated_count = 0;
++        int64_t current_present_pts = sample_presentation_pts_ns(p);
++        bool source_pts_valid = isfinite(p->next_pts) && p->next_pts != MP_NOPTS_VALUE;
++        double source_interval = source_pts_valid && p->motion_previous_valid
++            ? p->next_pts - p->motion_previous_source_pts : 0.0;
++        bool motion_stream_eligible =
++            p->opts->motion_interpolation && current_pixel && p->next_image &&
++            source_pts_valid && current_present_pts > 0 &&
++            motion_params_are_supported(&p->next_image->params) &&
++            !(p->next_image->fields & MP_IMGFIELD_INTERLACED) &&
++            !should_composite_into_video(p) && !should_apply_video_geometry(vo);
++        bool presentation_cadence_valid = !p->motion_previous_valid ||
++            (current_present_pts > p->motion_previous_present_pts_ns &&
++             motion_presentation_cadence_supported(
++                 p->next_present_host_ns - p->motion_previous_present_host_ns,
++                 source_interval));
++        bool source_cadence_valid = !p->motion_previous_valid ||
++            motion_source_cadence_supported(source_interval,
++                                             p->motion_previous_interval);
++        motion_stream_eligible = motion_stream_eligible &&
++            presentation_cadence_valid && source_cadence_valid;
++        bool interpolation_pair_valid = motion_stream_eligible &&
++            p->motion_previous_frame && p->motion_previous_valid;
++        avf_motion_set_stream_eligible(p->motion, motion_stream_eligible);
++        if (interpolation_pair_valid) {
++            int64_t deadline_budget = p->next_present_host_ns - mp_time_ns();
++            interpolated_count = avf_motion_process(
++                p->motion, p->motion_previous_frame, current_pixel,
++                p->motion_previous_present_pts_ns, current_present_pts,
++                deadline_budget, p->motion_previous_vsyncs,
++                interpolated, interpolated_pts);
++        }
++
++        int interpolated_output_count = interpolated_count;
++        bool interpolation_samples_ready = interpolated_count > 0;
++        for (int i = 0; i < interpolated_count; i++) {
++            generated[i] = create_image_sample_buffer(
++                vo, interpolated[i], interpolated_pts[i], false);
++            if (!generated[i])
++                interpolation_samples_ready = false;
++        }
++        if (!interpolation_samples_ready)
++            interpolated_count = 0;
+ 
+         bool osd_enqueued = !osd_needed;
++        bool video_enqueued = false;
++        bool all_interpolated_enqueued = interpolation_samples_ready;
+ 
+         if (video_buf && wait_until_ready_for_more_media_data(vo, p->next_present_host_ns)) {
+             if (!p->presentation_host)
+@@ -4450,11 +4593,46 @@
+             }
+ 
+-            enqueue_video_sample(vo, video_buf);
++            for (int i = 0; i < interpolated_count; i++) {
++                if (!enqueue_video_sample(vo, generated[i])) {
++                    all_interpolated_enqueued = false;
++                    break;
++                }
++            }
++
++            video_enqueued = enqueue_video_sample(vo, video_buf);
++            if (video_enqueued && all_interpolated_enqueued)
++                avf_motion_mark_presented(p->motion);
++        }
++
++        if (video_enqueued && current_pixel && source_pts_valid && p->next_image &&
++            motion_params_are_supported(&p->next_image->params) &&
++            !(p->next_image->fields & MP_IMGFIELD_INTERLACED) &&
++            !should_composite_into_video(p) && !should_apply_video_geometry(vo)) {
++            if (p->motion_previous_frame)
++                CVPixelBufferRelease(p->motion_previous_frame);
++            p->motion_previous_frame = CVPixelBufferRetain(current_pixel);
++            p->motion_previous_source_pts = p->next_pts;
++            p->motion_previous_interval = source_interval;
++            p->motion_previous_present_pts_ns = current_present_pts;
++            p->motion_previous_present_host_ns = p->next_present_host_ns;
++            p->motion_previous_vsyncs = p->next_motion_vsyncs;
++            p->motion_previous_valid = true;
++        } else {
++            reset_motion_reference(p);
+         }
+ 
+         if (osd_needed && !osd_enqueued)
+             p->osd_change_id = 0;
+ 
++        for (int i = 0; i < interpolated_output_count; i++) {
++            if (interpolated[i])
++                CVPixelBufferRelease(interpolated[i]);
++        }
++        for (int i = 0; i < 7; i++) {
++            if (generated[i])
++                CFRelease(generated[i]);
++        }
++
+         if (osd_buf)
+             CFRelease(osd_buf);
+         if (video_buf)
+@@ -4499,10 +4676,13 @@
+ 
+     if (!frame->current || (frame->repeat && !frame->redraw)) {
++        reset_motion_reference(p);
++        p->next_motion_vsyncs = -1;
+         p->next_pts = MP_NOPTS_VALUE;
+         p->next_present_host_ns = mp_time_ns();
+         p->next_media_pts_valid = false;
+         p->next_timebase_rate_valid = false;
+         return true;
+     }
+ 
++    p->next_motion_vsyncs = frame->display_synced ? frame->num_vsyncs : -1;
+     p->next_image = mp_image_new_ref(frame->current);
+@@ -4590,5 +4768,9 @@
+     // Clear subtitles when video configuration changes
+     struct priv *p = vo->priv;
++    p->motion_width = params->w;
++    p->motion_height = params->h;
++    p->motion_format_valid = motion_params_are_supported(params);
++    configure_motion_for_current_format(vo);
+     p->ahead_last_pts = MP_NOPTS_VALUE;
+     osd_cadence_reset(&p->ahead_cadence);
+     mp_image_unrefp(&p->ahead_shown_image);
+@@ -4603,5 +4785,9 @@
+     struct priv *p = vo->priv;
+ 
++    reset_motion_reference(p);
++    avf_motion_destroy(p->motion);
++    p->motion = NULL;
++
+     report_osd_perf(vo);
+     report_ahead_perf(vo);
+     if (p->ahead.started)
+@@ -4719,5 +4905,10 @@
+ 
+     switch (request) {
++    case VOCTRL_GET_MOTION_INTERPOLATION: {
++        struct voctrl_motion_interpolation *status = data;
++        status->state = avf_motion_status(p->motion);
++        return VO_TRUE;
++    }
+     case VOCTRL_CHECK_EVENTS:
+         if (atomic_exchange(&p->pending_presentation_resync, false))
+             recover_display_layer(vo, "presentation resume", true);
+@@ -4746,5 +4937,6 @@
+         // linger over the held frame.
+         p->ahead_last_pts = MP_NOPTS_VALUE;
++        reset_motion_reference(p);
+         osd_cadence_reset(&p->ahead_cadence);
+         clear_subtitle_cache(p);
+         p->not_ready_drop_count = 0;
+@@ -4803,5 +4995,10 @@
+         {"media", AVF_PRESENTATION_MEDIA},
+         {"host", AVF_PRESENTATION_HOST})},
++    {"motion-interpolation", OPT_BOOL(motion_interpolation)},
++    {"motion-preset", OPT_CHOICE(motion_preset,
++        {"performance", 0},
++        {"balanced", 1},
++        {"quality", 2})},
+     // Cap the OSD/subtitle rasterization height (0 = display resolution).
+     // Inline OSD layer mode only; the layer upscales the result.
+     {"osd-max-height", OPT_INT(osd_max_height), M_RANGE(0, 4320)},
+@@ -4818,5 +5015,6 @@
+     .defaults = &(const struct avfoundation_opts){
+         .queue_lead_ms = 128,
++        .motion_preset = 1,
+         // tvOS has no PiP, so nothing needs the media timebase there; the
+         // host-time model is the one that never accumulates clock drift
+         // against mpv's audio-slaved schedule (plezy#1776).
