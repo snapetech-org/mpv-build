@@ -29,3 +29,4 @@
 0145-android-anvil-deadline-governor.patch
 0147-android-anvil-report-litert-npu-provider.patch
 0154-android-anvil-normal-build-inclusion.patch
+0156-android-qnn-system-header-include-root.patch

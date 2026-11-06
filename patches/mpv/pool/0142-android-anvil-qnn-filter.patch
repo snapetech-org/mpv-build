@@ -6814,7 +6814,7 @@ new file mode 100644
 index 0000000..7b3c20f
 --- /dev/null
 +++ b/video/filter/vf_anvil.c
-@@ -0,0 +1,3477 @@
+@@ -0,0 +1,3478 @@
 +/*
 + * vf_anvil.c - ANVIL Video Frame Interpolation filter for mpv
 + *
