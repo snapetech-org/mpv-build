@@ -365,7 +365,7 @@ main() {
   meson setup build \
     --prefix="$prefix" \
     --default-library=static \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
     -Dopengl=enabled \
     -Ddovi=enabled \
@@ -463,7 +463,7 @@ main() {
     -Dcplugins=disabled \
     -Dmanpage-build=disabled \
     -Djack=disabled \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
     -Dgl=enabled \
     -Degl=enabled \

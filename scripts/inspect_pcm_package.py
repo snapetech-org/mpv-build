@@ -22,8 +22,9 @@ MAX_ENTRIES = 50000
 SYMBOL = 'mpv_plezy_audio_tap_read_next'
 REQUIRED_SYMBOLS = ['mpv_plezy_audio_tap_version', 'mpv_plezy_audio_tap_enable',
                     'mpv_plezy_audio_tap_read', SYMBOL]
+PME_VULKAN_MARKER = b"Vulkan: requested device '%s' was not found; compute will bypass\n\0"
 MOTION_MARKERS = {
-    'pme': (b'plezy-pme\0', b'pme_runtime_open_from_manifest\0'),
+    'pme': (b'plezy-pme\0', b'pme_runtime_open_from_manifest\0', PME_VULKAN_MARKER),
     'anvil': (b'anvil\0', b'QnnInterface_getProviders\0'),
     'litert': (b'plezy_litert_motion_open\0', b'plezy_litert_motion_run\0'),
     # MPV prefixes VO suboptions at runtime; the compiled option table stores
@@ -220,10 +221,13 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
             slices.append({'binary': binary, 'platform': platform, 'variant': variant, 'architectures': sorted(declared)})
         if used != set(found) or not APPLE_REQUIRED <= coverage:
             raise ValueError('MPV XCFramework does not cover every required Apple platform and architecture')
-    return {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 4, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
+    receipt = {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 4, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
             'symbol': SYMBOL, 'binaries': sorted(found), 'binarySha256': hashes,
             'binaryArchitectures': architectures, 'appleSlices': slices, 'neuralFilters': neural_filters,
             'motionPlatform': motion_platform, 'executionQualified': False}
+    if motion_platform in ('linux', 'windows'):
+        receipt['pmeVulkan'] = True
+    return receipt
 
 
 if __name__ == '__main__':

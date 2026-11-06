@@ -1,0 +1,18 @@
+--- a/sub/sd_sbr.c
++++ b/sub/sd_sbr.c
+@@ -170,8 +170,13 @@
+ }
+ 
+ static struct sub_bitmaps *get_bitmaps(struct sd *sd, struct mp_osd_res dim,
+-                                       int format, double pts)
+-{
++                                       int format, double pts, bool prefetch)
++{
++    // SubRandr owns one live render/cache state; speculative prefetch must
++    // not advance it before the actual presentation request.
++    if (prefetch)
++        return NULL;
++
+     struct sd_sbr_priv *ctx = sd->priv;
+     struct mp_subtitle_opts *opts = sd->opts;
+ 

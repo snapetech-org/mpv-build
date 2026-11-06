@@ -54,7 +54,7 @@ cmake meson ninja-build nasm autoconf automake libtool xz-utils zstd
 binutils zip
 libfreetype-dev libfribidi-dev libharfbuzz-dev libfontconfig-dev
 libgnutls28-dev libva-dev
-libdisplay-info-dev libdrm-dev libwayland-dev wayland-protocols
+libdisplay-info-dev libdrm-dev libvulkan-dev libwayland-dev wayland-protocols
 libxkbcommon-dev libegl-dev libgl-dev libgbm-dev
 libasound2-dev libpulse-dev libpipewire-0.3-dev
 liblua5.2-dev libmujs-dev liblcms2-dev

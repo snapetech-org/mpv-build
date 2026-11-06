@@ -2,6 +2,7 @@
 """Check neural inclusion against compiled bytes, not archive metadata."""
 import hashlib
 import io
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,7 +22,7 @@ class NativePackageTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def package(self, neural=False, metadata=False, complete_pcm=True):
+    def package(self, neural=False, metadata=False, complete_pcm=True, vulkan=True):
         exports = ['version', 'enable', 'read', 'read_next']
         if not complete_pcm:
             exports.remove('read_next')
@@ -29,6 +30,8 @@ class NativePackageTest(unittest.TestCase):
         if neural:
             source += '\nconst char motion_filter[] = "plezy-pme";'
             source += '\nconst char runtime_entry[] = "pme_runtime_open_from_manifest";'
+            if vulkan:
+                source += '\nconst char pme_vulkan_marker[] = ' + json.dumps("Vulkan: requested device '%s' was not found; compute will bypass\n") + ';'
         (self.root / 'fixture.c').write_text(source)
         binary = self.root / 'libmpv.so'
         subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(self.root / 'fixture.c')], check=True)
@@ -36,7 +39,7 @@ class NativePackageTest(unittest.TestCase):
         with zipfile.ZipFile(package, 'w') as archive:
             archive.write(binary, 'lib/libmpv.so')
             if metadata:
-                archive.writestr('features.json', '{"pme":true,"neuralFilters":["pme"]}')
+                archive.writestr('features.json', '{"pme":true,"pmeVulkan":true,"neuralFilters":["pme"]}')
                 archive.writestr('markers.txt', 'plezy-pme\0pme_runtime_open_from_manifest\0')
         return package
 
@@ -47,6 +50,10 @@ class NativePackageTest(unittest.TestCase):
     def test_metadata_cannot_replace_compiled_filter(self):
         with self.assertRaisesRegex(ValueError, 'omits.*pme'):
             inspect(self.package(metadata=True), 1, 'linux')
+
+    def test_pme_without_vulkan_code_is_rejected_despite_metadata(self):
+        with self.assertRaisesRegex(ValueError, 'omits.*pme'):
+            inspect(self.package(neural=True, vulkan=False, metadata=True), 1, 'linux')
 
     def test_neural_engine_retains_complete_pcm_requirement(self):
         with self.assertRaises(subprocess.CalledProcessError):
@@ -59,6 +66,7 @@ class NativePackageTest(unittest.TestCase):
         self.assertEqual(receipt['neuralFilters'], {'lib/libmpv.so': {'x86_64': ['pme']}})
         self.assertEqual(receipt['artifactSha256'], hashlib.sha256(package.read_bytes()).hexdigest())
         self.assertFalse(receipt['executionQualified'])
+        self.assertTrue(receipt['pmeVulkan'])
         entry = {'capabilities': receipt, 'checksum': receipt['artifactSha256']}
         self.assertEqual(pcm_receipt_problems(entry, 'x86_64', 1, 'linux'), [])
         receipt['neuralFilters']['lib/libmpv.so']['x86_64'] = []

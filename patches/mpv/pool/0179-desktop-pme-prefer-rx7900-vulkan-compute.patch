@@ -1,0 +1,46 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -26,6 +26,7 @@
+ // ====================================================================
+ 
+ #include <math.h>
++#include <ctype.h>
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -326,10 +327,10 @@
+     VK_CHECK(vkCreateInstance(&ici, NULL, &vk->instance), fail);
+ 
+     // --- Select a physical device ---
+-    // The filter owns a separate Vulkan device from mpv's renderer. This lets
+-    // local multi-GPU setups keep motion compute on a dedicated card without
+-    // moving the display renderer. The override is a case-sensitive substring
+-    // of VkPhysicalDeviceProperties::deviceName; an unmatched request fails
++    // The filter owns a separate Vulkan device from mpv's renderer. Prefer
++    // the RX 7900 XT for PME compute when it is present, leaving the display
++    // renderer on its independently selected device. An explicit override is
++    // a case-sensitive device-name substring; an unmatched request fails
+     // closed instead of silently using another GPU.
+     uint32_t devCount = 0;
+     VK_CHECK(vkEnumeratePhysicalDevices(vk->instance, &devCount, NULL), fail);
+@@ -368,6 +369,20 @@
+             free(devices);
+             goto fail;
+         }
++    } else {
++        // RX 7900 XT uses Navi 31 (0x1002:0x744c), an ID shared with other
++        // Navi 31 cards. Match the exact model token as well as the PCI ID.
++        for (uint32_t i = 0; i < devCount; i++) {
++            VkPhysicalDeviceProperties properties;
++            vkGetPhysicalDeviceProperties(devices[i], &properties);
++            const char *model = strstr(properties.deviceName, "RX 7900 XT");
++            const size_t model_length = strlen("RX 7900 XT");
++            const bool exact_model = model && !isalnum((unsigned char)model[model_length]);
++            if (properties.vendorID == 0x1002 && properties.deviceID == 0x744c && exact_model) {
++                selected_index = i;
++                break;
++            }
++        }
+     }
+     vk->physDev = devices[selected_index];
+     free(devices);

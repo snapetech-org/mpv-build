@@ -348,6 +348,7 @@ assert_argument "$mpv_meson" "-Dwayland=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dx11=disabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dvaapi=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dgl=enabled" "mpv's meson setup"
+assert_argument "$mpv_meson" "-Dvulkan=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Degl=enabled" "mpv's meson setup"
 
 # The DRM-derived providers are the ones that keep hardware decoding alive when
@@ -402,8 +403,9 @@ assert_argument "$dav1d_meson" "--default-library=static" "dav1d's meson setup"
 
 # libplacebo runs meson as well, and its call carries no Wayland flag: finding
 # it separately is what proves the directory above really discriminated.
-recorded_call meson "libplacebo-v$libplacebo_version" >/dev/null ||
+libplacebo_meson="$(recorded_call meson "libplacebo-v$libplacebo_version")" ||
   fail "the build plan never ran meson in the libplacebo source tree"
+assert_argument "$libplacebo_meson" "-Dvulkan=enabled" "libplacebo's meson setup"
 
 # libass is the fork the whole platform set renders subtitles with, so the
 # build must configure OUR checkout - the directory pins that - and must pin

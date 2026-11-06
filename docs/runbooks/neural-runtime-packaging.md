@@ -10,6 +10,25 @@ evidence establishes the tested device and path.
   retain ordinary playback and renderer smoothing.
 - Every Apple platform/architecture includes the VideoToolbox motion options.
 
+Desktop PME also includes overlapped scheduling, multiple display phases from
+one inference, playback/display timing feedback, adaptive phase budgets,
+low-resolution model resampling and source-cadence telemetry. Pool0170–0179
+consolidates the previous motion branches while preserving FEL stream pairing.
+Its optional compute device remains independent of the renderer: auto selection
+prefers an exact RX7900XT when present, and an explicit device-name override
+takes precedence. This is a hardware preference, not a qualification result.
+
+Both Linux libplacebo and MPV build with Vulkan enabled, and the pinned Linux
+container installs libvulkan-dev. Desktop package inspection requires the actual
+PME Vulkan implementation marker as well as the filter/runtime markers and
+records pmeVulkan:true. A CPU-only PME build cannot satisfy this contract,
+even when archive metadata claims GPU support. Provider/device availability
+continues to be checked at runtime.
+
+Apple pool0169 anchors compressed audio timing to AVPlayer's observed playhead.
+The AVFoundation fallback test covers clock updates when no new samples are
+read, and verifies that fallback stops further clock changes.
+
 Apply the complete platform patch series, build, and package normally. Packaging
 requires all four ordered PCM exports and neural code markers from each actual
 binary (each architecture in an Apple universal archive). Receipts use inspection

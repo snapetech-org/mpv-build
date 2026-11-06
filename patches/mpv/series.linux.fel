@@ -10,3 +10,15 @@
 0151-desktop-pme-prefer-cached-host-memory.patch
 0152-desktop-pme-support-reduced-model-shapes.patch
 0155-desktop-pme-build-without-vulkan.patch
+
+# Consolidated overlap, display timing and cadence experiments.
+0170-desktop-pme-overlap-scheduler.patch
+0171-desktop-pme-display-phases.patch
+0172-desktop-pme-single-inference-phases.patch
+0173-desktop-pme-sync-timing.patch
+0174-desktop-pme-nominal-slot-grid.patch
+0175-desktop-pme-adaptive-phase-budget.patch
+0176-desktop-pme-resample-720p-sources.patch
+0177-desktop-pme-display-sync-feedback.patch
+0178-desktop-pme-source-cadence-telemetry.patch
+0179-desktop-pme-prefer-rx7900-vulkan-compute.patch

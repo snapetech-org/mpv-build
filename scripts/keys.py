@@ -667,6 +667,8 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None, motion_platform
                 for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
         return [f"{label}: mismatched packaged ordered-PCM receipt"]
     if motion_platform:
+        if motion_platform in ('linux', 'windows') and receipt.get('pmeVulkan') is not True:
+            return [f"{label}: no compiled PME Vulkan reconstruction receipt"]
         neural = receipt.get("neuralFilters")
         if receipt.get("motionPlatform") != motion_platform or not isinstance(neural, dict) or set(neural) != set(binaries):
             return [f"{label}: no packaged neural filter receipt"]
