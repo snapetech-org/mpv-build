@@ -1,0 +1,680 @@
+From: PlezyNG
+Subject: [PATCH] Android ANVIL: run LiteRT through slot-indexed async worker
+
+Adds double-buffered float LiteRT inputs and outputs to the existing Android ANVIL worker. Vulkan preprocessing can fill the free slot while a provider inference is running; inference jobs retain explicit buffer ownership. The CPU fallback remains synchronous.
+
+diff --git a/video/filter/vf_anvil.c b/video/filter/vf_anvil.c
+--- a/video/filter/vf_anvil.c
++++ b/video/filter/vf_anvil.c
+@@ -28,6 +28,8 @@
+ #include <math.h>
+ #include <string.h>
+ #include <stdlib.h>
++#include <limits.h>
++#include <stdint.h>
+ #include <stdio.h>
+ #include <dlfcn.h>
+ #include <time.h>
+@@ -1279,6 +1281,7 @@
+ 
+     // GPU quantized path: derive blend inline from QNN uint8 input buffer
+     const uint8_t *nhwc_quant;  // non-NULL = GPU quantized path
++    const float *nhwc_float;    // non-NULL = GPU float path (LiteRT)
+     float in_scale;
+     int32_t in_offset;
+ 
+@@ -1373,6 +1376,12 @@
+                 br  = (r0 + r1) * 0.5f;
+                 bg  = (g0 + g1) * 0.5f;
+                 bbb = (b0 + b1) * 0.5f;
++            } else if (a->nhwc_float) {
++                // LiteRT float path: derive the linear blend from NHWC frames.
++                const float *fp = a->nhwc_float + idx * 6;
++                br  = (fp[0] + fp[3]) * 0.5f;
++                bg  = (fp[1] + fp[4]) * 0.5f;
++                bbb = (fp[2] + fp[5]) * 0.5f;
+             } else {
+                 br  = a->blend_r[idx];
+                 bg  = a->blend_g[idx];
+@@ -1452,6 +1461,11 @@
+                         pr = (r0 + r1) * 0.5f;
+                         pg = (g0 + g1) * 0.5f;
+                         pb = (b0 + b1) * 0.5f;
++                    } else if (a->nhwc_float) {
++                        const float *fp = a->nhwc_float + pidx * 6;
++                        pr = (fp[0] + fp[3]) * 0.5f;
++                        pg = (fp[1] + fp[4]) * 0.5f;
++                        pb = (fp[2] + fp[5]) * 0.5f;
+                     } else {
+                         pr = a->blend_r[pidx];
+                         pg = a->blend_g[pidx];
+@@ -1508,9 +1522,22 @@
+ #define QNN_CTX_BIN     "context.serialized.bin"
+ #define QNN_MAX_TENSORS 4
+ 
++typedef void *(*PlezyLiteRtOpenFn)(const char *, const char *, const char *,
++                                   const char *, int32_t, int32_t, char *, size_t);
++typedef int (*PlezyLiteRtRunFn)(void *, const float *, float *);
++typedef void (*PlezyLiteRtCloseFn)(void *);
++
+ struct qnn_state {
+     void *htp_lib;
+     void *sys_lib;
++    void *litert_runtime_lib;
++    void *litert_lib;
++    void *litert_session;
++    PlezyLiteRtOpenFn litert_open;
++    PlezyLiteRtRunFn litert_run;
++    PlezyLiteRtCloseFn litert_close;
++    char litert_provider[32];
++    char litert_provider_vendor[64];
+     char htp_version[4];
+     char power_mode[32];
+ 
+@@ -1565,9 +1592,85 @@
+ }
+ 
+ static int qnn_init(struct qnn_state *q, struct mp_filter *f, int W, int H,
+-                    const char *override_dir, const char *requested_perf)
++                    const char *override_dir, const char *requested_perf,
++                    const char *litert_model, const char *litert_gpu_model,
++                    const char *litert_library_dir, const char *litert_cache_dir,
++                    const char *litert_npu_backend, const char *litert_npu_execution,
++                    const char *litert_npu_target)
+ {
+     memset(q, 0, sizeof(*q));
++
++    if ((litert_model && litert_model[0]) ||
++        (litert_gpu_model && litert_gpu_model[0])) {
++        if (!litert_library_dir || !litert_library_dir[0]) {
++            MP_WARN(f, "LiteRT: native library directory is missing\n");
++            return -1;
++        }
++        char litert_path[PATH_MAX];
++        int path_length = snprintf(litert_path, sizeof(litert_path), "%s/libLiteRt.so",
++                                   litert_library_dir);
++        if (path_length < 0 || (size_t)path_length >= sizeof(litert_path)) {
++            MP_WARN(f, "LiteRT: runtime library path is too long\n");
++            return -1;
++        }
++        q->litert_runtime_lib = dlopen(litert_path, RTLD_NOW | RTLD_GLOBAL);
++        if (!q->litert_runtime_lib) {
++            MP_WARN(f, "LiteRT: could not load core runtime: %s\n", dlerror());
++            return -1;
++        }
++        path_length = snprintf(litert_path, sizeof(litert_path),
++                               "%s/libplezy_litert_motion.so", litert_library_dir);
++        if (path_length < 0 || (size_t)path_length >= sizeof(litert_path)) {
++            MP_WARN(f, "LiteRT: Plezy runtime path is too long\n");
++            return -1;
++        }
++        q->litert_lib = dlopen(litert_path, RTLD_NOW | RTLD_LOCAL);
++        if (!q->litert_lib) {
++            MP_WARN(f, "LiteRT: could not load Plezy runtime: %s\n", dlerror());
++            return -1;
++        }
++        q->litert_open = (PlezyLiteRtOpenFn)dlsym(q->litert_lib, "plezy_litert_motion_open");
++        q->litert_run = (PlezyLiteRtRunFn)dlsym(q->litert_lib, "plezy_litert_motion_run");
++        q->litert_close = (PlezyLiteRtCloseFn)dlsym(q->litert_lib, "plezy_litert_motion_close");
++        if (!q->litert_open || !q->litert_run || !q->litert_close) {
++            MP_WARN(f, "LiteRT: Plezy runtime is missing a required C ABI entry point\n");
++            return -1;
++        }
++        q->litert_session = q->litert_open(
++            litert_model, litert_gpu_model, litert_library_dir, litert_cache_dir,
++            W, H, q->litert_provider, sizeof(q->litert_provider));
++        if (!q->litert_session || !q->litert_provider[0]) {
++            MP_WARN(f, "LiteRT: no fully accelerated NPU or GPU session could be opened\n");
++            return -1;
++        }
++        if (strcmp(q->litert_provider, "litert-npu") == 0 &&
++            litert_npu_backend && strcmp(litert_npu_backend, "samsung") == 0 &&
++            litert_npu_execution && strcmp(litert_npu_execution, "aot") == 0 &&
++            litert_npu_target &&
++            (strcmp(litert_npu_target, "E9955") == 0 || strcmp(litert_npu_target, "E9965") == 0)) {
++            snprintf(q->litert_provider_vendor, sizeof(q->litert_provider_vendor),
++                     "Samsung Exynos %s (LiteRT AOT)", litert_npu_target);
++        }
++
++        q->in_elems = (uint32_t)W * (uint32_t)H * 6;
++        q->out_elems = (uint32_t)W * (uint32_t)H * 3;
++        for (int db = 0; db < 2; db++) {
++            q->input_buf_db[db] = calloc(q->in_elems, sizeof(float));
++            q->output_buf_db[db] = calloc(q->out_elems, sizeof(float));
++        }
++        if (!q->input_buf_db[0] || !q->output_buf_db[0] ||
++            !q->input_buf_db[1] || !q->output_buf_db[1]) {
++            MP_WARN(f, "LiteRT: could not allocate ANVIL double buffers\n");
++            return -1;
++        }
++        q->input_buf = q->input_buf_db[0];
++        q->output_buf = q->output_buf_db[0];
++        q->n_in = q->n_out = 1;
++        q->ready = 1;
++        MP_INFO(f, "LiteRT: ANVIL session ready on %s (%dx%d)\n",
++                q->litert_provider, W, H);
++        return 0;
++    }
+ 
+     const char *dir = qnn_get_dir(override_dir);
+     char path[512];
+@@ -2029,6 +2132,9 @@
+ // and Phase 4 will read out_quant_buf directly — no separate quant/dequant pass.
+ static Qnn_ErrorHandle_t qnn_execute(struct qnn_state *q)
+ {
++    if (q->litert_session)
++        return q->litert_run(q->litert_session, q->input_buf, q->output_buf)
++            ? QNN_SUCCESS : (Qnn_ErrorHandle_t)1;
+     return q->qnn.graphExecute(q->graph,
+                                 q->in_tensors, q->n_in,
+                                 q->out_tensors, q->n_out,
+@@ -2038,6 +2144,9 @@
+ static void qnn_cleanup(struct qnn_state *q)
+ {
+     if (!q) return;
++    if (q->litert_session && q->litert_close)
++        q->litert_close(q->litert_session);
++    q->litert_session = NULL;
+     if (q->context) q->qnn.contextFree(q->context, NULL);
+     if (q->backend) q->qnn.backendFree(q->backend);
+     if (q->sys_ctx) q->sys.systemContextFree(q->sys_ctx);
+@@ -2049,6 +2158,8 @@
+     }
+     if (q->htp_lib) dlclose(q->htp_lib);
+     if (q->sys_lib) dlclose(q->sys_lib);
++    if (q->litert_lib) dlclose(q->litert_lib);
++    if (q->litert_runtime_lib) dlclose(q->litert_runtime_lib);
+     memset(q, 0, sizeof(*q));
+ }
+ 
+@@ -2065,20 +2176,35 @@
+ struct anvil_opts {
+     char *qnn_dir;
+     char *qnn_perf;
+-    bool require_qnn;
++    char *litert_model;
++    char *litert_gpu_model;
++    char *litert_library_dir;
++    char *litert_cache_dir;
++    char *litert_npu_backend;
++    char *litert_npu_execution;
++    char *litert_npu_target;
++    bool require_neural;
+ };
+ 
+ #define OPT_BASE_STRUCT struct anvil_opts
+ static const struct m_option vf_opts_fields[] = {
+     {"qnn-dir", OPT_STRING(qnn_dir)},
+     {"qnn-perf", OPT_STRING(qnn_perf)},
+-    {"require-qnn", OPT_BOOL(require_qnn)},
++    {"litert-model", OPT_STRING(litert_model)},
++    {"litert-gpu-model", OPT_STRING(litert_gpu_model)},
++    {"litert-library-dir", OPT_STRING(litert_library_dir)},
++    {"litert-cache-dir", OPT_STRING(litert_cache_dir)},
++    {"litert-npu-backend", OPT_STRING(litert_npu_backend)},
++    {"litert-npu-execution", OPT_STRING(litert_npu_execution)},
++    {"litert-npu-target", OPT_STRING(litert_npu_target)},
++    {"require-neural", OPT_BOOL(require_neural)},
++    {"require-qnn", OPT_BOOL(require_neural)},
+     {0}
+ };
+ 
+ static const struct anvil_opts vf_opts_defaults = {
+     .qnn_perf = "sustained",
+-    .require_qnn = true,
++    .require_neural = true,
+ };
+ 
+ struct priv {
+@@ -2141,17 +2267,15 @@
+     pthread_mutex_t htp_mutex;
+     pthread_cond_t  htp_ready_cond;   // signaled when HTP result is ready
+     pthread_cond_t  htp_start_cond;   // signaled when new HTP work is submitted
+-    int htp_has_work;                 // 1 = HTP thread should run inference
+-    int htp_result_ready;             // 1 = HTP finished, result available
++    int htp_has_work;                 // 1 = inference worker should run
++    int htp_in_progress;              // 1 = worker is using its selected buffer
++    int htp_work_slot;                // pending slot assigned to the worker
++    int htp_result_ready;             // 1 = inference result is available
++    int htp_result_slot;              // pending slot that produced the result
+     int htp_ok;                       // result of last inference (1=success)
+     double htp_inference_ms;
+     int htp_shutdown;                 // 1 = thread should exit
+     int htp_thread_created;           // 1 = pthread_create succeeded
+-
+-    // Captured tensor arrays for the HTP thread to use (set at kick time,
+-    // before the double-buffer is flipped for the next frame).
+-    Qnn_Tensor_t htp_in_tensors[QNN_MAX_TENSORS];
+-    Qnn_Tensor_t htp_out_tensors[QNN_MAX_TENSORS];
+ 
+     // Double-buffered pending state for HTP overlap
+     struct {
+@@ -2228,7 +2352,11 @@
+ {
+     struct priv *p = arg;
+     qnn_init(&p->qnn, p->filter, p->qnn_init_width, p->qnn_init_height,
+-             p->opts->qnn_dir, p->opts->qnn_perf);
++             p->opts->qnn_dir, p->opts->qnn_perf,
++             p->opts->litert_model, p->opts->litert_gpu_model,
++             p->opts->litert_library_dir, p->opts->litert_cache_dir,
++             p->opts->litert_npu_backend, p->opts->litert_npu_execution,
++             p->opts->litert_npu_target);
+     pthread_mutex_lock(&p->qnn_init_mutex);
+     p->qnn_checked = 1;
+     pthread_mutex_unlock(&p->qnn_init_mutex);
+@@ -2348,7 +2476,7 @@
+ }
+ 
+ // ====================================================================
+-// Section 9a: HTP async thread for pipeline parallelism (Phase B)
++// Section 9a: asynchronous accelerator worker for pipeline parallelism (Phase B)
+ // ====================================================================
+ 
+ static void *htp_thread_fn(void *arg)
+@@ -2356,60 +2484,73 @@
+     struct priv *p = (struct priv *)arg;
+     pthread_mutex_lock(&p->htp_mutex);
+     while (!p->htp_shutdown) {
+-        // Wait for work
+         while (!p->htp_has_work && !p->htp_shutdown)
+             pthread_cond_wait(&p->htp_start_cond, &p->htp_mutex);
+         if (p->htp_shutdown)
+             break;
++
++        int work_slot = p->htp_work_slot;
++        int buf_idx = p->pend[work_slot].buf_idx;
+         p->htp_has_work = 0;
++        p->htp_in_progress = 1;
+         pthread_mutex_unlock(&p->htp_mutex);
+ 
+-        // Run QNN inference using captured tensor arrays (blocking, ~13ms on HTP).
+-        // We use htp_in/out_tensors which were captured at kick time, NOT the
+-        // live qnn.in/out_tensors which may have been flipped to the next buffer.
+         double inference_started_ms = get_time_ms();
+-        Qnn_ErrorHandle_t err = p->qnn.qnn.graphExecute(
+-            p->qnn.graph,
+-            p->htp_in_tensors, p->qnn.n_in,
+-            p->htp_out_tensors, p->qnn.n_out,
+-            NULL, NULL);
++        int ok;
++        if (p->qnn.litert_session) {
++            ok = p->qnn.litert_run(p->qnn.litert_session,
++                                   p->qnn.input_buf_db[buf_idx],
++                                   p->qnn.output_buf_db[buf_idx]);
++        } else {
++            Qnn_ErrorHandle_t err = p->qnn.qnn.graphExecute(
++                p->qnn.graph,
++                p->qnn.in_tensors_db[buf_idx], p->qnn.n_in,
++                p->qnn.out_tensors_db[buf_idx], p->qnn.n_out,
++                NULL, NULL);
++            ok = err == QNN_SUCCESS;
++        }
+         double inference_duration_ms = get_time_ms() - inference_started_ms;
+ 
+         pthread_mutex_lock(&p->htp_mutex);
+-        p->htp_ok = (err == QNN_SUCCESS) ? 1 : 0;
++        p->htp_ok = ok;
+         p->htp_inference_ms = inference_duration_ms;
++        p->htp_result_slot = work_slot;
+         p->htp_result_ready = 1;
+-        pthread_cond_signal(&p->htp_ready_cond);
++        p->htp_in_progress = 0;
++        pthread_cond_broadcast(&p->htp_ready_cond);
+     }
+     pthread_mutex_unlock(&p->htp_mutex);
+     return NULL;
+ }
+ 
+-// Kick HTP inference asynchronously. The current QNN buffer slot must already
+-// be filled with input data. Captures the tensor arrays before signaling so
+-// the main thread can safely flip the double-buffer for the next frame.
+-static void htp_kick_async(struct priv *p)
+-{
+-    // Capture current tensor arrays before they get flipped
+-    memcpy(p->htp_in_tensors,  p->qnn.in_tensors,  sizeof(p->htp_in_tensors));
+-    memcpy(p->htp_out_tensors, p->qnn.out_tensors, sizeof(p->htp_out_tensors));
+-
++// Submit one buffer slot to the accelerator worker. The worker reads only the
++// slot captured here; the other slot remains available for GPU preparation.
++static void htp_kick_async(struct priv *p, int slot)
++{
+     pthread_mutex_lock(&p->htp_mutex);
++    while ((p->htp_has_work || p->htp_in_progress || p->htp_result_ready) &&
++           !p->htp_shutdown)
++        pthread_cond_wait(&p->htp_ready_cond, &p->htp_mutex);
++    if (p->htp_shutdown) {
++        pthread_mutex_unlock(&p->htp_mutex);
++        return;
++    }
++    p->htp_work_slot = slot;
+     p->htp_has_work = 1;
+-    p->htp_result_ready = 0;
+     pthread_cond_signal(&p->htp_start_cond);
+     pthread_mutex_unlock(&p->htp_mutex);
+ }
+ 
+-// Wait for the async HTP inference to complete. Returns the qnn_ok status.
+-static int htp_wait(struct priv *p)
++// Wait for the selected slot's inference result.
++static int htp_wait(struct priv *p, int slot)
+ {
+     pthread_mutex_lock(&p->htp_mutex);
+     while (!p->htp_result_ready)
+         pthread_cond_wait(&p->htp_ready_cond, &p->htp_mutex);
+-    int ok = p->htp_ok;
++    int ok = p->htp_result_slot == slot && p->htp_ok;
+     double inference_ms = p->htp_inference_ms;
+     p->htp_result_ready = 0;
++    pthread_cond_broadcast(&p->htp_ready_cond);
+     pthread_mutex_unlock(&p->htp_mutex);
+     p->last_inference_ms = inference_ms;
+     record_inference_sample(p, inference_ms);
+@@ -2420,8 +2561,8 @@
+ // Section 9b: start_interpolation / finish_interpolation (GPU/Q async path)
+ // ====================================================================
+ 
+-// Start interpolation: runs P1a + GPU + copy + kicks HTP async.
+-// Saves pending data for finish_interpolation. Only for GPU quantized path.
++// Prepare one interpolation pair with P1a + GPU + input copy. The caller
++// submits the selected pending slot after any earlier inference is consumed.
+ static void start_interpolation(struct priv *p, struct mp_filter *f,
+                                  struct mp_image *prev, struct mp_image *curr,
+                                  const AVMotionVector *mvs, int n_mvs)
+@@ -2449,36 +2590,41 @@
+     p->pend[p->pend_cur].t_p1a = get_time_ms() - t_phase;
+ 
+     // ---- Phase 1b + Phase 2: GPU dispatches ----
+-    float inv_scale = 1.0f / p->qnn.in_scale;
+-    int quant_offset = p->qnn.in_offset;
++    int use_quant_path = p->qnn.input_is_quantized;
++    float inv_scale = use_quant_path ? 1.0f / p->qnn.in_scale : 0.0f;
++    int quant_offset = use_quant_path ? p->qnn.in_offset : 0;
+     t_phase = get_time_ms();
+     vk_dispatch(&p->vk, y_stride, uv_stride, u_off, v_off,
+-                 1 /* use_quant */, inv_scale, quant_offset);
++                 use_quant_path, inv_scale, quant_offset);
+     p->pend[p->pend_cur].t_gpu = get_time_ms() - t_phase;
+ 
+-    // ---- Copy from SSBO to QNN input buffer (current slot) ----
++    // ---- Copy from SSBO to the current accelerator input buffer ----
+     t_phase = get_time_ms();
+     {
+         const size_t n = (size_t)W * H * 6;
++        if (use_quant_path) {
+ #ifdef __ARM_NEON
+-        const uint8_t *src = p->vk.nhwc_u8_ptr;
+-        uint8_t *dst = p->qnn.in_quant_buf;
+-        size_t i = 0;
+-        for (; i + 64 <= n; i += 64) {
+-            __builtin_prefetch(src + i + 256, 0, 0);
+-            uint8x16_t a = vld1q_u8(src + i);
+-            uint8x16_t b = vld1q_u8(src + i + 16);
+-            uint8x16_t c = vld1q_u8(src + i + 32);
+-            uint8x16_t d = vld1q_u8(src + i + 48);
+-            vst1q_u8(dst + i, a);
+-            vst1q_u8(dst + i + 16, b);
+-            vst1q_u8(dst + i + 32, c);
+-            vst1q_u8(dst + i + 48, d);
+-        }
+-        if (i < n) memcpy(dst + i, src + i, n - i);
++            const uint8_t *src = p->vk.nhwc_u8_ptr;
++            uint8_t *dst = p->qnn.in_quant_buf;
++            size_t i = 0;
++            for (; i + 64 <= n; i += 64) {
++                __builtin_prefetch(src + i + 256, 0, 0);
++                uint8x16_t a = vld1q_u8(src + i);
++                uint8x16_t b = vld1q_u8(src + i + 16);
++                uint8x16_t c = vld1q_u8(src + i + 32);
++                uint8x16_t d = vld1q_u8(src + i + 48);
++                vst1q_u8(dst + i, a);
++                vst1q_u8(dst + i + 16, b);
++                vst1q_u8(dst + i + 32, c);
++                vst1q_u8(dst + i + 48, d);
++            }
++            if (i < n) memcpy(dst + i, src + i, n - i);
+ #else
+-        memcpy(p->qnn.in_quant_buf, p->vk.nhwc_u8_ptr, n);
++            memcpy(p->qnn.in_quant_buf, p->vk.nhwc_u8_ptr, n);
+ #endif
++        } else {
++            memcpy(p->qnn.input_buf, p->vk.nhwc_ptr, n * sizeof(float));
++        }
+     }
+     p->pend[p->pend_cur].t_copy = get_time_ms() - t_phase;
+ 
+@@ -2486,11 +2632,8 @@
+     p->pend[p->pend_cur].out = mp_image_new_copy(curr);
+     p->pend[p->pend_cur].pts_prev = prev->pts;
+     p->pend[p->pend_cur].pts_curr = curr->pts;
+-    p->pend[p->pend_cur].use_quant_path = 1;
++    p->pend[p->pend_cur].use_quant_path = use_quant_path;
+     p->pend[p->pend_cur].buf_idx = p->qnn.buf_idx;
+-
+-    // ---- Kick HTP async ----
+-    htp_kick_async(p);
+ 
+     // ---- Flip to the other buffer for the next frame ----
+     qnn_switch_buffer(&p->qnn, 1 - p->qnn.buf_idx);
+@@ -2507,14 +2650,14 @@
+     int W = p->pend[slot].out->w, H = p->pend[slot].out->h;
+     double t_phase;
+ 
+-    // ---- Wait for HTP ----
++    // ---- Wait for accelerator inference ----
+     t_phase = get_time_ms();
+-    int qnn_ok = htp_wait(p);
++    int qnn_ok = htp_wait(p, slot);
+     double t_p3 = get_time_ms() - t_phase;
+     p->last_qnn_success = qnn_ok;
+ 
+     if (!qnn_ok)
+-        MP_WARN(f, "QNN: graphExecute failed (async), using blend only\n");
++        MP_WARN(f, "ANVIL: neural inference failed (async), using blend only\n");
+ 
+     // ---- Phase 4: dequant + residual + clamp + rgb2yuv ----
+     // Use the buffer slot that HTP wrote to (pend[slot].buf_idx)
+@@ -2571,7 +2714,10 @@
+             args[t].blend_r = NULL;
+             args[t].blend_g = NULL;
+             args[t].blend_b = NULL;
+-            args[t].nhwc_quant = p->qnn.in_quant_buf_db[htp_buf];
++            args[t].nhwc_quant = p->qnn.input_is_quantized ?
++                p->qnn.in_quant_buf_db[htp_buf] : NULL;
++            args[t].nhwc_float = p->qnn.input_is_quantized ?
++                NULL : p->qnn.input_buf_db[htp_buf];
+             args[t].in_scale = p->qnn.in_scale;
+             args[t].in_offset = p->qnn.in_offset;
+             args[t].out_quant_buf = p->qnn.out_quant_buf_db[htp_buf];
+@@ -2599,7 +2745,7 @@
+                          p->pend[slot].pts_prev, p->pend[slot].pts_curr);
+ 
+     if (p->frame_count % p->log_interval == 0)
+-        MP_INFO(f, "ANVIL[GPU/Q/async]: total=%.1fms  P1a=%.1f  GPU=%.1f  copy=%.1f  P3=%.1f  P4%s=%.1f\n",
++        MP_INFO(f, "ANVIL[GPU/async]: total=%.1fms  P1a=%.1f  GPU=%.1f  copy=%.1f  P3=%.1f  P4%s=%.1f\n",
+                 t_all, p->pend[slot].t_p1a, p->pend[slot].t_gpu, p->pend[slot].t_copy, t_p3,
+                 gpu_p4 ? "(GPU)" : "", t_p4);
+ 
+@@ -2759,7 +2905,7 @@
+             qnn_ok = err == QNN_SUCCESS;
+             p->last_qnn_success = qnn_ok;
+             if (!qnn_ok)
+-                MP_WARN(f, "QNN: graphExecute failed (0x%lx), using blend only\n",
++                MP_WARN(f, "ANVIL: neural inference failed (0x%lx), using blend only\n",
+                         (unsigned long)err);
+         }
+         double t_p3 = get_time_ms() - t_phase;
+@@ -2816,6 +2962,7 @@
+                 args[t].blend_g = blend_g;
+                 args[t].blend_b = blend_b;
+                 args[t].nhwc_quant = use_quant_path ? p->qnn.in_quant_buf : NULL;
++                args[t].nhwc_float = NULL;
+                 args[t].in_scale = p->qnn.in_scale;
+                 args[t].in_offset = p->qnn.in_offset;
+                 args[t].out_quant_buf = p->qnn.out_quant_buf;
+@@ -2923,7 +3070,7 @@
+             qnn_ok = err == QNN_SUCCESS;
+             p->last_qnn_success = qnn_ok;
+             if (!qnn_ok)
+-                MP_WARN(f, "QNN: graphExecute failed (0x%lx), using blend only\n",
++                MP_WARN(f, "ANVIL: neural inference failed (0x%lx), using blend only\n",
+                         (unsigned long)err);
+         }
+         double t_p3 = get_time_ms() - t_phase;
+@@ -2945,6 +3092,7 @@
+                 args[t].blend_g = blend_g;
+                 args[t].blend_b = blend_b;
+                 args[t].nhwc_quant = NULL;  // CPU path: blend from Phase 2
++                args[t].nhwc_float = NULL;
+                 args[t].in_scale = 0;
+                 args[t].in_offset = 0;
+                 args[t].out_quant_buf = p->qnn.out_quant_buf;
+@@ -3046,7 +3194,7 @@
+             out = p->interp;
+             p->interp = NULL;
+         }
+-        if (p->opts->require_qnn && !p->last_qnn_success) {
++        if (p->opts->require_neural && !p->last_qnn_success) {
+             mp_image_unrefp(&out);
+             p->last_frame_generated = false;
+             mp_pin_in_write(f->ppins[1], p->stored_curr);
+@@ -3151,7 +3299,7 @@
+     start_qnn_init(p, f, W, H);
+     int qnn_checked, qnn_ready;
+     qnn_init_status(p, &qnn_checked, &qnn_ready);
+-    if (!qnn_checked || (p->opts->require_qnn && !qnn_ready)) {
++    if (!qnn_checked || (p->opts->require_neural && !qnn_ready)) {
+         p->last_qnn_success = false;
+         p->last_frame_generated = false;
+         mp_image_unrefp(&p->prev);
+@@ -3175,8 +3323,8 @@
+         }
+     }
+ 
+-    // Start HTP async thread on first frame (after QNN init)
+-    if (p->qnn.ready && !p->htp_thread_created) {
++    // Start the async accelerator worker on first frame (after model init)
++    if (p->qnn.ready && p->vk.ready && !p->htp_thread_created) {
+         pthread_mutex_init(&p->htp_mutex, NULL);
+         pthread_cond_init(&p->htp_ready_cond, NULL);
+         pthread_cond_init(&p->htp_start_cond, NULL);
+@@ -3185,7 +3333,7 @@
+         p->htp_result_ready = 0;
+         if (pthread_create(&p->htp_thread, NULL, htp_thread_fn, p) == 0) {
+             p->htp_thread_created = 1;
+-            MP_INFO(f, "ANVIL: HTP async thread started (pipeline parallelism)\n");
++            MP_INFO(f, "ANVIL: neural inference worker started (pipeline overlap)\n");
+         } else {
+             MP_WARN(f, "ANVIL: failed to create HTP thread, using synchronous path\n");
+         }
+@@ -3241,8 +3389,8 @@
+ 
+     // Decide path: async pipeline (GPU/Q + async HTP) or synchronous
+     int use_vk = p->vk.ready && p->vk.W == W && p->vk.H == H;
+-    int use_async = use_vk && p->qnn.ready && p->qnn.input_is_quantized
+-                    && p->htp_thread_created;
++    int use_async = use_vk && p->qnn.ready && p->htp_thread_created &&
++                    (p->qnn.input_is_quantized || p->qnn.litert_session);
+ 
+     if (use_async) {
+         int prev_slot = p->pend_cur;
+@@ -3259,13 +3407,17 @@
+             p->pend[new_slot].t_total = get_time_ms();
+             start_interpolation(p, f, p->prev, mpi, mvs, n_mvs);
+ 
+-            // Step 2: Finish PREVIOUS interpolation (wait HTP — should be fast due to overlap)
++            // Step 2: Finish PREVIOUS interpolation (wait for its accelerator job).
+             struct mp_image *prev_interp = finish_interpolation(p, f, prev_slot);
++
++            // Submit the prepared pair after the worker has released the prior
++            // slot. Its inference now overlaps output of the previous pair.
++            htp_kick_async(p, new_slot);
+ 
+             // Step 3: Output the previous pair. A failed HTP inference is a
+             // passthrough, not a classical MV-blend substitute.
+             bool inference_ok = p->last_qnn_success;
+-            if (p->opts->require_qnn && !inference_ok) {
++            if (p->opts->require_neural && !inference_ok) {
+                 mp_image_unrefp(&prev_interp);
+                 p->last_frame_generated = false;
+                 mp_pin_in_write(f->ppins[1], p->stored_curr);
+@@ -3285,13 +3437,14 @@
+             mp_image_unrefp(&p->prev);
+             p->prev = mp_image_new_ref(mpi);
+ 
+-            p->state = (p->opts->require_qnn && !inference_ok)
++            p->state = (p->opts->require_neural && !inference_ok)
+                 ? STATE_HAVE_INTERP : STATE_HAVE_CURR;
+             mp_filter_internal_mark_progress(f);
+         } else {
+             // ===== COLD START: no overlap =====
+             p->pend[p->pend_cur].t_total = get_time_ms();
+             start_interpolation(p, f, p->prev, mpi, mvs, n_mvs);
++            htp_kick_async(p, p->pend_cur);
+ 
+             mp_image_unrefp(&p->prev);
+             p->prev = mp_image_new_ref(mpi);
+@@ -3303,7 +3456,7 @@
+     } else {
+         // Synchronous path (unchanged)
+         p->interp = compute_interpolated(p, f, p->prev, mpi, mvs, n_mvs);
+-        if (p->opts->require_qnn && !p->last_qnn_success) {
++        if (p->opts->require_neural && !p->last_qnn_success) {
+             mp_image_unrefp(&p->interp);
+             mp_image_unrefp(&p->prev);
+             p->prev = mp_image_new_ref(mpi);
+@@ -3397,11 +3550,21 @@
+     struct mp_tags *tags = talloc_zero(NULL, struct mp_tags);
+     int qnn_checked, qnn_ready;
+     qnn_init_status(p, &qnn_checked, &qnn_ready);
+-    const char *provider = p->last_qnn_success ?
+-        mp_tprintf(32, "qnn-htp-v%s", p->qnn.htp_version) :
+-        (qnn_ready ? mp_tprintf(32, "qnn-htp-v%s-ready", p->qnn.htp_version) :
+-         (qnn_checked ? "unavailable" : "initializing"));
++    const char *provider;
++    if (p->qnn.litert_session || p->qnn.litert_provider[0]) {
++        provider = p->last_qnn_success ? p->qnn.litert_provider :
++            (qnn_ready ? mp_tprintf(48, "%s-ready", p->qnn.litert_provider) :
++             (qnn_checked ? "unavailable" : "initializing"));
++    } else {
++        provider = p->last_qnn_success ?
++            mp_tprintf(32, "qnn-htp-v%s", p->qnn.htp_version) :
++            (qnn_ready ? mp_tprintf(32, "qnn-htp-v%s-ready", p->qnn.htp_version) :
++             (qnn_checked ? "unavailable" : "initializing"));
++    }
+     mp_tags_set_str(tags, "provider", provider);
++    mp_tags_set_str(tags, "provider-vendor",
++                    p->qnn.litert_provider_vendor[0] ? p->qnn.litert_provider_vendor :
++                    (p->qnn.ready && !p->qnn.litert_session ? "Qualcomm HTP" : ""));
+     mp_tags_set_str(tags, "power-mode",
+                     p->qnn.power_config_set ? p->qnn.power_mode : "unavailable");
+     mp_tags_set_str(tags, "active", p->last_frame_generated ? "yes" : "no");
+@@ -3414,7 +3577,10 @@
+                     mp_tprintf(32, "%llu", p->scene_cut_bypasses));
+     mp_tags_set_str(tags, "deadline-misses",
+                     mp_tprintf(32, "%llu", p->deadline_misses));
+-    mp_tags_set_str(tags, "requires-qnn", p->opts->require_qnn ? "yes" : "no");
++    mp_tags_set_str(tags, "requires-neural", p->opts->require_neural ? "yes" : "no");
++    mp_tags_set_str(tags, "requires-qnn",
++                    p->opts->require_neural && !p->opts->litert_model &&
++                    !p->opts->litert_gpu_model ? "yes" : "no");
+     *(struct mp_tags **)cmd->res = tags;
+     return true;
+ }
+@@ -3444,7 +3610,7 @@
+     p->opts = talloc_steal(p, options);
+     if (!p->opts) {
+         p->opts = talloc_zero(p, struct anvil_opts);
+-        p->opts->require_qnn = true;
++        p->opts->require_neural = true;
+     }
+     p->filter = f;
+     p->qnn_init_sync_initialized = pthread_mutex_init(&p->qnn_init_mutex, NULL) == 0;
+@@ -3461,7 +3627,7 @@
+     mp_filter_add_pin(f, MP_PIN_IN, "in");
+     mp_filter_add_pin(f, MP_PIN_OUT, "out");
+ 
+-    MP_INFO(f, "ANVIL VFI frame-doubler (Vulkan GPU + HTP, log_interval=%d)\n", p->log_interval);
++    MP_INFO(f, "ANVIL VFI frame-doubler (Vulkan GPU + neural provider, log_interval=%d)\n", p->log_interval);
+     return f;
+ }
+ 

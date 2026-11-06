@@ -22,6 +22,43 @@ MAX_ENTRIES = 50000
 SYMBOL = 'mpv_plezy_audio_tap_read_next'
 REQUIRED_SYMBOLS = ['mpv_plezy_audio_tap_version', 'mpv_plezy_audio_tap_enable',
                     'mpv_plezy_audio_tap_read', SYMBOL]
+MOTION_MARKERS = {
+    'pme': (b'plezy-pme\0', b'pme_runtime_open\0'),
+    'anvil': (b'anvil\0', b'QnnInterface_getProviders\0'),
+    'litert': (b'plezy_litert_motion_open\0', b'plezy_litert_motion_run\0'),
+    'videotoolbox': (b'avfoundation-motion-interpolation\0', b'avfoundation-motion-preset\0'),
+}
+
+
+def required_motion_features(platform, architecture):
+    if platform in ('linux', 'windows'):
+        return ['pme']
+    if platform == 'android':
+        return ['anvil', 'litert'] if architecture == 'arm64' else []
+    if platform == 'apple':
+        return ['videotoolbox']
+    if platform is not None:
+        raise ValueError('Unknown motion packaging platform')
+    return []
+
+
+def inspect_motion_features(binary, platform, architectures):
+    """Verify compiled filter/provider code markers per slice, not execution."""
+    found = {}
+    with tempfile.TemporaryDirectory(prefix='mpv-motion-') as temporary:
+        for architecture in architectures:
+            target = binary
+            if platform == 'apple' and len(architectures) > 1:
+                target = Path(temporary) / architecture
+                subprocess.run(['xcrun', 'lipo', str(binary), '-thin', architecture,
+                                '-output', str(target)], check=True, timeout=120)
+            content = target.read_bytes()
+            features = required_motion_features(platform, architecture)
+            for feature in features:
+                if any(marker not in content for marker in MOTION_MARKERS[feature]):
+                    raise ValueError(f'MPV {architecture} binary omits the implemented {feature} neural path')
+            found[architecture] = features
+    return found
 APPLE_REQUIRED = {
     ('ios', '', 'arm64'), ('ios', 'simulator', 'arm64'), ('ios', 'simulator', 'x86_64'),
     ('ios', 'maccatalyst', 'arm64'), ('ios', 'maccatalyst', 'x86_64'),
@@ -62,7 +99,7 @@ def binary_architectures(path: Path) -> list[str]:
     return sorted(archs)
 
 
-def inspect(package: Path, expected: int | None = None) -> dict:
+def inspect(package: Path, expected: int | None = None, motion_platform=None) -> dict:
     package = package.resolve(strict=True)
     if package.stat().st_size > MAX_TOTAL:
         raise ValueError('MPV archive exceeds packaging bound')
@@ -71,7 +108,7 @@ def inspect(package: Path, expected: int | None = None) -> dict:
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
     found, names, hashes, total = [], set(), {}, 0
-    architectures, plists = {}, {}
+    architectures, plists, neural_filters = {}, {}, {}
     with tempfile.TemporaryDirectory(prefix='mpv-abi-') as temporary:
         def member(name, size, regular, source):
             nonlocal total
@@ -112,6 +149,7 @@ def inspect(package: Path, expected: int | None = None) -> dict:
             found.append(normalized)
             hashes[normalized] = binary_digest.hexdigest()
             architectures[normalized] = binary_architectures(target)
+            neural_filters[normalized] = inspect_motion_features(target, motion_platform, architectures[normalized])
 
         if zipfile.is_zipfile(package):
             with zipfile.ZipFile(package) as archive:
@@ -174,9 +212,10 @@ def inspect(package: Path, expected: int | None = None) -> dict:
             slices.append({'binary': binary, 'platform': platform, 'variant': variant, 'architectures': sorted(declared)})
         if used != set(found) or not APPLE_REQUIRED <= coverage:
             raise ValueError('MPV XCFramework does not cover every required Apple platform and architecture')
-    return {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 3, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
+    return {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 4, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
             'symbol': SYMBOL, 'binaries': sorted(found), 'binarySha256': hashes,
-            'binaryArchitectures': architectures, 'appleSlices': slices, 'executionQualified': False}
+            'binaryArchitectures': architectures, 'appleSlices': slices, 'neuralFilters': neural_filters,
+            'motionPlatform': motion_platform, 'executionQualified': False}
 
 
 if __name__ == '__main__':
@@ -184,5 +223,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('package', type=Path)
     parser.add_argument('--expected', type=int)
+    parser.add_argument('--motion-platform', choices=('apple', 'android', 'linux', 'windows'))
     args = parser.parse_args()
-    print(json.dumps(inspect(args.package, args.expected), sort_keys=True))
+    print(json.dumps(inspect(args.package, args.expected, args.motion_platform), sort_keys=True))

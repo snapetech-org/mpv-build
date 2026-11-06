@@ -23,3 +23,6 @@
 0039-ao-spatial-render-truehd-atmos-and-dts-x.patch
 0040-ao-decode-the-playing-track-to-pcm-when-passthrough-fails.patch
 0041-avfoundation-say-when-avplayer-never-asked-for-the-stream.patch
+
+# Normal native builds include opt-in neural processing.
+0042-avfoundation-videotoolbox-motion-interpolation.patch

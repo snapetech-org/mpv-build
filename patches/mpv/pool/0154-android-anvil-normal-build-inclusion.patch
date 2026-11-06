@@ -1,0 +1,32 @@
+diff --git a/meson.build b/meson.build
+index 7ee48c9..d244fca 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1779,15 +1779,16 @@ endif
+ # QAIRT headers are consumed at build time; the app supplies licensed runtime
+ # libraries and the device-matched context pack at run time.
+ anvil_includes = []
++anvil_c_args = []
+ if host_machine.system() == 'android' and host_machine.cpu_family() == 'aarch64'
+     qairt_root = run_command('sh', '-c', 'printf %s "$QAIRT_SDK_ROOT"', check: false).stdout().strip()
+     if qairt_root != '' and fs.is_file(qairt_root / 'include/QNN/QnnInterface.h')
+         anvil_includes += include_directories(qairt_root / 'include')
+         dependencies += cc.find_library('vulkan', required: true)
+-        add_project_arguments('-DPLEZY_HAVE_ANVIL', language: 'c')
++        anvil_c_args += ['-DPLEZY_HAVE_ANVIL']
+         sources += files('video/filter/vf_anvil.c')
+     else
+-        warning('Android ANVIL is not compiled because QAIRT_SDK_ROOT with QNN headers was not supplied')
++        error('Normal Android ARM64 builds require the pinned QAIRT headers for neural/NPU filters')
+     endif
+ endif
+ 
+@@ -1855,7 +1856,7 @@ major = client_h_define.split('|')[0].split('<<')[0].strip('() ')
+ minor = client_h_define.split('|')[1].strip('() ')
+ client_api_version = major + '.' + minor + '.0'
+ 
+-libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
++libmpv = library('mpv', sources, c_args: anvil_c_args, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
+                  include_directories: [incdir_public] + anvil_includes,
+                  link_args: cc.get_supported_link_arguments(['-Wl,-Bsymbolic']),
+                  version: client_api_version, install: get_option('libmpv'),

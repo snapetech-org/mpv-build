@@ -643,7 +643,7 @@ def pcm_inspection_key_inputs(root: Path) -> list[str]:
         "scripts/inspect_pcm_package.py", "scripts/check_plezy_audio_tap_export.py")]
 
 
-def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
+def pcm_receipt_problems(entry: dict, label: str, expected=None, motion_platform=None) -> list[str]:
     receipt = entry.get("capabilities")
     if not isinstance(receipt, dict):
         return [f"{label}: no packaged ordered-PCM receipt"]
@@ -651,7 +651,7 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
     hashes = receipt.get("binarySha256")
     architectures = receipt.get("binaryArchitectures")
     if (receipt.get("orderedSubtitlePcmAbi") != 1 or
-            receipt.get("inspectionSchema") != 3 or
+            receipt.get("inspectionSchema") != 4 or
             receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
                 "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
             receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
@@ -666,6 +666,22 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None) -> list[str]:
             any(not isinstance(value, list) or not value or any(arch not in ('i386', 'armv7', 'arm64', 'arm64e', 'x86_64')
                 for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
         return [f"{label}: mismatched packaged ordered-PCM receipt"]
+    if motion_platform:
+        neural = receipt.get("neuralFilters")
+        if receipt.get("motionPlatform") != motion_platform or not isinstance(neural, dict) or set(neural) != set(binaries):
+            return [f"{label}: no packaged neural filter receipt"]
+        for binary in binaries:
+            wanted = {}
+            for architecture in architectures[binary]:
+                if motion_platform == "android":
+                    features = ["anvil", "litert"] if architecture == "arm64" else []
+                elif motion_platform == "apple":
+                    features = ["videotoolbox"]
+                else:
+                    features = ["pme"]
+                wanted[architecture] = features
+            if neural[binary] != wanted:
+                return [f"{label}: packaged neural filter coverage does not match its architectures"]
     if expected == 1 and label in ('x86_64', 'aarch64'):
         machine = 'arm64' if label == 'aarch64' else 'x86_64'
         if any(value != [machine] for value in architectures.values()):
@@ -745,14 +761,14 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
     if group.artifacts is not None:
         problems = _artifact_entry_problems(entry, key, group.artifacts[library])
         if library == "mpv-android":
-            problems.extend(pcm_receipt_problems(entry, library, 4))
+            problems.extend(pcm_receipt_problems(entry, library, 4, group.name))
             paths = (entry.get("capabilities") or {}).get("binaries", [])
             required = {f"jni/{abi}/libmpv.so" for abi in group.platforms}
             if not isinstance(paths, list) or set(name for name in paths if isinstance(name, str)) != required:
                 problems.append("mpv-android: ordered-PCM receipt does not cover every ABI")
         elif "mpv" in group.artifacts[library].components:
             for variant, value in (entry.get("prebuilt") or {}).items():
-                if isinstance(value, dict): problems.extend(pcm_receipt_problems(value, variant, 1))
+                if isinstance(value, dict): problems.extend(pcm_receipt_problems(value, variant, 1, group.name))
         return problems
 
     problems = []
@@ -772,7 +788,7 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
         problems.append("no frameworks recorded")
     for name, framework in sorted(frameworks.items()):
         if library == "libmpv":
-            problems.extend(pcm_receipt_problems(framework, name))
+            problems.extend(pcm_receipt_problems(framework, name, motion_platform=group.name))
         asset = framework.get("asset")
         checksum = framework.get("checksum", "")
         if asset != framework_asset(name, key):
@@ -954,7 +970,7 @@ def _record_variant(args, root: Path, group: Group) -> int:
             "checksum": _sha256_file(target),
         }
         if "mpv" in spec.components:
-            entry["prebuilt"][args.platform]["capabilities"] = pcm_capability(root, target, 1)
+            entry["prebuilt"][args.platform]["capabilities"] = pcm_capability(root, target, 1, group.name)
         if spec.symbols_pattern:
             entry.setdefault("symbols", {}).update(
                 _record_symbols(release, artifact_id, spec, key, (args.platform,))
@@ -969,12 +985,12 @@ def _record_variant(args, root: Path, group: Group) -> int:
     return 0
 
 
-def pcm_capability(root: Path, artifact: Path, expected=None):
+def pcm_capability(root: Path, artifact: Path, expected=None, motion_platform=None):
     import importlib.util
     spec = importlib.util.spec_from_file_location("plezy_pcm_package", root / "scripts/inspect_pcm_package.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.inspect(artifact, expected)
+    return module.inspect(artifact, expected, motion_platform)
 
 
 def cmd_record_platform(args, root: Path, group: Group) -> int:
@@ -1038,7 +1054,7 @@ def cmd_record_packages(args, root: Path, group: Group) -> int:
             continue
         entry = {"key": key, "asset": target.name, "checksum": _sha256_file(target)}
         if artifact_id == "mpv-android":
-            entry["capabilities"] = pcm_capability(root, target, 4)
+            entry["capabilities"] = pcm_capability(root, target, 4, group.name)
         if spec.symbols_pattern:
             entry["symbols"] = _record_symbols(
                 release, artifact_id, spec, key, spec.symbols_variants
@@ -1101,7 +1117,7 @@ def cmd_record_frameworks(args, root: Path, group: Group) -> int:
                 "checksum": swiftpm_checksum(addressed),
             }
             if library == "libmpv":
-                frameworks[name]["capabilities"] = pcm_capability(root, addressed)
+                frameworks[name]["capabilities"] = pcm_capability(root, addressed, motion_platform=group.name)
 
         if not frameworks:
             raise SystemExit(f"{library}: no static libraries found in {reference.name}")

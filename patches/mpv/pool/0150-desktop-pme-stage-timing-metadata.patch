@@ -1,0 +1,144 @@
+From: PlezyNG
+Subject: [PATCH] PME: publish per-stage playback timings
+
+Expose preprocessing, model inference, reconstruction, and total pipeline time in filter metadata.
+This distinguishes provider latency from end-to-end deadline misses during local qualification.
+
+diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1654,6 +1654,13 @@
+     bool last_frame_generated;
+     double last_inference_ms;
+     double inference_p95_ms;
++    double preprocessing_ms;
++    double flow_preparation_ms;
++    double gpu_upload_ms;
++    double vulkan_dispatch_ms;
++    double tensor_copy_ms;
++    double reconstruction_ms;
++    double pipeline_ms;
+     unsigned long long generated_frames;
+     unsigned long long scene_cut_bypasses;
+     unsigned long long deadline_misses;
+@@ -1676,6 +1683,13 @@
+     bool last_pme_success;
+     bool last_frame_generated;
+     double last_inference_ms;
++    double preprocessing_ms;
++    double flow_preparation_ms;
++    double gpu_upload_ms;
++    double vulkan_dispatch_ms;
++    double tensor_copy_ms;
++    double reconstruction_ms;
++    double pipeline_ms;
+     unsigned long long generated_frames;
+     unsigned long long scene_cut_bypasses;
+     double inference_samples[PME_INFERENCE_WINDOW];
+@@ -2007,14 +2021,24 @@
+         !p->nhwc_cached || !p->pme.input_buf || !p->pme.output_buf)
+         return NULL;
++    p->preprocessing_ms = 0.0;
++    p->flow_preparation_ms = 0.0;
++    p->gpu_upload_ms = 0.0;
++    p->vulkan_dispatch_ms = 0.0;
++    p->tensor_copy_ms = 0.0;
++    p->reconstruction_ms = 0.0;
++    p->pipeline_ms = 0.0;
+ #ifdef PLEZY_HAVE_PME_VULKAN
+     const bool use_vk = p->vk.ready && p->vk.W == W && p->vk.H == H;
+ 
+     if (use_vk) {
++        const double flow_started = get_time_ms();
+         zoh_fill(mvs, n_mvs, p->flow_x, p->flow_y, H, W);
+         int dH, dW;
+         downsample(p->flow_x, p->vk.sm_fx_a_ptr, H, W, PA_DS, &dH, &dW);
+         downsample(p->flow_y, p->vk.sm_fy_a_ptr, H, W, PA_DS, &dH, &dW);
+-
++        p->flow_preparation_ms = get_time_ms() - flow_started;
++
++        const double upload_started = get_time_ms();
+         int y_stride, uv_stride, u_off, v_off;
+         vk_pack_yuv(p->vk.prev_yuv_ptr,
+                     prev->planes[0], prev->stride[0], prev->planes[1], prev->stride[1],
+@@ -2025,7 +2049,13 @@
+                     curr->planes[0], curr->stride[0], curr->planes[1], curr->stride[1],
+                     curr->planes[2], curr->stride[2], W, H,
+                     &y_stride, &uv_stride, &u_off, &v_off);
++        p->gpu_upload_ms = get_time_ms() - upload_started;
++
++        const double dispatch_started = get_time_ms();
+         vk_dispatch(&p->vk, y_stride, uv_stride, u_off, v_off, false, 0.0f, 0);
++        p->vulkan_dispatch_ms = get_time_ms() - dispatch_started;
++
++        const double tensor_copy_started = get_time_ms();
+         memcpy(p->nhwc_cached, p->vk.nhwc_ptr, pixels * 6 * sizeof(float));
+         for (size_t i = 0; i < pixels; i++) {
+             for (int c = 0; c < 6; c++)
+@@ -2034,6 +2064,7 @@
+         memcpy(p->blend_rgb[0], p->vk.blend_r_ptr, pixels * sizeof(float));
+         memcpy(p->blend_rgb[1], p->vk.blend_g_ptr, pixels * sizeof(float));
+         memcpy(p->blend_rgb[2], p->vk.blend_b_ptr, pixels * sizeof(float));
++        p->tensor_copy_ms = get_time_ms() - tensor_copy_started;
+     } else
+ #endif
+     {
+@@ -2066,11 +2097,13 @@
+     }
+ 
+     const double inference_started = get_time_ms();
++    p->preprocessing_ms = inference_started - started;
+     const int pme_ok = pme_execute(&p->pme) == 0;
+     p->last_inference_ms = get_time_ms() - inference_started;
+     record_inference_sample(p, p->last_inference_ms);
+     p->last_pme_success = pme_ok;
+     if (!pme_ok) {
++        p->pipeline_ms = get_time_ms() - started;
+         if (p->neural_probe_pending)
+             start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
+         MP_WARN(f, "PME inference failed; source cadence will continue\n");
+@@ -2080,6 +2113,7 @@
+     struct mp_image *out = mp_image_new_copy(curr);
+     if (!out)
+         return NULL;
++    const double reconstruction_started = get_time_ms();
+     pthread_t threads[N_THREADS - 1];
+     struct phase4_args args[N_THREADS];
+     const int rows_per = (H / N_THREADS) & ~1;
+@@ -2101,6 +2135,8 @@
+     phase4_thread_fn(&args[N_THREADS - 1]);
+     for (int t = 0; t < N_THREADS - 1; t++)
+         pthread_join(threads[t], NULL);
++    p->reconstruction_ms = get_time_ms() - reconstruction_started;
++    p->pipeline_ms = get_time_ms() - started;
+ 
+     const double source_duration = curr->pts - prev->pts;
+     out->pts = prev->pts + source_duration / 2.0;
+@@ -2126,6 +2162,13 @@
+     p->published_stats.last_frame_generated = p->last_frame_generated;
+     p->published_stats.last_inference_ms = p->last_inference_ms;
+     p->published_stats.inference_p95_ms = inference_p95_ms(p);
++    p->published_stats.preprocessing_ms = p->preprocessing_ms;
++    p->published_stats.flow_preparation_ms = p->flow_preparation_ms;
++    p->published_stats.gpu_upload_ms = p->gpu_upload_ms;
++    p->published_stats.vulkan_dispatch_ms = p->vulkan_dispatch_ms;
++    p->published_stats.tensor_copy_ms = p->tensor_copy_ms;
++    p->published_stats.reconstruction_ms = p->reconstruction_ms;
++    p->published_stats.pipeline_ms = p->pipeline_ms;
+     p->published_stats.generated_frames = p->generated_frames;
+     p->published_stats.scene_cut_bypasses = p->scene_cut_bypasses;
+     p->published_stats.deadline_misses = p->deadline_misses;
+@@ -2637,6 +2680,13 @@
+     mp_tags_set_str(tags, "gpu", p->vk.ready ? p->vk.device_name : "cpu");
+     mp_tags_set_str(tags, "inference-ms", mp_tprintf(32, "%.3f", stats.last_inference_ms));
+     mp_tags_set_str(tags, "inference-p95-ms", mp_tprintf(32, "%.3f", stats.inference_p95_ms));
++    mp_tags_set_str(tags, "preprocessing-ms", mp_tprintf(32, "%.3f", stats.preprocessing_ms));
++    mp_tags_set_str(tags, "flow-preparation-ms", mp_tprintf(32, "%.3f", stats.flow_preparation_ms));
++    mp_tags_set_str(tags, "gpu-upload-ms", mp_tprintf(32, "%.3f", stats.gpu_upload_ms));
++    mp_tags_set_str(tags, "vulkan-dispatch-ms", mp_tprintf(32, "%.3f", stats.vulkan_dispatch_ms));
++    mp_tags_set_str(tags, "tensor-copy-ms", mp_tprintf(32, "%.3f", stats.tensor_copy_ms));
++    mp_tags_set_str(tags, "reconstruction-ms", mp_tprintf(32, "%.3f", stats.reconstruction_ms));
++    mp_tags_set_str(tags, "pipeline-ms", mp_tprintf(32, "%.3f", stats.pipeline_ms));
+     mp_tags_set_str(tags, "generated-frames", mp_tprintf(32, "%llu", stats.generated_frames));
+     mp_tags_set_str(tags, "source-frames", mp_tprintf(32, "%d", p->frame_count));
+     mp_tags_set_str(tags, "scene-cut-bypasses", mp_tprintf(32, "%llu", stats.scene_cut_bypasses));

@@ -83,4 +83,4 @@ rm -f "$ASSET"
 echo "$ASSET"
 echo "$SYMBOLS"
 
-python3 "$ROOT/scripts/inspect_pcm_package.py" "$ASSET" --expected 1
+python3 "$ROOT/scripts/inspect_pcm_package.py" "$ASSET" --expected 1 --motion-platform windows

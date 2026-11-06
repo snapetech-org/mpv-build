@@ -227,6 +227,8 @@ jobs:
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
           python3 scripts/test_prepare_android_java.py
+          python3 scripts/test_prepare_android_qairt.py
+          python3 scripts/test_inspect_pcm_package.py
 
       - name: Test shared extractor
         run: ./scripts/test_extract.sh

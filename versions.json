@@ -500,6 +500,17 @@
         "windows"
       ],
       "overrides": {}
+    },
+    "qairt": {
+      "kind": "archive",
+      "version": "2.50.0.260828",
+      "url": "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip",
+      "sha256": "a346ea0e2c8631b46d57261a4969994cd9cc34124a8355bbc7b08b2c8bd859a5",
+      "provenance": "Official SDK version selected by LiteRT v2.3.0 third_party/qairt/workspace.bzl. Full 2601473189-byte archive downloaded over HTTPS and SHA-256 verified on 2026-11-06. Only compile-time headers and original licensing notices are privately staged; no standalone SDK source redistribution. Native ANVIL and LiteRT filters are included in ordinary Android ARM64 builds.",
+      "platforms": [
+        "android"
+      ],
+      "overrides": {}
     }
   }
 }

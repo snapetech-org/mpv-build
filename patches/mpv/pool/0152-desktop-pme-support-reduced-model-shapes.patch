@@ -1,0 +1,567 @@
+From: PlezyNG <dev@plezyng.app>
+Subject: [PATCH] desktop: run reduced PME models at model resolution
+
+Scale each decoded pair to the fixed model shape before flow, Vulkan warp,
+inference, and reconstruction, then upscale the synthesized midpoint to the
+source dimensions. Keep submitted-pair deadline accounting and timing telemetry.
+
+diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
+index bbdf2fa..1d67a9c 100644
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -56,6 +56,7 @@
+ #include "osdep/timer.h"
+ #include "video/mp_image.h"
+ #include "video/img_format.h"
++#include "video/sws_utils.h"
+ #include "plezy_motion_engine/pme_runtime.h"
+ 
+ // Optional Vulkan compute (GPU prealign + warp)
+@@ -1100,6 +1101,45 @@ static void zoh_fill(const AVMotionVector *mvs, int n_mvs,
+     }
+ }
+ 
++// Resample decoder motion vectors into the model's working resolution.
++static void zoh_fill_scaled(const AVMotionVector *mvs, int n_mvs,
++                            float *fx, float *fy, int H, int W,
++                            int source_H, int source_W)
++{
++    if (W == source_W && H == source_H) {
++        zoh_fill(mvs, n_mvs, fx, fy, H, W);
++        return;
++    }
++
++    memset(fx, 0, (size_t)H * W * sizeof(float));
++    memset(fy, 0, (size_t)H * W * sizeof(float));
++    const float sx = (float)W / source_W;
++    const float sy = (float)H / source_H;
++    for (int i = 0; i < n_mvs; i++) {
++        const AVMotionVector *m = &mvs[i];
++        if (m->source != -1) continue;
++        const float motion_scale = m->motion_scale > 0 ? (float)m->motion_scale : 1.0f;
++        const float mx = -(float)m->motion_x / motion_scale * sx;
++        const float my = -(float)m->motion_y / motion_scale * sy;
++        const int x0 = (int)floorf(((float)m->dst_x - (float)m->w * 0.5f) * sx);
++        const int y0 = (int)floorf(((float)m->dst_y - (float)m->h * 0.5f) * sy);
++        const int x1 = (int)ceilf(((float)m->dst_x + (float)m->w * 0.5f) * sx);
++        const int y1 = (int)ceilf(((float)m->dst_y + (float)m->h * 0.5f) * sy);
++        const int bx = x0 < 0 ? 0 : x0;
++        const int by = y0 < 0 ? 0 : y0;
++        const int ex = x1 > W ? W : x1;
++        const int ey = y1 > H ? H : y1;
++        for (int y = by; y < ey; y++) {
++            float *fx_row = fx + (size_t)y * W + bx;
++            float *fy_row = fy + (size_t)y * W + bx;
++            for (int x = bx; x < ex; x++) {
++                fx_row[x - bx] = mx;
++                fy_row[x - bx] = my;
++            }
++        }
++    }
++}
++
+ // Nearest-neighbor downsample (NEON-optimized for s=4)
+ static void downsample(const float *in, float *out, int H, int W, int s,
+                        int *oH, int *oW)
+@@ -1260,6 +1300,7 @@ static inline void sample_yuv_to_rgb(const uint8_t *Y, int y_stride,
+ struct phase2_args {
+     int y_start, y_end;
+     int W, H;
++    int model_W, model_H, model_scale;
+     const uint8_t *prev_Y, *prev_U, *prev_V;
+     int prev_ys, prev_us, prev_vs;
+     const uint8_t *curr_Y, *curr_U, *curr_V;
+@@ -1273,7 +1314,8 @@ static void *phase2_thread_fn(void *arg)
+ {
+     struct phase2_args *a = arg;
+     const int W = a->W, H = a->H;
+-    const size_t plane = (size_t)W * H;
++    const int model_W = a->model_W, model_scale = a->model_scale;
++    const size_t model_plane = (size_t)model_W * a->model_H;
+ 
+     for (int y = a->y_start; y < a->y_end; y++) {
+         for (int x = 0; x < W; x++) {
+@@ -1290,12 +1332,15 @@ static void *phase2_thread_fn(void *arg)
+             a->blend_r[idx] = (r0 + r1) * 0.5f;
+             a->blend_g[idx] = (g0 + g1) * 0.5f;
+             a->blend_b[idx] = (b0 + b1) * 0.5f;
+-            a->input_buf[0 * plane + idx] = r0;
+-            a->input_buf[1 * plane + idx] = g0;
+-            a->input_buf[2 * plane + idx] = b0;
+-            a->input_buf[3 * plane + idx] = r1;
+-            a->input_buf[4 * plane + idx] = g1;
+-            a->input_buf[5 * plane + idx] = b1;
++            if (x % model_scale == 0 && y % model_scale == 0) {
++                const size_t model_idx = (size_t)(y / model_scale) * model_W + x / model_scale;
++                a->input_buf[0 * model_plane + model_idx] = r0;
++                a->input_buf[1 * model_plane + model_idx] = g0;
++                a->input_buf[2 * model_plane + model_idx] = b0;
++                a->input_buf[3 * model_plane + model_idx] = r1;
++                a->input_buf[4 * model_plane + model_idx] = g1;
++                a->input_buf[5 * model_plane + model_idx] = b1;
++            }
+         }
+     }
+     return NULL;
+@@ -1308,6 +1353,7 @@ static void *phase2_thread_fn(void *arg)
+ struct phase4_args {
+     int y_start, y_end;
+     int W, H;
++    int model_W, model_H, model_scale;
+     const float *blend_r, *blend_g, *blend_b;
+     const float *output_buf;
+     int pme_ok;
+@@ -1360,14 +1406,33 @@ static inline void pme_rgb_at(const struct phase4_args *a, int x, int y,
+                               float *r, float *g, float *b)
+ {
+     const size_t idx = (size_t)y * a->W + x;
+-    const size_t plane = (size_t)a->W * a->H;
+     *r = a->blend_r[idx];
+     *g = a->blend_g[idx];
+     *b = a->blend_b[idx];
+     if (a->pme_ok && a->output_buf) {
+-        *r += a->output_buf[0 * plane + idx];
+-        *g += a->output_buf[1 * plane + idx];
+-        *b += a->output_buf[2 * plane + idx];
++        const float mx = (float)x / a->model_scale;
++        const float my = (float)y / a->model_scale;
++        int x0 = (int)floorf(mx), y0 = (int)floorf(my);
++        int x1 = x0 + 1, y1 = y0 + 1;
++        const float wx = mx - x0, wy = my - y0;
++        if (x0 < 0) x0 = 0; if (x0 >= a->model_W) x0 = a->model_W - 1;
++        if (x1 < 0) x1 = 0; if (x1 >= a->model_W) x1 = a->model_W - 1;
++        if (y0 < 0) y0 = 0; if (y0 >= a->model_H) y0 = a->model_H - 1;
++        if (y1 < 0) y1 = 0; if (y1 >= a->model_H) y1 = a->model_H - 1;
++        const size_t model_plane = (size_t)a->model_W * a->model_H;
++        const size_t i00 = (size_t)y0 * a->model_W + x0;
++        const size_t i10 = (size_t)y0 * a->model_W + x1;
++        const size_t i01 = (size_t)y1 * a->model_W + x0;
++        const size_t i11 = (size_t)y1 * a->model_W + x1;
++#define PME_UPSAMPLE_RESIDUAL(channel) \
++        ((1.0f - wx) * (1.0f - wy) * a->output_buf[(size_t)(channel) * model_plane + i00] + \
++         wx * (1.0f - wy) * a->output_buf[(size_t)(channel) * model_plane + i10] + \
++         (1.0f - wx) * wy * a->output_buf[(size_t)(channel) * model_plane + i01] + \
++         wx * wy * a->output_buf[(size_t)(channel) * model_plane + i11])
++        *r += PME_UPSAMPLE_RESIDUAL(0);
++        *g += PME_UPSAMPLE_RESIDUAL(1);
++        *b += PME_UPSAMPLE_RESIDUAL(2);
++#undef PME_UPSAMPLE_RESIDUAL
+     }
+     *r = clamp_unit(*r);
+     *g = clamp_unit(*g);
+@@ -1378,16 +1443,23 @@ static void *phase4_thread_fn(void *arg)
+ {
+     struct phase4_args *a = arg;
+     const int W = a->W;
+-    for (int y = a->y_start; y < a->y_end; y++) {
+-        float r_stack[1920], g_stack[1920], b_stack[1920];
+-        float *rr = W <= 1920 ? r_stack : malloc((size_t)W * sizeof(float));
+-        float *gg = W <= 1920 ? g_stack : malloc((size_t)W * sizeof(float));
+-        float *bb = W <= 1920 ? b_stack : malloc((size_t)W * sizeof(float));
+-        if (!rr || !gg || !bb) {
+-            if (W > 1920) { free(rr); free(gg); free(bb); }
+-            return NULL;
++    float r_stack_a[1920], g_stack_a[1920], b_stack_a[1920];
++    float r_stack_b[1920], g_stack_b[1920], b_stack_b[1920];
++    float *rr = W <= 1920 ? r_stack_a : malloc((size_t)W * sizeof(float));
++    float *gg = W <= 1920 ? g_stack_a : malloc((size_t)W * sizeof(float));
++    float *bb = W <= 1920 ? b_stack_a : malloc((size_t)W * sizeof(float));
++    float *prev_r = W <= 1920 ? r_stack_b : malloc((size_t)W * sizeof(float));
++    float *prev_g = W <= 1920 ? g_stack_b : malloc((size_t)W * sizeof(float));
++    float *prev_b = W <= 1920 ? b_stack_b : malloc((size_t)W * sizeof(float));
++    if (!rr || !gg || !bb || !prev_r || !prev_g || !prev_b) {
++        if (W > 1920) {
++            free(rr); free(gg); free(bb);
++            free(prev_r); free(prev_g); free(prev_b);
+         }
++        return NULL;
++    }
+ 
++    for (int y = a->y_start; y < a->y_end; y++) {
+         for (int x = 0; x < W; x++)
+             pme_rgb_at(a, x, y, &rr[x], &gg[x], &bb[x]);
+ 
+@@ -1405,15 +1477,15 @@ static void *phase4_thread_fn(void *arg)
+         if ((y & 1) && y >= a->y_start + 1) {
+             uint8_t *urow = a->out_U + (y >> 1) * a->out_us;
+             uint8_t *vrow = a->out_V + (y >> 1) * a->out_vs;
+-            const int prev_y = y - 1;
+             for (int cx = 0; cx < W / 2; cx++) {
+                 float ru = 0.0f, gu = 0.0f, bu = 0.0f;
+                 for (int dy = 0; dy < 2; dy++) {
+-                    for (int dx = 0; dx < 2; dx++) {
+-                        float r, g, b;
+-                        pme_rgb_at(a, cx * 2 + dx, prev_y + dy, &r, &g, &b);
+-                        ru += r; gu += g; bu += b;
+-                    }
++                    const float *rrow = dy ? rr : prev_r;
++                    const float *grow = dy ? gg : prev_g;
++                    const float *brow = dy ? bb : prev_b;
++                    ru += rrow[cx * 2] + rrow[cx * 2 + 1];
++                    gu += grow[cx * 2] + grow[cx * 2 + 1];
++                    bu += brow[cx * 2] + brow[cx * 2 + 1];
+                 }
+                 ru *= 255.0f / 4.0f;
+                 gu *= 255.0f / 4.0f;
+@@ -1424,7 +1496,13 @@ static void *phase4_thread_fn(void *arg)
+                 vrow[cx] = (uint8_t)(iv < 0 ? 0 : iv > 255 ? 255 : iv);
+             }
+         }
+-        if (W > 1920) { free(rr); free(gg); free(bb); }
++        float *swap = rr; rr = prev_r; prev_r = swap;
++        swap = gg; gg = prev_g; prev_g = swap;
++        swap = bb; bb = prev_b; prev_b = swap;
++    }
++    if (W > 1920) {
++        free(rr); free(gg); free(bb);
++        free(prev_r); free(prev_g); free(prev_b);
+     }
+     return NULL;
+ }
+@@ -1455,6 +1533,7 @@ struct pme_state {
+     float *input_buf;
+     float *output_buf;
+     uint64_t in_elems, out_elems;
++    int model_w, model_h, model_scale;
+     int ready;
+ };
+ 
+@@ -1567,16 +1646,29 @@ static int pme_init(struct pme_state *pme, struct mp_filter *f, int w, int h,
+         pme->info.input.rank != 4 || pme->info.output.rank != 4 ||
+         pme->info.input.dimensions[0] != 1 || pme->info.output.dimensions[0] != 1 ||
+         pme->info.input.dimensions[1] != 6 || pme->info.output.dimensions[1] != 3 ||
+-        pme->info.input.dimensions[2] != h || pme->info.output.dimensions[2] != h ||
+-        pme->info.input.dimensions[3] != w || pme->info.output.dimensions[3] != w ||
+-        pme->info.input.element_count != (uint64_t)w * h * 6 ||
+-        pme->info.output.element_count != (uint64_t)w * h * 3) {
+-        MP_WARN(f, "PME: model tensor schema must be NCHW [1,6,%d,%d] -> [1,3,%d,%d]\n", h, w, h, w);
++        pme->info.input.dimensions[2] <= 0 || pme->info.input.dimensions[3] <= 0 ||
++        pme->info.output.dimensions[2] != pme->info.input.dimensions[2] ||
++        pme->info.output.dimensions[3] != pme->info.input.dimensions[3]) {
++        MP_WARN(f, "PME: model tensor schema must be NCHW [1,6,H,W] -> [1,3,H,W]\n");
++        return -1;
++    }
++
++    const int model_h = (int)pme->info.input.dimensions[2];
++    const int model_w = (int)pme->info.input.dimensions[3];
++    if (w % model_w != 0 || h % model_h != 0 || w / model_w != h / model_h ||
++        w / model_w < 1 || w / model_w > 4 ||
++        pme->info.input.element_count != (uint64_t)model_w * model_h * 6 ||
++        pme->info.output.element_count != (uint64_t)model_w * model_h * 3) {
++        MP_WARN(f, "PME: model %dx%d requires source dimensions at the same 1x–4x scale; got %dx%d\n",
++                model_w, model_h, w, h);
+         return -1;
+     }
+ 
+     pme->in_elems = pme->info.input.element_count;
+     pme->out_elems = pme->info.output.element_count;
++    pme->model_w = model_w;
++    pme->model_h = model_h;
++    pme->model_scale = w / model_w;
+     pme->input_buf = calloc((size_t)pme->in_elems, sizeof(float));
+     pme->output_buf = calloc((size_t)pme->out_elems, sizeof(float));
+     if (!pme->input_buf || !pme->output_buf) {
+@@ -1587,8 +1679,9 @@ static int pme_init(struct pme_state *pme, struct mp_filter *f, int w, int h,
+     snprintf(pme->provider_name, sizeof(pme->provider_name), "%s", pme->info.provider_name);
+     snprintf(pme->provider_vendor, sizeof(pme->provider_vendor), "%s", pme->info.provider_vendor);
+     pme->ready = 1;
+-    MP_INFO(f, "PME: %s on %s ready (%dx%d)\n",
+-            pme->provider_name, pme->provider_vendor[0] ? pme->provider_vendor : "accelerator", w, h);
++    MP_INFO(f, "PME: %s on %s ready (model %dx%d, source %dx%d, scale %d)\n",
++            pme->provider_name, pme->provider_vendor[0] ? pme->provider_vendor : "accelerator",
++            model_w, model_h, w, h, pme->model_scale);
+     return 0;
+ }
+ 
+@@ -1735,10 +1828,8 @@ struct priv {
+ 
+     // Vulkan compute state (GPU P1b + P2)
+     struct vk_compute vk;
+-    // Cached NHWC buffer for uncached SSBO -> cached copy
+-    float *nhwc_cached;
+-    size_t nhwc_cached_size;
+-
++    struct mp_sws_context *model_downscale_sws;
++    struct mp_sws_context *source_upscale_sws;
+     // Neural runtime state
+     struct pme_state pme;
+     int pme_checked;
+@@ -1873,7 +1964,7 @@ static void *pme_init_thread_fn(void *arg)
+     // Vulkan initialization is also asynchronous: creating the instance,
+     // buffers, and shader pipelines must not delay the first decoded frame.
+     if (p->pme.ready && !pme_cancelled(p))
+-        vk_init(&p->vk, p->filter, p->pme_init_width, p->pme_init_height);
++        vk_init(&p->vk, p->filter, p->pme.model_w, p->pme.model_h);
+     pthread_mutex_lock(&p->pme_init_mutex);
+     p->pme_checked = 1;
+     pthread_mutex_unlock(&p->pme_init_mutex);
+@@ -1934,9 +2025,6 @@ static void free_workspace(struct priv *p)
+         free(p->blend_rgb[c]); p->blend_rgb[c] = NULL;
+     }
+ 
+-    free(p->nhwc_cached); p->nhwc_cached = NULL;
+-    p->nhwc_cached_size = 0;
+-
+     p->alloc_w = p->alloc_h = 0;
+ }
+ 
+@@ -1958,13 +2046,8 @@ static void alloc_workspace(struct priv *p, int w, int h)
+     for (int c = 0; c < 3; c++)
+         p->blend_rgb[c] = malloc(px * sizeof(float));
+ 
+-    // Cached NHWC buffer for SSBO->cached copy (only used when Vulkan active)
+-    p->nhwc_cached_size = (size_t)px * 6 * sizeof(float);
+-    p->nhwc_cached = malloc(p->nhwc_cached_size);
+-
+     if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
+-        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2] ||
+-        !p->nhwc_cached) {
++        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2]) {
+         free_workspace(p);
+         return;
+     }
+@@ -1996,6 +2079,27 @@ static double get_time_ms(void)
+     return mp_time_ns() / 1e6;
+ }
+ 
++static struct mp_image *pme_scale_image(struct mp_sws_context *sws,
++                                         struct mp_image *source, int width, int height)
++{
++    struct mp_image *scaled = mp_image_alloc(source->imgfmt, width, height);
++    if (!scaled)
++        return NULL;
++    mp_image_copy_attributes(scaled, source);
++    mp_image_set_size(scaled, width, height);
++    scaled->params.crop = (struct mp_rect){
++        .x0 = source->params.crop.x0 * width / source->w,
++        .y0 = source->params.crop.y0 * height / source->h,
++        .x1 = source->params.crop.x1 * width / source->w,
++        .y1 = source->params.crop.y1 * height / source->h,
++    };
++    if (mp_sws_scale(sws, scaled, source) < 0) {
++        mp_image_unrefp(&scaled);
++        return NULL;
++    }
++    return scaled;
++}
++
+ // ====================================================================
+ // Section 9c: Synchronous interpolation pipeline
+ // ====================================================================
+@@ -2021,16 +2125,16 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+                                               const AVMotionVector *mvs, int n_mvs,
+                                               double submitted_ms)
+ {
+-    const int W = curr->w, H = curr->h;
+-    const size_t pixels = (size_t)W * H;
++    const int source_W = curr->w, source_H = curr->h;
++    const int model_w = p->pme.model_w;
++    const int model_h = p->pme.model_h;
++    const int source_model_scale = p->pme.model_scale;
++    struct mp_image *scaled_prev = NULL, *scaled_curr = NULL;
++    struct mp_image *working_output = NULL, *out = NULL;
++    struct mp_image *work_prev = prev, *work_curr = curr;
+     const double started = submitted_ms;
+     p->last_pme_success = false;
+     p->last_frame_generated = false;
+-    alloc_workspace(p, W, H);
+-    if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
+-        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2] ||
+-        !p->nhwc_cached || !p->pme.input_buf || !p->pme.output_buf)
+-        return NULL;
+     p->preprocessing_ms = 0.0;
+     p->flow_preparation_ms = 0.0;
+     p->gpu_upload_ms = 0.0;
+@@ -2038,12 +2142,34 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+     p->tensor_copy_ms = 0.0;
+     p->reconstruction_ms = 0.0;
+     p->pipeline_ms = 0.0;
++
++    if (!p->pme.input_buf || !p->pme.output_buf || source_model_scale < 1)
++        goto done;
++    if (source_model_scale > 1) {
++        if (!p->model_downscale_sws || !p->source_upscale_sws)
++            goto done;
++        scaled_prev = pme_scale_image(p->model_downscale_sws, prev, model_w, model_h);
++        scaled_curr = pme_scale_image(p->model_downscale_sws, curr, model_w, model_h);
++        if (!scaled_prev || !scaled_curr)
++            goto done;
++        work_prev = scaled_prev;
++        work_curr = scaled_curr;
++    }
++
++    const int W = work_curr->w, H = work_curr->h;
++    const size_t pixels = (size_t)W * H;
++    const size_t model_pixels = (size_t)model_w * model_h;
++    alloc_workspace(p, W, H);
++    if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
++        !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2] ||
++        W != model_w || H != model_h)
++        goto done;
+ #ifdef PLEZY_HAVE_PME_VULKAN
+     const bool use_vk = p->vk.ready && p->vk.W == W && p->vk.H == H;
+ 
+     if (use_vk) {
+         const double flow_started = get_time_ms();
+-        zoh_fill(mvs, n_mvs, p->flow_x, p->flow_y, H, W);
++        zoh_fill_scaled(mvs, n_mvs, p->flow_x, p->flow_y, H, W, source_H, source_W);
+         int dH, dW;
+         downsample(p->flow_x, p->vk.sm_fx_a_ptr, H, W, PA_DS, &dH, &dW);
+         downsample(p->flow_y, p->vk.sm_fy_a_ptr, H, W, PA_DS, &dH, &dW);
+@@ -2052,12 +2178,12 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+         const double upload_started = get_time_ms();
+         int y_stride, uv_stride, u_off, v_off;
+         vk_pack_yuv(p->vk.prev_yuv_ptr,
+-                    prev->planes[0], prev->stride[0], prev->planes[1], prev->stride[1],
+-                    prev->planes[2], prev->stride[2], W, H,
++                    work_prev->planes[0], work_prev->stride[0], work_prev->planes[1], work_prev->stride[1],
++                    work_prev->planes[2], work_prev->stride[2], W, H,
+                     &y_stride, &uv_stride, &u_off, &v_off);
+         vk_pack_yuv(p->vk.curr_yuv_ptr,
+-                    curr->planes[0], curr->stride[0], curr->planes[1], curr->stride[1],
+-                    curr->planes[2], curr->stride[2], W, H,
++                    work_curr->planes[0], work_curr->stride[0], work_curr->planes[1], work_curr->stride[1],
++                    work_curr->planes[2], work_curr->stride[2], W, H,
+                     &y_stride, &uv_stride, &u_off, &v_off);
+         p->gpu_upload_ms = get_time_ms() - upload_started;
+ 
+@@ -2066,10 +2192,16 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+         p->vulkan_dispatch_ms = get_time_ms() - dispatch_started;
+ 
+         const double tensor_copy_started = get_time_ms();
+-        memcpy(p->nhwc_cached, p->vk.nhwc_ptr, pixels * 6 * sizeof(float));
+-        for (size_t i = 0; i < pixels; i++) {
+-            for (int c = 0; c < 6; c++)
+-                p->pme.input_buf[(size_t)c * pixels + i] = p->nhwc_cached[i * 6 + c];
++        for (int y = 0; y < model_h; y++) {
++            const size_t source_row = (size_t)y * W * 6;
++            const size_t model_row = (size_t)y * model_w;
++            for (int x = 0; x < model_w; x++) {
++                const size_t source_idx = source_row + (size_t)x * 6;
++                const size_t model_idx = model_row + x;
++                for (int c = 0; c < 6; c++)
++                    p->pme.input_buf[(size_t)c * model_pixels + model_idx] =
++                        p->vk.nhwc_ptr[source_idx + c];
++            }
+         }
+         memcpy(p->blend_rgb[0], p->vk.blend_r_ptr, pixels * sizeof(float));
+         memcpy(p->blend_rgb[1], p->vk.blend_g_ptr, pixels * sizeof(float));
+@@ -2078,7 +2210,7 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+     } else
+ #endif
+     {
+-        zoh_fill(mvs, n_mvs, p->flow_x, p->flow_y, H, W);
++        zoh_fill_scaled(mvs, n_mvs, p->flow_x, p->flow_y, H, W, source_H, source_W);
+         run_prealign_v2(p, W, H);
+         pthread_t threads[N_THREADS - 1];
+         struct phase2_args args[N_THREADS];
+@@ -2087,12 +2219,14 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+             args[t].y_start = t * rows_per;
+             args[t].y_end = t == N_THREADS - 1 ? H : (t + 1) * rows_per;
+             args[t].W = W; args[t].H = H;
+-            args[t].prev_Y = prev->planes[0]; args[t].prev_ys = prev->stride[0];
+-            args[t].prev_U = prev->planes[1]; args[t].prev_us = prev->stride[1];
+-            args[t].prev_V = prev->planes[2]; args[t].prev_vs = prev->stride[2];
+-            args[t].curr_Y = curr->planes[0]; args[t].curr_ys = curr->stride[0];
+-            args[t].curr_U = curr->planes[1]; args[t].curr_us = curr->stride[1];
+-            args[t].curr_V = curr->planes[2]; args[t].curr_vs = curr->stride[2];
++            args[t].model_W = model_w; args[t].model_H = model_h;
++            args[t].model_scale = 1;
++            args[t].prev_Y = work_prev->planes[0]; args[t].prev_ys = work_prev->stride[0];
++            args[t].prev_U = work_prev->planes[1]; args[t].prev_us = work_prev->stride[1];
++            args[t].prev_V = work_prev->planes[2]; args[t].prev_vs = work_prev->stride[2];
++            args[t].curr_Y = work_curr->planes[0]; args[t].curr_ys = work_curr->stride[0];
++            args[t].curr_U = work_curr->planes[1]; args[t].curr_us = work_curr->stride[1];
++            args[t].curr_V = work_curr->planes[2]; args[t].curr_vs = work_curr->stride[2];
+             args[t].flow_x = p->flow_x; args[t].flow_y = p->flow_y;
+             args[t].input_buf = p->pme.input_buf;
+             args[t].blend_r = p->blend_rgb[0];
+@@ -2117,12 +2251,12 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+         if (p->neural_probe_pending)
+             start_neural_bypass(p, f, get_time_ms(), "Neural recovery probe failed");
+         MP_WARN(f, "PME inference failed; source cadence will continue\n");
+-        return NULL;
++        goto done;
+     }
+ 
+-    struct mp_image *out = mp_image_new_copy(curr);
+-    if (!out)
+-        return NULL;
++    working_output = mp_image_new_copy(work_curr);
++    if (!working_output)
++        goto done;
+     const double reconstruction_started = get_time_ms();
+     pthread_t threads[N_THREADS - 1];
+     struct phase4_args args[N_THREADS];
+@@ -2131,14 +2265,16 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+         args[t].y_start = t * rows_per;
+         args[t].y_end = t == N_THREADS - 1 ? H : (t + 1) * rows_per;
+         args[t].W = W; args[t].H = H;
++        args[t].model_W = model_w; args[t].model_H = model_h;
++        args[t].model_scale = 1;
+         args[t].blend_r = p->blend_rgb[0];
+         args[t].blend_g = p->blend_rgb[1];
+         args[t].blend_b = p->blend_rgb[2];
+         args[t].output_buf = p->pme.output_buf;
+         args[t].pme_ok = 1;
+-        args[t].out_Y = out->planes[0]; args[t].out_ys = out->stride[0];
+-        args[t].out_U = out->planes[1]; args[t].out_us = out->stride[1];
+-        args[t].out_V = out->planes[2]; args[t].out_vs = out->stride[2];
++        args[t].out_Y = working_output->planes[0]; args[t].out_ys = working_output->stride[0];
++        args[t].out_U = working_output->planes[1]; args[t].out_us = working_output->stride[1];
++        args[t].out_V = working_output->planes[2]; args[t].out_vs = working_output->stride[2];
+     }
+     for (int t = 0; t < N_THREADS - 1; t++)
+         pthread_create(&threads[t], NULL, phase4_thread_fn, &args[t]);
+@@ -2146,6 +2282,23 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+     for (int t = 0; t < N_THREADS - 1; t++)
+         pthread_join(threads[t], NULL);
+     p->reconstruction_ms = get_time_ms() - reconstruction_started;
++
++    if (W != source_W || H != source_H) {
++        out = mp_image_alloc(curr->imgfmt, source_W, source_H);
++        if (!out)
++            goto done;
++        mp_image_copy_attributes(out, curr);
++        mp_image_set_size(out, source_W, source_H);
++        if (mp_sws_scale(p->source_upscale_sws, out, working_output) < 0) {
++            mp_image_unrefp(&out);
++            goto done;
++        }
++        mp_image_unrefp(&working_output);
++    } else {
++        out = working_output;
++        working_output = NULL;
++    }
++    p->reconstruction_ms = get_time_ms() - reconstruction_started;
+     p->pipeline_ms = get_time_ms() - started;
+ 
+     const double source_duration = curr->pts - prev->pts;
+@@ -2156,13 +2309,17 @@ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f
+     if (missed_deadline) {
+         p->last_pme_success = false;
+         mp_image_unrefp(&out);
+-        return NULL;
++        goto done;
+     }
+     if (p->neural_probe_pending) {
+         p->neural_probe_pending = false;
+         p->neural_bypass_until_ms = 0.0;
+         MP_INFO(f, "PME: Neural recovery probe met its frame deadline; resuming Neural output\n");
+     }
++done:
++    mp_image_unrefp(&working_output);
++    mp_image_unrefp(&scaled_prev);
++    mp_image_unrefp(&scaled_curr);
+     return out;
+ }
+ 
+@@ -2743,6 +2900,8 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
+         p->opts->require_neural = true;
+     }
+     p->filter = f;
++    p->model_downscale_sws = mp_sws_alloc(p);
++    p->source_upscale_sws = mp_sws_alloc(p);
+     p->pme_init_sync_initialized = pthread_mutex_init(&p->pme_init_mutex, NULL) == 0;
+     if (!p->pme_init_sync_initialized)
+         MP_WARN(f, "PME: runtime initialization mutex unavailable; neural processing will pass through\n");

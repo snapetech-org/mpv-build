@@ -84,11 +84,19 @@ if [ -z "$arch" ]; then
 	for arch in "${android_arches[@]}"; do
 		loadarch "$arch"
 		setup_prefix
+		if [ "$arch" = "arm64" ] && { [ "$target" = "mpv" ] || [ "$target" = "libmpv-android" ]; }; then
+			QAIRT_SDK_ROOT="$(python3 ../../scripts/prepare_android_qairt.py)"
+			export QAIRT_SDK_ROOT
+		fi
 		build "$target"
 	done
 else
 	loadarch "$arch"
 	setup_prefix
+	if [ "$arch" = "arm64" ] && { [ "$target" = "mpv" ] || [ "$target" = "libmpv-android" ]; }; then
+		QAIRT_SDK_ROOT="$(python3 ../../scripts/prepare_android_qairt.py)"
+		export QAIRT_SDK_ROOT
+	fi
 	build "$target"
 fi
 

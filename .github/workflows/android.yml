@@ -186,7 +186,7 @@ jobs:
 
       - name: Require ordered PCM in reused native package (${{ matrix.abi }})
         if: steps.reuse.outputs.sha != ''
-        run: python3 scripts/inspect_pcm_package.py "dist/release/libmpv-android-${{ matrix.abi }}.tar.gz" --expected 1
+        run: python3 scripts/inspect_pcm_package.py "dist/release/libmpv-android-${{ matrix.abi }}.tar.gz" --expected 1 --motion-platform android
 
       # package.sh emits the unkeyed name (libmpv-android-<abi>.tar.gz): the
       # content key covers the published driver, which this leg cannot know is

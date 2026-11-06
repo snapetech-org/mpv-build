@@ -173,4 +173,4 @@ tar --sort=name --owner=0 --group=0 --numeric-owner \
   --zstd -C "$stage" -cf "$artifact" .
 echo "==> Packaged $artifact"
 
-python3 "$REPO_ROOT/scripts/inspect_pcm_package.py" "$artifact" --expected 1
+python3 "$REPO_ROOT/scripts/inspect_pcm_package.py" "$artifact" --expected 1 --motion-platform linux
