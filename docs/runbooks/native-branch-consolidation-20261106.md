@@ -1,10 +1,17 @@
 # Native branch consolidation, 2026-11-06
 
-Review the changes, not just commit ancestry. The audit covered all 24 native
-remote refs. Eight were already ancestral to the release producer; of the
-remaining sixteen, fourteen had no outstanding source benefit. The last two
-contributed Android pause handling, Apple presentation/OSD corrections and a
-FEL pixel comparison test, now included in ee4e3e2.
+Review the changes, not just commit ancestry. The first shallow audit covered
+24 refs including the symbolic default-branch alias. Independent full-history
+recovery then verified all 23 actual remote branch heads. Excluding main and the
+active producer, the 21 older branches comprise six ancestral branches, four
+patch-equivalent branches, five obsolete metadata proposals and six motion/FEL
+branches whose useful changes are now ported. No source benefit remains unported.
+
+The recovery check also proves `fix/2202-passthrough-clock` is ancestral to the
+producer; the shallow checkout could not establish that earlier. The final
+three source groups were included in ee4e3e2. The verified full-history bundle
+was restored into a separate empty repository, compared against all recorded
+heads, and passed `git fsck` before the temporary recovery checkouts were removed.
 
 Preserve recovery refs/bundles until the combined producer reaches main. Retire
 old refs only after verifying their live heads still match the audited heads.
