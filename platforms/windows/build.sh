@@ -53,6 +53,13 @@ elif [[ -n "${2:-}" ]]; then
   usage
 fi
 
+# cppwinrt fetches Windows.winmd after the compiler bootstrap. Check its
+# downloader now so a minimal host cannot spend hours building LLVM first.
+if [[ "$CONFIGURE_ONLY" == 0 ]] && ! command -v wget >/dev/null 2>&1; then
+  echo "wget is required for the Windows toolchain bootstrap" >&2
+  exit 1
+fi
+
 # winbuild's own patch steps run `git am` (spirv-cross, fontconfig, ...),
 # which hard-fails without a committer identity -- upstream's CI configures
 # one globally as its first step. Scope ours to this process instead of
