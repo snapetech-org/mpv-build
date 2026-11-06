@@ -993,9 +993,12 @@ class ZipBaseBuild : BaseBuild {
         try! FileManager.default.createDirectory(atPath: directoryURL.path, withIntermediateDirectories: true, attributes: nil)
 
         if !FileManager.default.fileExists(atPath: outputFile.path) {
-            try! Utility.launch(path: "wget", arguments: ["-O", outputFileName, library.url], currentDirectoryURL: directoryURL)
-            try! Utility.launch(path: "/usr/bin/unzip", arguments: ["-o",outputFileName], currentDirectoryURL: directoryURL)
+            try Utility.launch(path: "wget", arguments: ["-O", outputFileName, library.url], currentDirectoryURL: directoryURL)
         }
+        // A cache or restored workspace can contain only the downloaded zip.
+        // Restore its install tree on every invocation, including partial
+        // extractions, before buildALL replaces the destination prefix.
+        try Utility.launch(path: "/usr/bin/unzip", arguments: ["-o", "-q", outputFileName], currentDirectoryURL: directoryURL)
     }
 
     override func buildALL() throws {

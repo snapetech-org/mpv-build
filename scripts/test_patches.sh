@@ -408,8 +408,8 @@ print("fetch-pinned's archive strip accepts the source tree and refuses the rest
 # 5. This repository's own tree is valid, and every group is declared where
 # versions.json says it is.
 run(root, "check")
-# Every real component resolves for every platform to exactly series.common
-# followed by series.<platform>, in order, comments and blank lines dropped.
+# Every real component resolves to the series selected by its normal source
+# pin, in order, with comments and blank lines dropped.
 # Running `resolve` at the default expect=0 only proves it did not crash:
 # cmd_resolve rejects an unknown platform and nothing else -- a missing series
 # file reads as empty -- so an empty or truncated resolution used to pass here.
@@ -417,7 +417,10 @@ for component in sorted(p.name for p in (root / "patches").iterdir() if p.is_dir
     component_dir = root / "patches" / component
     for platform in ("apple", "android", "linux", "windows"):
         expected = []
-        for series_name in ("series.common", f"series.{platform}"):
+        entry = json.loads((root / "versions.json").read_text())["components"].get(component, {})
+        variant = (entry.get("overrides", {}).get(platform) or {}).get("patchSet", entry.get("patchSet"))
+        suffix = f".{variant}" if variant else ""
+        for series_name in (f"series.common{suffix}", f"series.{platform}{suffix}"):
             series_file = component_dir / series_name
             if not series_file.is_file():
                 continue
@@ -540,6 +543,29 @@ with tempfile.TemporaryDirectory() as tmp:
     )
     (sandbox / driver).write_text(driver_copy, encoding="utf-8")
 print("the repository's own patch tree passes check")
+
+# A normal platform pin selects the bundled feature set. There is no user
+# compile flag, and a missing series must never fall back to the old engine.
+with tempfile.TemporaryDirectory() as tmp:
+    component = make_tree(tmp)
+    (component / "pool" / "0900-fel.patch").write_text("FEL fixture\n")
+    (component / "series.common.fel").write_text("0900-fel.patch\n")
+    (component / "series.linux.fel").write_text("")
+    manifest = Path(tmp) / "versions.json"
+    data = {"components": {"widget": {"overrides": {"linux": {"patchSet": "fel"}}}}}
+    manifest.write_text(json.dumps(data))
+    result = run(tmp, "resolve", "widget", "linux")
+    check(result.stdout.split() == ["0900-fel.patch"], "the normal Linux pin must select its FEL series")
+    result = run(tmp, "resolve", "widget", "apple")
+    check(result.stdout.split() == ["0001-common.patch", "0002-zeta.patch", "0003-alpha.patch"],
+          "a platform without the override must retain its original patch stack")
+    (component / "series.linux.fel").unlink()
+    result = run(tmp, "resolve", "widget", "linux", expect=1)
+    check("missing required" in result.stderr, "missing feature series must stop resolution")
+    data["components"]["widget"]["overrides"]["linux"]["patchSet"] = "../escape"
+    manifest.write_text(json.dumps(data))
+    result = run(tmp, "resolve", "widget", "linux", expect=1)
+    check("invalid patchSet" in result.stderr, "feature-set names must not escape the patch directory")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed")

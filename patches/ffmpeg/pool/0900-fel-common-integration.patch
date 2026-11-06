@@ -1,0 +1,834 @@
+Subject: [PATCH] ship the pinned FEL engine with existing common playback fixes
+
+diff --git a/configure b/configure
+index 083bd652c49339f5bebb79638a9800d3db24d8dc..eec1c1c441bc85df449863990d854af91b2dc6c2 100755
+--- a/configure
++++ b/configure
+@@ -2061,6 +2061,7 @@ EXTERNAL_LIBRARY_LIST="
+     libcaca
+     libcodec2
+     libdav1d
++    libdovi
+     libdc1394
+     libflite
+     libfontconfig
+@@ -7240,6 +7241,7 @@ enabled libcaca           && require_pkg_config libcaca caca caca.h caca_create_
+ enabled libcodec2         && require libcodec2 codec2/codec2.h codec2_create -lcodec2
+ enabled libcurl           && check_pkg_config libcurl "libcurl >= 7.88.0" curl/curl.h curl_easy_init
+ enabled libdav1d          && require_pkg_config libdav1d "dav1d >= 1.0.0" "dav1d/dav1d.h" dav1d_version
++enabled libdovi           && require libdovi libdovi/rpu_parser.h dovi_parse_unspec62_nalu -ldovi
+ enabled libdavs2          && require_pkg_config libdavs2 "davs2 >= 1.6.0" davs2.h davs2_decoder_open
+ enabled libdc1394         && require_pkg_config libdc1394 libdc1394-2 dc1394/dc1394.h dc1394_new
+ enabled libdrm            && check_pkg_config libdrm libdrm xf86drm.h drmGetVersion
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 2ea4f9417e63d564458a6062b16bdd3a421f3927..0130207438b1bfcc3633d1f1d0e18398e59eb03c 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -103,6 +103,8 @@ OBJS-$(CONFIG_D3D12VA_ENCODE)          += d3d12va_encode.o hw_base_encode.o
+ OBJS-$(CONFIG_DEFLATE_WRAPPER)         += zlib_wrapper.o
+ OBJS-$(CONFIG_DOVI_RPUDEC)             += dovi_rpu.o dovi_rpudec.o
+ OBJS-$(CONFIG_DOVI_RPUENC)             += dovi_rpu.o dovi_rpuenc.o
++OBJS-$(CONFIG_MEDIACODEC)              += dovi_convert.o
++OBJS-$(CONFIG_VIDEOTOOLBOX)            += dovi_convert.o
+ OBJS-$(CONFIG_ERROR_RESILIENCE)        += error_resilience.o
+ OBJS-$(CONFIG_EVCPARSE)                += evc_parse.o evc_ps.o
+ OBJS-$(CONFIG_FAANDCT)                 += faandct.o
+@@ -1381,6 +1383,8 @@ SKIPHEADERS-$(CONFIG_VULKAN)           += ffv1_vulkan.h prores_vulkan.h vulkan_v
+                                           vulkan_encode.h vulkan_decode.h
+ SKIPHEADERS-$(CONFIG_V4L2_M2M)         += v4l2_buffers.h v4l2_context.h v4l2_m2m.h
+ SKIPHEADERS-$(CONFIG_ZLIB)             += zlib_wrapper.h
++SKIPHEADERS-$(CONFIG_MEDIACODEC)       += dovi_convert.h
++SKIPHEADERS-$(CONFIG_VIDEOTOOLBOX)     += dovi_convert.h
+ 
+ TESTPROGS = avcodec                                                     \
+             avpacket                                                    \
+diff --git a/libavcodec/dovi_convert.c b/libavcodec/dovi_convert.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..33e27449dda6c776b1575d0548ab0d9f2d357577
+--- /dev/null
++++ b/libavcodec/dovi_convert.c
+@@ -0,0 +1,132 @@
++/*
++ * Dolby Vision profile 7 to profile 8.1 RPU conversion, for the hardware
++ * decoders that only take profile 8.1.
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include "config.h"
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include "libavutil/error.h"
++#include "libavutil/log.h"
++#include "libavutil/mem.h"
++
++#include "dovi_convert.h"
++
++// --- dovi p7 conversion core
++
++#if CONFIG_LIBDOVI
++
++#include <string.h>
++
++#include <libdovi/rpu_parser.h>
++
++/*
++ * libdovi before 3.4.0 panics -- an abort through its C API -- on an RPU
++ * whose payload, once its emulation prevention bytes are cleared and its
++ * trailing zero bytes trimmed, is shorter than the prefix, CRC32 and final
++ * byte it then indexes. The apple group links a prebuilt libdovi 3.3.2 with
++ * no such check, so refuse that shape here, at the bound libdovi 3.4.0 uses:
++ * the prefix byte, one payload byte, the CRC32 and the final byte. Anything
++ * libdovi rejects on its own -- shorter than 25 bytes, or not starting with
++ * the NAL header and RPU prefix below -- is left to its error path.
++ */
++static int dovi_rpu_long_enough(const uint8_t *nal, size_t size)
++{
++    static const uint8_t start[] = { 0x7C, 0x01, 0x19, 0x08, 0x09 };
++    const uint8_t *rpu = nal + 2;
++    size_t len, kept = 0, end = 0;
++
++    if (size < 25 || memcmp(nal, start, sizeof(start)))
++        return 1;
++    len = size - 2;
++    for (size_t i = 0; i < len; i++) {
++        // libdovi drops every 3 that follows two zero bytes of the input.
++        if (i >= 2 && !rpu[i - 2] && !rpu[i - 1] && rpu[i] == 3)
++            continue;
++        kept++;
++        if (rpu[i])
++            end = kept;
++    }
++    return end >= 7;
++}
++
++int ff_dovi_convert_p7_rpu_to_p81(const uint8_t *nal, size_t size,
++                                  uint8_t **out, size_t *out_size, void *logctx)
++{
++    DoviRpuOpaque *rpu;
++    const DoviData *data;
++    const char *error;
++    int ret = 0;
++
++    *out = NULL;
++    *out_size = 0;
++
++    if (!dovi_rpu_long_enough(nal, size)) {
++        av_log(logctx, AV_LOG_WARNING,
++               "Dolby Vision RPU conversion failed: RPU data too short\n");
++        return AVERROR_INVALIDDATA;
++    }
++
++    rpu = dovi_parse_unspec62_nalu(nal, size);
++    if (!rpu) {
++        av_log(logctx, AV_LOG_WARNING, "Failed to allocate a Dolby Vision RPU\n");
++        return AVERROR(ENOMEM);
++    }
++    error = dovi_rpu_get_error(rpu);
++    /* Mode 2: profile 8.1 compatible, mapping curves set to no-op. */
++    if (!error && dovi_convert_rpu_with_mode(rpu, 2) < 0)
++        error = dovi_rpu_get_error(rpu);
++    data = error ? NULL : dovi_write_unspec62_nalu(rpu);
++    if (!data) {
++        av_log(logctx, AV_LOG_WARNING, "Dolby Vision RPU conversion failed: %s\n",
++               error ? error : "unknown error");
++        ret = AVERROR_INVALIDDATA;
++    } else if (data->len > UINT32_MAX) {
++        // Every caller passes the converted size on as a uint32_t length;
++        // refuse a NAL that cannot survive that instead of truncating it.
++        ret = AVERROR_INVALIDDATA;
++    } else {
++        *out = av_memdup(data->data, data->len);
++        if (*out)
++            *out_size = data->len;
++        else
++            ret = AVERROR(ENOMEM);
++    }
++    if (data)
++        dovi_data_free(data);
++    dovi_rpu_free(rpu);
++    return ret;
++}
++
++#else
++
++int ff_dovi_convert_p7_rpu_to_p81(const uint8_t *nal, size_t size,
++                                  uint8_t **out, size_t *out_size, void *logctx)
++{
++    *out = NULL;
++    *out_size = 0;
++    av_log(logctx, AV_LOG_WARNING, "Dolby Vision profile 7 conversion needs libdovi\n");
++    return AVERROR(ENOSYS);
++}
++
++#endif
++
++// --- end dovi p7 conversion core
+diff --git a/libavcodec/dovi_convert.h b/libavcodec/dovi_convert.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..35177185d487fdc19c54967c2f0eee133d9b3c8a
+--- /dev/null
++++ b/libavcodec/dovi_convert.h
+@@ -0,0 +1,47 @@
++/*
++ * Dolby Vision profile 7 to profile 8.1 RPU conversion.
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_DOVI_CONVERT_H
++#define AVCODEC_DOVI_CONVERT_H
++
++#include <stddef.h>
++#include <stdint.h>
++
++/**
++ * Rewrite a Dolby Vision profile 7 RPU NAL as its profile 8.1 equivalent,
++ * through libdovi's compatibility mode 2 (mapping curves set to no-op), for
++ * the decoders that only take profile 8.1. A failure is logged here, once
++ * for every NAL it is called with, and leaves the caller to drop the NAL:
++ * the frame still decodes through its base layer.
++ *
++ * @param nal      the full UNSPEC62 NAL unit, header included
++ * @param size     its size in bytes
++ * @param out      the converted NAL, av_free() it; NULL on failure
++ * @param out_size its size in bytes
++ * @param logctx   an AVCodecContext or any other av_log() context
++ * @return >= 0 on success, a negative AVERROR value otherwise: ENOSYS when
++ *         FFmpeg was built without libdovi, ENOMEM, or INVALIDDATA for an
++ *         RPU libdovi would not take, or for one whose converted size no
++ *         longer fits the uint32_t length every caller passes on.
++ */
++int ff_dovi_convert_p7_rpu_to_p81(const uint8_t *nal, size_t size,
++                                  uint8_t **out, size_t *out_size, void *logctx);
++
++#endif /* AVCODEC_DOVI_CONVERT_H */
+diff --git a/libavcodec/hevc/hevcdec.c b/libavcodec/hevc/hevcdec.c
+index f1bd56229137a37093e37b54ee2b991a10878a6d..39e178083501235e68a697d531f905678229a271 100644
+--- a/libavcodec/hevc/hevcdec.c
++++ b/libavcodec/hevc/hevcdec.c
+@@ -3475,11 +3475,16 @@ static int hevc_frame_start(HEVCContext *s, HEVCLayerContext *l,
+         }
+     }
+ 
+-    memset(l->horizontal_bs, 0, l->bs_width * l->bs_height);
+-    memset(l->vertical_bs,   0, l->bs_width * l->bs_height);
+-    memset(l->cbf_luma,      0, sps->min_tb_width * sps->min_tb_height);
+-    memset(l->is_pcm,        0, (sps->min_pu_width + 1) * (sps->min_pu_height + 1));
+-    memset(l->tab_slice_address, -1, pic_size_in_ctb * sizeof(*l->tab_slice_address));
++    /* Deblocking and slice-address tables only the software decoder
++     * reads; a hwaccel never touches them, and at 4K clearing them costs
++     * ~2.6 MB of memset per frame. */
++    if (!s->avctx->hwaccel) {
++        memset(l->horizontal_bs, 0, l->bs_width * l->bs_height);
++        memset(l->vertical_bs,   0, l->bs_width * l->bs_height);
++        memset(l->cbf_luma,      0, sps->min_tb_width * sps->min_tb_height);
++        memset(l->is_pcm,        0, (sps->min_pu_width + 1) * (sps->min_pu_height + 1));
++        memset(l->tab_slice_address, -1, pic_size_in_ctb * sizeof(*l->tab_slice_address));
++    }
+ 
+     if (IS_IDR(s))
+         ff_hevc_clear_refs(l);
+@@ -3998,7 +4003,7 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
+     if (rpu_nal) {
+         if (s->rpu_buf) {
+             av_buffer_unref(&s->rpu_buf);
+-            av_log(s->avctx, AV_LOG_WARNING, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
++            av_log(s->avctx, AV_LOG_VERBOSE, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
+         }
+ 
+         s->rpu_buf = av_buffer_alloc(rpu_nal->raw_size - 2);
+@@ -4177,7 +4182,7 @@ static int hevc_ref_frame(HEVCFrame *dst, const HEVCFrame *src)
+     }
+ 
+     dst->pps     = av_refstruct_ref_c(src->pps);
+-    dst->tab_mvf = av_refstruct_ref(src->tab_mvf);
++    dst->tab_mvf = src->tab_mvf ? av_refstruct_ref(src->tab_mvf) : NULL;
+     dst->rpl_tab = av_refstruct_ref(src->rpl_tab);
+     dst->rpl = av_refstruct_ref(src->rpl);
+     dst->nb_rpl_elems = src->nb_rpl_elems;
+diff --git a/libavcodec/hevc/refs.c b/libavcodec/hevc/refs.c
+index 84418d2104107a92c68798e43da7df878efa64b9..a43872a5ddd49a465acd516b2c626e3987498baa 100644
+--- a/libavcodec/hevc/refs.c
++++ b/libavcodec/hevc/refs.c
+@@ -169,9 +169,18 @@ static HEVCFrame *alloc_frame(HEVCContext *s, HEVCLayerContext *l)
+             goto fail;
+         frame->nb_rpl_elems = s->pkt.nb_nals;
+ 
+-        frame->tab_mvf = av_refstruct_pool_get(l->tab_mvf_pool);
+-        if (!frame->tab_mvf)
+-            goto fail;
++        /* Only the software decoder reads or writes the motion vector
++         * field; a hwaccel keeps its own. At 4K the table is ~6 MB per
++         * frame, zeroed on allocation, so skipping it keeps the whole
++         * DPB's worth out of memory. avctx->hwaccel only changes in
++         * get_format() on a new SPS, which clears the references first,
++         * so a software-decoded frame never meets a reference without
++         * one. */
++        if (!s->avctx->hwaccel) {
++            frame->tab_mvf = av_refstruct_pool_get(l->tab_mvf_pool);
++            if (!frame->tab_mvf)
++                goto fail;
++        }
+ 
+         frame->rpl_tab = av_refstruct_pool_get(l->rpl_tab_pool);
+         if (!frame->rpl_tab)
+diff --git a/libavcodec/pgssubdec.c b/libavcodec/pgssubdec.c
+index 3a4b60f419b412fbbda5261b2aa5e2085cb87b6b..bc002a3f98946af744b981a25b3510ada377bb9f 100644
+--- a/libavcodec/pgssubdec.c
++++ b/libavcodec/pgssubdec.c
+@@ -346,6 +346,10 @@ static int parse_palette_segment(AVCodecContext *avctx,
+         }
+         palette = &ctx->palettes.palette[ctx->palettes.count++];
+         palette->id  = id;
++        /* flush_cache() only drops the count, so this slot can still hold the
++         * previous epoch's CLUT. Every entry a new epoch does not define is
++         * fully transparent. */
++        memset(palette->clut, 0, sizeof(palette->clut));
+     }
+ 
+     /* Skip palette version */
+diff --git a/libavformat/http.c b/libavformat/http.c
+index 2f4f522363a404b9bc09064bfcfa2228e642219e..e61f3d8dc1d25444049c4718b7dd7cffe0164ec8 100644
+--- a/libavformat/http.c
++++ b/libavformat/http.c
+@@ -1891,6 +1891,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
+     s->icy_data_read    = 0;
+     s->chunkend         = 0;
+     s->filesize         = UINT64_MAX;
++    s->chunkend         = 0;
+     s->range_end        = 0;
+     s->willclose        = !keep_alive;
+     s->end_chunked_post = 0;
+@@ -2131,6 +2132,12 @@ retry:
+             }
+         }
+ 
++        /* The final chunk is a clean end of this response, not a dropped
++         * connection. Chunked bodies have unknown filesize, so the
++         * premature-end check below cannot distinguish the two. */
++        if (read_ret == AVERROR_EOF && s->chunkend && !s->reconnect_at_eof)
++            break;
++
+         if (h->is_streamed && !s->reconnect_streamed)
+             break;
+ 
+diff --git a/libavformat/tcp.c b/libavformat/tcp.c
+index 09dc8a967966496900c664221c101d39ad7eb2cc..483e7f0b39109922bbea596673ea07357182fa8c 100644
+--- a/libavformat/tcp.c
++++ b/libavformat/tcp.c
+@@ -20,6 +20,7 @@
+  */
+ #include "avformat.h"
+ #include "libavutil/avassert.h"
++#include "libavutil/avstring.h"
+ #include "libavutil/mem.h"
+ #include "libavutil/parseutils.h"
+ #include "libavutil/opt.h"
+@@ -32,6 +33,10 @@
+ #if HAVE_POLL_H
+ #include <poll.h>
+ #endif
++#include "libavutil/thread.h"
++
++/* Lookups need a thread that can be left behind (see tcp_open_by_family()). */
++#define TCP_SPLIT_LOOKUP (HAVE_PTHREADS || HAVE_W32THREADS)
+ 
+ typedef struct TCPContext {
+     const AVClass *class;
+@@ -145,6 +150,357 @@ static int customize_fd(void *ctx, int fd, int family)
+     return 0;
+ }
+ 
++#if TCP_SPLIT_LOOKUP
++/*
++ * A hostname is resolved one address family at a time, each lookup on its
++ * own thread, and the connection race starts with whichever family answers
++ * (RFC 8305 section 3). With AF_UNSPEC, getaddrinfo() returns only once both
++ * the A and the AAAA query have settled, so a resolver that drops AAAA
++ * queries -- some ISP and router resolvers do -- costs every connection its
++ * full retry timeout (5 s per try on Android, glibc and Windows) although
++ * the IPv4 address was known within milliseconds.
++ */
++
++/* How long the family that answers first waits for the other before the
++ * race starts without it: RFC 8305's Resolution Delay. It applies both ways
++ * because a family that answers later has to restart the race to join it. */
++#define LOOKUP_DELAY_US 50000
++/* Longest wait between interrupt checks, as in ff_poll_interrupt(). */
++#define LOOKUP_POLL_US 100000
++
++/* IPv6 first: ff_connect_parallel() alternates families starting with the
++ * family of the first address, the order RFC 8305 section 4 asks for. */
++enum { LOOKUP_IPV6, LOOKUP_IPV4, LOOKUP_FAMILIES };
++
++typedef struct HostLookup HostLookup;
++
++typedef struct FamilyLookup {
++    HostLookup *owner;
++    int family;
++    int done;                   /* the rest is valid once done, under owner->lock */
++    int err;                    /* getaddrinfo() result */
++    struct addrinfo *res;       /* NULL unless the lookup succeeded */
++} FamilyLookup;
++
++/* Shared by tcp_open() and the lookup threads. The last reference frees it,
++ * so tcp_open() can return while a lookup still waits on the resolver. */
++struct HostLookup {
++    AVMutex lock;
++    AVCond cond;
++    int refs;
++    char host[1024];
++    char port[10];
++    struct addrinfo hints;
++    FamilyLookup family[LOOKUP_FAMILIES];
++};
++
++/* A copied address. The race owns its list: ff_connect_parallel() relinks
++ * it, and two getaddrinfo() results cannot be spliced and freed portably. */
++typedef struct AddrCopy {
++    struct addrinfo ai;         /* first, so freeing the addrinfo frees the copy */
++    struct sockaddr_storage addr;
++} AddrCopy;
++
++/* A family that had not answered when the race started. */
++typedef struct LateFamily {
++    HostLookup *lookup;
++    const FamilyLookup *family;
++    AVIOInterruptCB caller;
++    int arrived;
++} LateFamily;
++
++static void lookup_unref(HostLookup *lookup)
++{
++    int i, last;
++
++    ff_mutex_lock(&lookup->lock);
++    last = !--lookup->refs;
++    ff_mutex_unlock(&lookup->lock);
++    if (!last)
++        return;
++    for (i = 0; i < LOOKUP_FAMILIES; i++)
++        if (lookup->family[i].res)
++            freeaddrinfo(lookup->family[i].res);
++    ff_cond_destroy(&lookup->cond);
++    ff_mutex_destroy(&lookup->lock);
++    av_free(lookup);
++}
++
++static void lookup_run(FamilyLookup *fl)
++{
++    HostLookup *lookup = fl->owner;
++    struct addrinfo hints = lookup->hints, *res = NULL;
++    int err;
++
++    hints.ai_family = fl->family;
++    err = getaddrinfo(lookup->host, lookup->port, &hints, &res);
++
++    ff_mutex_lock(&lookup->lock);
++    fl->err  = err;
++    fl->res  = err ? NULL : res;
++    fl->done = 1;
++    ff_cond_broadcast(&lookup->cond);
++    ff_mutex_unlock(&lookup->lock);
++    lookup_unref(lookup);
++}
++
++#if HAVE_PTHREADS
++static void *lookup_thread(void *arg)
++{
++    lookup_run(arg);
++    return NULL;
++}
++#else
++static THREADFUNC_RETTYPE __stdcall lookup_thread(void *arg)
++{
++    lookup_run(arg);
++    return 0;
++}
++#endif
++
++/* Detached: nobody joins a lookup tcp_open() stopped waiting for, and
++ * compat/w32pthreads.h has no pthread_detach(). */
++static int lookup_start(FamilyLookup *fl)
++{
++#if HAVE_PTHREADS
++    pthread_t thread;
++
++    if (pthread_create(&thread, NULL, lookup_thread, fl))
++        return AVERROR(EAGAIN);
++    pthread_detach(thread);
++#else
++    HANDLE thread;
++
++#if HAVE_WINRT
++    thread = CreateThread(NULL, 0, lookup_thread, fl, 0, NULL);
++#else
++    thread = (HANDLE)_beginthreadex(NULL, 0, lookup_thread, fl, 0, NULL);
++#endif
++    if (!thread)
++        return AVERROR(EAGAIN);
++    CloseHandle(thread);
++#endif
++    return 0;
++}
++
++static HostLookup *lookup_create(const char *host, const char *port,
++                                 const struct addrinfo *hints)
++{
++    static const int families[LOOKUP_FAMILIES] = { AF_INET6, AF_INET };
++    HostLookup *lookup = av_mallocz(sizeof(*lookup));
++    int i;
++
++    if (!lookup)
++        return NULL;
++    if (ff_mutex_init(&lookup->lock, NULL)) {
++        av_free(lookup);
++        return NULL;
++    }
++    if (ff_cond_init(&lookup->cond, NULL)) {
++        ff_mutex_destroy(&lookup->lock);
++        av_free(lookup);
++        return NULL;
++    }
++    av_strlcpy(lookup->host, host, sizeof(lookup->host));
++    av_strlcpy(lookup->port, port, sizeof(lookup->port));
++    lookup->hints = *hints;
++    lookup->refs  = 1 + LOOKUP_FAMILIES;
++    for (i = 0; i < LOOKUP_FAMILIES; i++) {
++        lookup->family[i].owner  = lookup;
++        lookup->family[i].family = families[i];
++    }
++    for (i = 0; i < LOOKUP_FAMILIES; i++)
++        if (lookup_start(&lookup->family[i]) < 0)
++            lookup_run(&lookup->family[i]); /* no thread: block here, as before */
++    return lookup;
++}
++
++static int lookup_has_addresses(const FamilyLookup *fl)
++{
++    return fl->done && fl->res;
++}
++
++/* With lookup->lock held: waits until `only` has answered or, without
++ * `only`, until both families have, or one answered with addresses
++ * LOOKUP_DELAY_US ago. Polls the caller's interrupt callback meanwhile,
++ * which a blocking getaddrinfo() never could. */
++static int lookup_wait(URLContext *h, HostLookup *lookup, const FamilyLookup *only)
++{
++    const FamilyLookup *v6 = &lookup->family[LOOKUP_IPV6];
++    const FamilyLookup *v4 = &lookup->family[LOOKUP_IPV4];
++    int64_t deadline = INT64_MAX;
++
++    for (;;) {
++        int64_t now, wake;
++        struct timespec ts;
++
++        if (only ? only->done : v6->done && v4->done)
++            return 0;
++        now = av_gettime_relative();
++        if (!only && deadline == INT64_MAX &&
++            (lookup_has_addresses(v6) || lookup_has_addresses(v4)))
++            deadline = now + LOOKUP_DELAY_US;
++        if (now >= deadline)
++            return 0;
++        if (ff_check_interrupt(&h->interrupt_callback))
++            return AVERROR_EXIT;
++        wake = av_gettime() + FFMIN(deadline - now, LOOKUP_POLL_US);
++        ts.tv_sec  = wake / 1000000;
++        ts.tv_nsec = wake % 1000000 * 1000;
++        ff_cond_timedwait(&lookup->cond, &lookup->lock, &ts);
++    }
++}
++
++/* With lookup->lock held: copies every address the families in `mask`
++ * resolved into a new list, IPv6 first. */
++static int lookup_addresses(HostLookup *lookup, unsigned mask, struct addrinfo **list)
++{
++    struct addrinfo **tail = list;
++    int i;
++
++    *list = NULL;
++    for (i = 0; i < LOOKUP_FAMILIES; i++) {
++        const struct addrinfo *ai;
++
++        if (!(mask & 1U << i) || !lookup_has_addresses(&lookup->family[i]))
++            continue;
++        for (ai = lookup->family[i].res; ai; ai = ai->ai_next) {
++            AddrCopy *copy;
++
++            if (ai->ai_addrlen > sizeof(copy->addr))
++                continue;
++            copy = av_mallocz(sizeof(*copy));
++            if (!copy)
++                return AVERROR(ENOMEM);
++            copy->ai.ai_family   = ai->ai_family;
++            copy->ai.ai_socktype = ai->ai_socktype;
++            copy->ai.ai_protocol = ai->ai_protocol;
++            copy->ai.ai_addrlen  = ai->ai_addrlen;
++            copy->ai.ai_addr     = (struct sockaddr *)&copy->addr;
++            memcpy(&copy->addr, ai->ai_addr, ai->ai_addrlen);
++            *tail = &copy->ai;
++            tail  = &copy->ai.ai_next;
++        }
++    }
++    return 0;
++}
++
++static void free_addresses(struct addrinfo *list)
++{
++    while (list) {
++        struct addrinfo *next = list->ai_next;
++        av_free(list);
++        list = next;
++    }
++}
++
++/* Stops the race as soon as the late family has addresses, so they can
++ * join it. */
++static int late_family_interrupt(void *opaque)
++{
++    LateFamily *late = opaque;
++
++    if (ff_check_interrupt(&late->caller))
++        return 1;
++    ff_mutex_lock(&late->lookup->lock);
++    late->arrived = lookup_has_addresses(late->family);
++    ff_mutex_unlock(&late->lookup->lock);
++    return late->arrived;
++}
++
++static const char *family_name(const FamilyLookup *fl)
++{
++    return fl->family == AF_INET6 ? "IPv6" : "IPv4";
++}
++
++/* Resolves `hostname` one family at a time and connects. A family that
++ * answers after the race started joins it: the race is interrupted and
++ * restarted with both, or, when every address in it already failed, run
++ * again with the late family alone -- where an AF_UNSPEC lookup would still
++ * be waiting. Returns 1 for a hostname tcp_open() resolves itself. */
++static int tcp_open_by_family(URLContext *h, const char *hostname,
++                              const char *portstr, const struct addrinfo *hints)
++{
++    TCPContext *s = h->priv_data;
++    struct addrinfo numeric = { 0 }, *ai, *list = NULL;
++    const FamilyLookup *late = NULL;
++    HostLookup *lookup;
++    int fd = -1, ret, i;
++
++    /* A literal needs no DNS, and resolving it with AF_UNSPEC keeps what the
++     * platform does to literals (NAT64 synthesis). */
++    numeric.ai_flags    = AI_NUMERICHOST;
++    numeric.ai_socktype = SOCK_STREAM;
++    if (!getaddrinfo(hostname, portstr, &numeric, &ai)) {
++        freeaddrinfo(ai);
++        return 1;
++    }
++    lookup = lookup_create(hostname, portstr, hints);
++    if (!lookup)
++        return 1;
++
++    ff_mutex_lock(&lookup->lock);
++    ret = lookup_wait(h, lookup, NULL);
++    if (ret >= 0) {
++        for (i = 0; i < LOOKUP_FAMILIES; i++)
++            if (!lookup->family[i].done)
++                late = &lookup->family[i];
++        ret = lookup_addresses(lookup, ~0U, &list);
++    }
++    if (ret >= 0 && !list) {
++        av_log(h, AV_LOG_ERROR, "Failed to resolve hostname %s: %s\n",
++               hostname, gai_strerror(lookup->family[LOOKUP_IPV4].err));
++        ret = AVERROR(EIO);
++    }
++    ff_mutex_unlock(&lookup->lock);
++    if (ret >= 0 && late)
++        av_log(h, AV_LOG_VERBOSE, "Connecting to %s before its %s lookup answered\n",
++               hostname, family_name(late));
++
++    while (ret >= 0) {
++        LateFamily watch = { lookup, late, h->interrupt_callback, 0 };
++        int connect_err;
++
++        if (late) {
++            h->interrupt_callback.callback = late_family_interrupt;
++            h->interrupt_callback.opaque   = &watch;
++        }
++        ret = ff_connect_parallel(list, s->open_timeout / 1000, 3, h, &fd,
++                                  customize_fd, s);
++        if (late)
++            h->interrupt_callback = watch.caller;
++        if (ret >= 0 || !late || (ret == AVERROR_EXIT && !watch.arrived))
++            break;
++
++        connect_err = ret;
++        free_addresses(list);
++        list = NULL;
++        ff_mutex_lock(&lookup->lock);
++        if (watch.arrived) {
++            av_log(h, AV_LOG_VERBOSE, "%s addresses of %s joined the connection race\n",
++                   family_name(late), hostname);
++            ret = lookup_addresses(lookup, ~0U, &list);
++        } else {
++            ret = lookup_wait(h, lookup, late);
++            if (ret >= 0)
++                ret = lookup_addresses(lookup, 1U << (late - lookup->family), &list);
++            if (ret >= 0 && !list)
++                ret = connect_err;
++        }
++        ff_mutex_unlock(&lookup->lock);
++        late = NULL;
++    }
++
++    free_addresses(list);
++    lookup_unref(lookup);
++    if (ret < 0)
++        return ret;
++    h->is_streamed = 1;
++    s->fd = fd;
++    return 0;
++}
++#endif /* TCP_SPLIT_LOOKUP */
++
+ /* return non zero if error */
+ static int tcp_open(URLContext *h, const char *uri, int flags)
+ {
+@@ -182,6 +538,11 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
+         hints.ai_flags |= AI_PASSIVE;
+     if (!hostname[0])
+         ret = getaddrinfo(NULL, portstr, &hints, &ai);
++#if TCP_SPLIT_LOOKUP
++    else if (!s->listen &&
++             (ret = tcp_open_by_family(h, hostname, portstr, &hints)) <= 0)
++        return ret;
++#endif
+     else
+         ret = getaddrinfo(hostname, portstr, &hints, &ai);
+     if (ret) {
+diff --git a/libavformat/tls_openssl.c b/libavformat/tls_openssl.c
+index 0075288d617f33a52a7f85ea5e79a410dd78030c..10837e45c43d4396796c4d4846e3548630b92275 100644
+--- a/libavformat/tls_openssl.c
++++ b/libavformat/tls_openssl.c
+@@ -847,6 +847,11 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
+         goto fail;
+     }
+     SSL_set_ex_data(c->ssl, 0, c);
++    // Without read-ahead OpenSSL reads each record off the socket in two
++    // reads through the TCP protocol, the 5-byte header and then the body.
++    // With it, one read takes whatever records have arrived, up to 64 KiB.
++    SSL_set_read_ahead(c->ssl, 1);
++    SSL_set_default_read_buffer_len(c->ssl, 64 * 1024);
+     SSL_CTX_set_info_callback(c->ctx, openssl_info_callback);
+ 
+     if (s->is_dtls) {
+diff --git a/libavutil/tests/hdr_dynamic_metadata.c b/libavutil/tests/hdr_dynamic_metadata.c
+index e85604e4f07664de7ac9bdd6be360c665befee05..00d54461988775d45c2bfb6432c0b8ddc169aeff 100644
+--- a/libavutil/tests/hdr_dynamic_metadata.c
++++ b/libavutil/tests/hdr_dynamic_metadata.c
+@@ -219,6 +219,41 @@ static int hdr_plus_round_trip(const AVDynamicHDRPlus *in, AVDynamicHDRPlus *out
+     return ret;
+ }
+ 
++/* Use a known non-zero fill so an omitted output bit is visible in the
++ * round-trip check instead of being masked by a fresh zero-filled buffer. */
++static int hdr_plus_round_trip_prefilled(const AVDynamicHDRPlus *in,
++                                         AVDynamicHDRPlus *out,
++                                         int *size_match)
++{
++    uint8_t *buf = NULL;
++    size_t required = 0, size;
++    int ret;
++
++    *size_match = 0;
++    ret = av_dynamic_hdr_plus_to_t35(in, NULL, &required);
++    if (ret < 0)
++        return ret;
++    buf = av_malloc(required);
++    if (!buf)
++        return AVERROR(ENOMEM);
++    memset(buf, 0xA5, required);
++    size = required;
++    ret = av_dynamic_hdr_plus_to_t35(in, &buf, &size);
++    if (ret < 0)
++        goto done;
++    *size_match = size == required;
++    if (!*size_match) {
++        ret = AVERROR_INVALIDDATA;
++        goto done;
++    }
++    memset(out, 0, sizeof(*out));
++    ret = av_dynamic_hdr_plus_from_t35(out, buf, size);
++
++done:
++    av_free(buf);
++    return ret;
++}
++
+ static int app5_round_trip(const AVDynamicHDRSmpte2094App5 *in,
+                            AVDynamicHDRSmpte2094App5 *out)
+ {
+@@ -470,8 +505,18 @@ static void test_hdr_plus(void)
+ 
+     printf("\nTesting round trip, synthetic payload (branch coverage only)\n");
+     fill_hdr_plus_synthetic(hdr);
+-    ret = hdr_plus_round_trip(hdr, hdr_rt);
++    int size_match = 0;
++    ret = hdr_plus_round_trip_prefilled(hdr, hdr_rt, &size_match);
++    printf("serialized size query/write match: %s\n",
++           size_match ? "yes" : "no");
+     printf("round trip: ret=%d\n", ret);
++    int fixture_match = ret >= 0 &&
++        hdr_rt->params[1].tone_mapping_flag == 0 &&
++        hdr_rt->params[1].color_saturation_mapping_flag == 1 &&
++        hdr_rt->params[1].color_saturation_weight.num == 9 &&
++        hdr_rt->params[1].color_saturation_weight.den == 8;
++    printf("prefilled bitstream fixture match: %s\n",
++           fixture_match ? "yes" : "no");
+     if (ret >= 0)
+         print_hdr_plus("decoded", hdr_rt);
+ 
+diff --git a/tests/ref/fate/hdr_dynamic_metadata b/tests/ref/fate/hdr_dynamic_metadata
+index 118f69d7e519ce2f658513f3c72992f533c70cfe..325f2c28dd13161087dee0810e6b736348551d4a 100644
+--- a/tests/ref/fate/hdr_dynamic_metadata
++++ b/tests/ref/fate/hdr_dynamic_metadata
+@@ -35,7 +35,9 @@ Testing that to_t35() overrides application_version
+ input=7 ret=0 decoded application_version=1
+ 
+ Testing round trip, synthetic payload (branch coverage only)
++serialized size query/write match: yes
+ round trip: ret=0
++prefilled bitstream fixture match: yes
+ decoded:
+   application_version=1 num_windows=2 targeted_system_display_maximum_luminance=10000/1
+   targeted_system_display_actual_peak_luminance_flag=1

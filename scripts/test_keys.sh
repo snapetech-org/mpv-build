@@ -144,6 +144,26 @@ def make_repo(directory):
     repo = Path(directory)
     (repo / "scripts").mkdir(parents=True)
     shutil.copy2(tool, repo / "scripts" / "keys.py")
+    for name in ("inspect_pcm_package.py", "check_plezy_audio_tap_export.py"):
+        shutil.copy2(root / "scripts" / name, repo / "scripts" / name)
+    # These fixtures contain text placeholders, not native binaries. Isolate
+    # naming/hashing tests from ABI inspection only in this disposable copy.
+    # test_inspect_pcm_package.py exercises the real inspector on compiled ELF.
+    fixture_tool = repo / "scripts" / "keys.py"
+    fixture_tool.write_text(fixture_tool.read_text().replace(
+        'if __name__ == "__main__":',
+        '''def pcm_capability(root, artifact, expected=None, motion_platform=None):
+    config = root / "platforms" / "android" / "group.json"
+    variants = []
+    if config.exists():
+        for spec in json.loads(config.read_text())["artifacts"].values():
+            variants.extend(spec.get("variants", []))
+    return {"binaries": [f"jni/{abi}/libmpv.so" for abi in sorted(set(variants))]}
+
+def pcm_receipt_problems(*args, **kwargs):
+    return []
+
+if __name__ == "__main__":'''))
     (repo / "scripts/build_spatial.py").write_text("# source build\n")
     # keys.py reads the series format through patches.py, so the fixture carries
     # it too; the sandbox mirrors the real scripts/ layout.
@@ -966,6 +986,7 @@ with tempfile.TemporaryDirectory() as tmp:
             "key": current["mpv-android"],
             "asset": aar,
             "checksum": hashlib.sha256(b"aar bytes").hexdigest(),
+            "capabilities": {"binaries": ["jni/arm64-v8a/libmpv.so", "jni/x86_64/libmpv.so"]},
         },
         f"the package entry: {entry}",
     )
@@ -1227,6 +1248,7 @@ with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bin_
             "key": key,
             "asset": aar,
             "checksum": sha256(b"aar bytes"),
+            "capabilities": {"binaries": ["jni/arm64-v8a/libmpv.so", "jni/x86_64/libmpv.so"]},
             "symbols": {
                 "arm64-v8a": {"asset": arm64_symbols, "checksum": sha256(b"arm64 symbols")},
                 "x86_64": {"asset": x86_64_symbols, "checksum": sha256(b"x86_64 symbols")},

@@ -26,8 +26,8 @@ versions.json resolved pins (overrides.windows folded in):
     in <pkg>-gitinfo.txt, the only graph input that invalidates the download
     step on a warm cached tree (a textually stable branch or re-pointed tag
     must not silently keep the old source);
-  * the resolved windows patch series (patches/<c>/series.common followed by
-    patches/<c>/series.windows) is staged into packages/ as
+  * the resolved windows patch series (the selected patches/<c>/series.common[.<patchSet>] followed by
+    patches/<c>/series.windows[.<patchSet>]) is staged into packages/ as
     <c>-NNNN-<pool name>.patch and a PATCH_COMMAND is injected directly
     before UPDATE_COMMAND "". It resets the source to the pinned commit and
     then uses `git apply`, not `git am`: our pool patches are plain
@@ -66,12 +66,19 @@ at CHECK_GIT_ORIGINAL).
 """
 
 import argparse
+import importlib.util
 import json
 import shutil
 import sys
 from pathlib import Path
 
-COMPONENTS = ("mpv", "ffmpeg", "libass")
+_patch_spec = importlib.util.spec_from_file_location(
+    "mpv_build_patch_series", Path(__file__).resolve().parents[2] / "scripts/patches.py"
+)
+_patch_tools = importlib.util.module_from_spec(_patch_spec)
+_patch_spec.loader.exec_module(_patch_tools)
+
+COMPONENTS = ("mpv", "ffmpeg", "libass", "libplacebo")
 # Additional pinned packages, component -> cmake file inside the winbuild
 # checkout. These pin through the same strip-before-inject rewrite but carry
 # no patch series of ours (the staged-patch glob is anchored to packages/
@@ -100,6 +107,7 @@ COMPONENTS = ("mpv", "ffmpeg", "libass")
 EXTRA_COMPONENTS = {
     "mingw-w64": "toolchain/mingw-w64.cmake",
     "llvm": "toolchain/llvm/llvm.cmake",
+    "fontconfig": "packages/fontconfig.cmake",
     "svt-av1": "packages/svtav1.cmake",
     "nv-codec-headers": "packages/nvcodec-headers.cmake",
     "openssl": "packages/openssl.cmake",
@@ -181,8 +189,10 @@ def read_series(path):
 
 
 def resolve_series(repo, component):
-    root = repo / "patches" / component
-    return read_series(root / "series.common") + read_series(root / f"series.{GROUP}")
+    # The exact same override-aware patchSet selection drives content keys and
+    # the other platform builders. A FEL source must never get legacy patches.
+    return [name for path in _patch_tools.series_files(component, GROUP, root=repo)
+            for name in read_series(path)]
 
 
 def stage_patches(repo, component, packages_dir):
@@ -268,12 +278,15 @@ def rewrite(text, component, pins, have_patches):
     ]
     before = []
     if have_patches:
+        # FFmpeg's sparse checkout excludes FATE references our FEL patches
+        # update. Materialize the pinned tree before applying the full series.
+        materialize = '&& git sparse-checkout disable ' if component == 'ffmpeg' else ''
         # One quoted argument: ${EXEC} is `eval $*`, so the compound runs in a
         # shell. The reset makes a re-run of the patch step alone (series-only
         # change, or a step cascade) converge instead of double-applying.
         before = [
             f'{pad}PATCH_COMMAND ${{EXEC}} "git reset --hard {pins["commit"]} -q '
-            f'&& git apply ${{CMAKE_CURRENT_SOURCE_DIR}}/{component}-*.patch"'
+            f'{materialize}&& git apply ${{CMAKE_CURRENT_SOURCE_DIR}}/{component}-*.patch"'
         ]
     lines[at:at + 1] = before + [lines[at]] + after
     return "\n".join(lines) + "\n"
@@ -446,6 +459,11 @@ def gate_ffmpeg_cuda(text):
     return FFMPEG_CUDA_GUARD + text.replace(FFMPEG_CUDA_ORIGINAL, FFMPEG_CUDA_GATED, 1)
 
 
+def remove_ffmpeg9_obsolete_options(text):
+    """FFmpeg 9 removed its OpenGL output-device configure option."""
+    return text.replace('        --enable-opengl\n', '')
+
+
 # davs2 (ffmpeg's AVS2 decoder, linked into libmpv-2.dll) logs the
 # XBUILD_TIME its version.sh writes into source/version.h, and version.sh
 # reads `date`, not SOURCE_DATE_EPOCH: published key 442b5d101e4c carries
@@ -477,6 +495,17 @@ def pin_davs2_build_time(text):
             "new winbuild commit before pinning to it"
         )
     return text.replace(DAVS2_CONFIGURE_END, end, 1)
+
+
+def isolate_libcxx_bootstrap(text):
+    """Build against the new headers, excluding a cached installed libc++."""
+    anchor = "        -DCMAKE_CXX_COMPILER=${TARGET_ARCH}-clang++\n"
+    flags = "        -DCMAKE_CXX_FLAGS=-nostdinc++\n"
+    if text.count(anchor) != 1 or text.count(flags) > 1:
+        fail("llvm-libcxx.cmake: re-audit the runtime bootstrap compiler flags")
+    if flags in text:
+        return text
+    return text.replace(anchor, anchor + flags, 1)
 
 
 def main(argv):
@@ -530,7 +559,7 @@ def main(argv):
         text = package_file.read_text(encoding="utf-8")
         pinned = rewrite(text, component, pins, bool(staged))
         if component == "ffmpeg":
-            pinned = gate_ffmpeg_cuda(pinned)
+            pinned = remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned))
         if component == "mpv":
             pinned = capture_libmpv_pdb(gate_mpv_options(pinned))
         if pinned != text:
@@ -550,6 +579,13 @@ def main(argv):
             toolchain_file.write_text(pinned, encoding="utf-8")
         converted = ", upstream patch step converted to git apply" if patched else ""
         print(f"pinned {component} -> {pins['ref']} @ {pins['commit'][:10]}{converted}")
+
+    libcxx = winbuild / "toolchain/llvm/llvm-libcxx.cmake"
+    libcxx_text = libcxx.read_text(encoding="utf-8")
+    isolated = isolate_libcxx_bootstrap(libcxx_text)
+    if isolated != libcxx_text:
+        libcxx.write_text(isolated, encoding="utf-8")
+    print("isolated libc++ bootstrap from installed cached C++ headers")
 
     davs2 = packages_dir / "davs2.cmake"
     if not davs2.is_file():

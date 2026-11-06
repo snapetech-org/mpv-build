@@ -1,0 +1,116 @@
+name: Bundled Dolby Vision engines
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'versions.json'
+      - 'patches/**'
+      - 'platforms/**'
+      - 'scripts/patches.py'
+      - '.github/workflows/bundled-dv.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundled-dv-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    outputs:
+      android: ${{ steps.keys.outputs.android }}
+      linux: ${{ steps.keys.outputs.linux }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Rebuild only changed engine inputs after a PR update
+        id: keys
+        env:
+          PREVIOUS_SHA: ${{ github.event.before }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, pathlib, subprocess
+          previous = None
+          if os.environ['EVENT_ACTION'] == 'synchronize' and os.environ['PREVIOUS_SHA']:
+              previous = pathlib.Path(os.environ['RUNNER_TEMP']) / 'previous-native-inputs'
+              subprocess.run(['git', 'worktree', 'add', '--detach', str(previous), os.environ['PREVIOUS_SHA']], check=True)
+          def key(root, group):
+              return json.loads(subprocess.check_output(['python3', 'scripts/keys.py', 'keys', '--platform-group', group], cwd=root))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for group in ('android', 'linux'):
+                  changed = previous is None or key('.', group) != key(previous, group)
+                  print(f'{group}={str(changed).lower()}', file=output)
+          PYCODE
+  # First compile one Android ABI and native Linux arm64 before spending
+  # runner minutes on the full release matrix. These are ordinary producer
+  # drivers, with no experiment-only patching or build-time feature switch.
+  android-arm64:
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache/restore@v4
+        id: ndk-cache
+        with:
+          path: platforms/android/sdk
+          key: dv-android-sdk-${{ runner.os }}-${{ hashFiles('toolchain/android.txt') }}
+      - name: Install pinned Android toolchain
+        run: bash platforms/android/include/download-sdk.sh
+      - uses: actions/cache/save@v4
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        with:
+          path: platforms/android/sdk
+          key: dv-android-sdk-${{ runner.os }}-${{ hashFiles('toolchain/android.txt') }}
+      - name: Install pinned Rust for libdovi
+        run: bash scripts/install_pinned_rustup_linux.sh
+      - name: Fetch and patch normal sources
+        run: bash platforms/android/download.sh
+      - name: Build bundled engine
+        env:
+          cores: '2'
+        run: bash platforms/android/build.sh --arch arm64
+      - name: Package normal native artifact
+        run: bash platforms/android/package.sh --arch arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundled-android-arm64
+          path: dist/release/*.tar.gz
+          if-no-files-found: error
+  linux-arm64:
+    needs: plan
+    if: needs.plan.outputs.linux == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and package bundled engine
+        env:
+          JOBS: '2'
+          ARCH: aarch64
+        run: |
+          KEY="$(python3 scripts/keys.py keys --platform-group linux | python3 -c 'import json,sys; print(json.load(sys.stdin)["libmpv-linux"])')"
+          export KEY
+          bash platforms/linux/container-build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundled-linux-arm64
+          path: dist/release/*
+          if-no-files-found: error

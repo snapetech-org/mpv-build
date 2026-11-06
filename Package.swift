@@ -88,7 +88,7 @@ let package = Package(
 
         .binaryTarget(
             name: "Libass",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libass-50bc4f624372.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libass-e0b038616549.xcframework.zip",
             checksum: "c1fb41b8b3b86984110a8edf6545f5352cc32acd0b2b507da8dc127756840dcb"
         ),
 
@@ -153,37 +153,37 @@ let package = Package(
 
         .binaryTarget(
             name: "Libavcodec",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavcodec-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavcodec-345cbd2fd919.xcframework.zip",
             checksum: "f318717dafb827e0b88f1c6ac61d051e3b1a207419c87bfef8e423ffe53e5d4c"
         ),
         .binaryTarget(
             name: "Libavdevice",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavdevice-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavdevice-345cbd2fd919.xcframework.zip",
             checksum: "df424fdf5faf059831dd5fc604ebf0f63b962deedd1b6b82d1e304dabaaa457c"
         ),
         .binaryTarget(
             name: "Libavformat",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavformat-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavformat-345cbd2fd919.xcframework.zip",
             checksum: "4a5786e5c669f63064f45e2aac975c9ecb2a96877dc1a15dd4af9b8a8b3a4391"
         ),
         .binaryTarget(
             name: "Libavfilter",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavfilter-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavfilter-345cbd2fd919.xcframework.zip",
             checksum: "c1618f05bc2c755477141766f25d6b40e37fa939934a021668ff98840260491c"
         ),
         .binaryTarget(
             name: "Libavutil",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavutil-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libavutil-345cbd2fd919.xcframework.zip",
             checksum: "e346d0fdcf05e9c0db45e0635cb859107f5feae64b59af2eaadd8f23fba9fc87"
         ),
         .binaryTarget(
             name: "Libswresample",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libswresample-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libswresample-345cbd2fd919.xcframework.zip",
             checksum: "f6a840d53aab3ff829597b6fd54d21c97ade218b9c137d46ffd848eda65c49cb"
         ),
         .binaryTarget(
             name: "Libswscale",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libswscale-57a8785c2b72.xcframework.zip",
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libswscale-345cbd2fd919.xcframework.zip",
             checksum: "8f1b0a01ed30ca5839c54d929df1d7372330807497fbfd1266cfab2150459569"
         ),
 
@@ -201,8 +201,8 @@ let package = Package(
 
         .binaryTarget(
             name: "Libmpv",
-            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libmpv-87aadd8bfcac.xcframework.zip",
-            checksum: "11101b059032e08cd66a2898582e46f37542e2d6163bbb56d99dadb1a7a7c8ad"
+            url: "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple/Libmpv-f1ea43848944.xcframework.zip",
+            checksum: "3f0bc8d9a9a72f1e0e5a87e3c75d6252c5bec6978d207e87f7e87f208f9f97bb"
         ),
         //AUTO_GENERATE_TARGETS_END//
     ]

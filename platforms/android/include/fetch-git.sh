@@ -22,7 +22,20 @@ fetch_pinned_git () {
 	cloned=""
 	for source in "${sources[@]}"; do
 		for attempt in 1 2 3; do
-			if git clone --depth 1 --branch "$ref" "$@" "$source" "$destination"; then
+			if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+				# A commit pin is not a branch name. Fetch that exact object,
+				# then initialize submodules at its gitlinks, never the tip's.
+				if git init --quiet "$destination" \
+					&& git -C "$destination" remote add origin "$source" \
+					&& git -C "$destination" fetch --quiet --depth 1 origin "$ref" \
+					&& git -C "$destination" checkout --quiet --detach FETCH_HEAD; then
+					if [[ " $* " != *" --recurse-submodules "* ]] ||
+						git -C "$destination" submodule update --init --recursive --depth 1; then
+						cloned="$source"
+						break 2
+					fi
+				fi
+			elif git clone --depth 1 --branch "$ref" "$@" "$source" "$destination"; then
 				cloned="$source"
 				break 2
 			fi

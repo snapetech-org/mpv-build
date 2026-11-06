@@ -1,0 +1,16 @@
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -2847,7 +2847,12 @@
+                     p->pme.device_kind == PME_DEVICE_GPU ? "gpu" :
+                     p->pme.device_kind == PME_DEVICE_CPU ? "cpu" : "unknown");
+     mp_tags_set_str(tags, "active", stats.last_frame_generated ? "yes" : "no");
+-    mp_tags_set_str(tags, "gpu", p->vk.ready ? p->vk.device_name : "cpu");
++    const char *gpu = "cpu";
++#ifdef PLEZY_HAVE_PME_VULKAN
++    if (p->vk.ready)
++        gpu = p->vk.device_name;
++#endif
++    mp_tags_set_str(tags, "gpu", gpu);
+     mp_tags_set_str(tags, "inference-ms", mp_tprintf(32, "%.3f", stats.last_inference_ms));
+     mp_tags_set_str(tags, "inference-p95-ms", mp_tprintf(32, "%.3f", stats.inference_p95_ms));
+     mp_tags_set_str(tags, "preprocessing-ms", mp_tprintf(32, "%.3f", stats.preprocessing_ms));

@@ -1,4 +1,3 @@
-# ng-runner-policy: private-jit-only-v1
 # Public pull requests stay off trusted runners until a disposable,
 # secret-free JIT route is available.
 name: CI
@@ -15,10 +14,36 @@ on:
         type: choice
         options: [ci]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Compatible runner pool
         required: true
         type: choice
-        options: [private]
+        options: [private, public]
+      target:
+        description: Select the native validation to run
+        type: choice
+        default: checks
+        options: [checks, windows, windows-diagnostics, android-release, apple-libmpv, apple-assemble]
+      windows_arch:
+        description: Windows architecture to validate without repeating another active build
+        type: choice
+        default: all
+        options: [all, x86_64, aarch64]
+      reuse_apple_run:
+        description: Successful six-slice Apple build to assemble without recompiling
+        type: string
+        default: ''
+      reuse_arm64_run:
+        description: Successful starter run to reuse without compiling ARM64 twice
+        type: string
+        default: ''
+      reuse_x86_run:
+        description: Prior run with a successful x86 native job to reuse without recompiling it
+        type: string
+        default: ''
+      reuse_native_run:
+        description: Reassemble every successful native ABI from this trusted run
+        type: string
+        default: ''
 
 jobs:
   patches:
@@ -50,6 +75,8 @@ jobs:
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
           python3 scripts/test_prepare_android_java.py
+          python3 scripts/test_prepare_android_qairt.py
+          python3 scripts/test_inspect_pcm_package.py
           python3 scripts/test_linux_arm64_runtime_workflow.py
 
       # test_audiotrack_truehd.sh encodes its TrueHD fixtures with the host
@@ -75,14 +102,19 @@ jobs:
         run: bash scripts/test_symbols.sh
 
       - name: Test windows package pinning
-        run: python3 platforms/windows/test_pin_packages.py
+        run: |
+          python3 platforms/windows/test_pin_packages.py
+          python3 platforms/windows/test_host_llvm_cache.py
+          python3 platforms/windows/test_check_patches.py
 
       # The linux driver has no other runner. The harness needs only bash, git
       # and python3 (every build tool is stubbed and JOBS=1 keeps nproc out of
       # it), and it is the only gate on the mpv/ffmpeg configure flags whose
       # loss still compiles, links and plays -- just degraded.
       - name: Test linux build plan
-        run: bash platforms/linux/test.sh
+        run: |
+          bash platforms/linux/test.sh
+          python3 platforms/linux/test_commit_checkout.py
 
       # Every nonempty (component, group) series must still apply cleanly to
       # the exact source tree versions.json pins for it, otherwise the next
@@ -148,6 +180,7 @@ jobs:
                 # The player's half of the passthrough fallback: plain C, no
                 # Apple frameworks.
                 subprocess.run(['bash', 'scripts/test_audio_passthrough_fallback.sh', str(dest)], check=True)
+                subprocess.run(['bash', 'scripts/test_avf_host_present.sh', str(dest)], check=True)
               if component == 'mpv' and group == 'android':
                 subprocess.run(['bash', 'scripts/test_audiotrack_timing.sh', str(dest)], check=True)
                 subprocess.run(['bash', 'scripts/test_audiotrack_truehd.sh', str(dest)], check=True)
@@ -237,6 +270,7 @@ jobs:
     needs: android-plan
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/android.yml
     with:
       natives: ${{ needs.android-plan.outputs.natives == 'true' }}
@@ -381,3 +415,458 @@ jobs:
       - name: Build Succeeded
         run: |
           echo "Build completed successfully."
+
+  bundled-windows:
+    name: Build windows ${{ matrix.arch }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && (inputs.target == 'windows' || inputs.target == 'windows-diagnostics')
+    # Both target arches cross-compile from an x86_64 host: winbuild's
+    # GCC_ARCH probe runs the HOST compiler with -march=x86-64 and fails on
+    # arm64 hosts, and aarch64-w64-mingw32 only needs the clang toolchain,
+    # which build.sh hardcodes.
+    # Pinned to the host environment the cached toolchain was built on: the
+    # LLVM bootstrap links host clang against libc++, so the cached clang
+    # needs the matching libc++/libunwind (LLVM 18) at run time. A different
+    # system library generation fails with "libunwind.so.1: cannot open
+    # shared object file" and meson reports "Unknown compiler(s)". The cache
+    # key does not name the host, so moving this runner means a new cache epoch
+    # (windows-ep3) and a cold, hours-long toolchain bootstrap.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.windows_arch == 'aarch64' && '["aarch64"]' || inputs.windows_arch == 'x86_64' && '["x86_64"]' || '["x86_64","aarch64"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Core set validated through the pinned configure (git..libtool;
+      # unzip+patch are hard configure requirements, zip is for package.sh),
+      # plus the winbuild README ubuntu set the full ~60-package graph needs.
+      # libc++-dev and lld: the llvm bootstrap compiles with the host clang
+      # against libc++. meson comes from pip, exactly as the winbuild README
+      # instructs: apt meson (1.3.2 on noble) passes winbuild's >=1.3.0
+      # configure gate but the branch-tip packages want current meson --
+      # fontconfig main already requires >= 1.11.0.
+      - name: Install dependencies
+        timeout-minutes: 12
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          # The runner image ships Google's Chrome apt source, which has
+          # served a mismatching index more than once; nothing here uses it.
+          apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            apt_options+=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          fi
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
+            git cmake ninja-build build-essential pkg-config curl unzip \
+            zip patch ca-certificates python3 python3-pip autoconf automake libtool \
+            libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \
+            gcc-multilib g++-multilib clang lld libc++-dev libc++abi-dev \
+            libgmp-dev libmpfr-dev libmpc-dev libgcrypt-dev gperf ragel \
+            texinfo autopoint re2c asciidoc rst2pdf python3-docutils \
+            python3-mako python3-jsonschema p7zip-full ccache
+          python3 -m pip install --break-system-packages --user meson
+          meson_bin="$(python3 -m site --user-base)/bin"
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
+
+      # pin_packages.py is the one place that resolves the windows pin, so the
+      # cache key below cannot describe a different commit than build.sh
+      # fetches.
+      - name: Resolve the winbuild pin
+        id: winbuild
+        run: |
+          read -r _ commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      # The llvm/rust bootstrap takes hours and the dependency graph builds
+      # ~60 packages, so the whole build state is cached, mirroring upstream
+      # winbuild's own CI (mpv_clang.yml caches src_packages, clang_root and
+      # the entire per-arch build tree). Skipping is stamp-driven ninja:
+      # an ExternalProject step re-runs only when its stamp is missing/older
+      # or its command line changed, and ninja treats an edge absent from
+      # .ninja_log as changed -- so the per-arch tree (stamps + .ninja_log +
+      # installed prefix + ccache) is the unit of caching, not a hand-picked
+      # subset. pin_packages.py suppresses upstream's check-git step, which
+      # is otherwise absent from cold graphs and cascades a full rebuild on
+      # its first warm appearance.
+      # Correctness of reuse: dep sources can only move through the winbuild
+      # commit, and the three packages pin_packages.py rewrites get new step
+      # command lines whenever versions.json pins or the patch series change,
+      # which dirties exactly those packages; build.sh fullcleans mpv every
+      # run (upstream's BUILDDATE naming dirties its packaging steps daily,
+      # and libmpv must relink against whatever changed underneath it anyway)
+      # and always runs the toolchain targets -- no-ops when clean -- which
+      # makes the last, pin-free restore tier safe across winbuild bumps.
+      # The pins tier prefers a completed state over an older one; the run_id
+      # suffix keeps every run's save unique so failed bootstraps still
+      # checkpoint their progress.
+      - name: Restore build state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/windows/${{ matrix.arch }}
+            build/windows/src
+            build/windows/rustup
+          key: windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ github.run_id }}
+          restore-keys: |
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+
+      # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
+      # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
+      # process can exceed physical RAM, while retaining free space for the
+      # build and package outputs.
+      - name: Restore the compiler cache workspace alias
+        run: python3 scripts/windows_cache_workspace.py ${{ matrix.arch }}
+
+      - name: Retain compiler failure diagnostics without rebuilding
+        if: inputs.target == 'windows-diagnostics'
+        shell: bash
+        run: |
+          root="$MPV_WINDOWS_WORKSPACE/build/windows/${{ matrix.arch }}"
+          mkdir -p diagnostics
+          runtime="$root/toolchain/llvm-libcxx-prefix/src/llvm-libcxx-build"
+          cp "$runtime/build.ninja" diagnostics/
+          cp "$runtime/CMakeCache.txt" diagnostics/
+          ninja -C "$runtime" -t commands > diagnostics/commands.txt
+          cp "$root/exec" diagnostics/exec.sh
+          cp -r "$root/install/bin" diagnostics/wrappers
+          find diagnostics/wrappers -type f -size +100k -delete
+          tar -czf diagnostics/headers.tar.gz -C "$root/install/${{ matrix.arch }}-w64-mingw32" include
+          cp "$root/toolchain/llvm-libcxx-prefix/src/llvm-libcxx-stamp/"*.log diagnostics/
+          env RUNTIME="$runtime" ROOT="$root" python3 - <<'PYDIAG'
+          import os,pathlib,shlex,subprocess
+          output=pathlib.Path('diagnostics').resolve()
+          command=next(line for line in (output/'commands.txt').read_text().splitlines() if 'cxa_default_handlers.cpp' in line)
+          parts=shlex.split(command)
+          assert '&&' not in parts
+          index=parts.index('-o');del parts[index:index+2]
+          parts.remove('-c')
+          parts.extend(['-E','-H','-v','-o',str(output/'preprocessed.i')])
+          with (output/'header-search.log').open('w') as log:
+              result=subprocess.run([os.environ['ROOT']+'/exec','LTO=0',*parts],cwd=os.environ['RUNTIME'],stdout=log,stderr=log)
+          (output/'preprocess-result.txt').write_text(str(result.returncode)+'\n')
+          PYDIAG
+      - uses: actions/upload-artifact@v4
+        if: inputs.target == 'windows-diagnostics'
+        with:
+          name: windows-diagnostics-${{ matrix.arch }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Add temporary swap for compiler memory spikes
+        if: inputs.target == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          swap_file=/var/tmp/gha-windows-build.swap
+          swap_size_gib=8
+          keep_free_gib=4
+          available_kib="$(df -Pk /var/tmp | awk 'NR == 2 {print $4}')"
+          required_kib="$(( (swap_size_gib + keep_free_gib) * 1024 * 1024 ))"
+          if (( available_kib < required_kib )); then
+            echo "need $((swap_size_gib + keep_free_gib)) GiB free on /var/tmp for compiler swap and build outputs; found $((available_kib / 1024 / 1024)) GiB" >&2
+            exit 1
+          fi
+          sudo fallocate -l "${swap_size_gib}G" "$swap_file"
+          sudo chmod 0600 "$swap_file"
+          sudo mkswap "$swap_file"
+          sudo swapon "$swap_file"
+          sudo sysctl vm.swappiness=100
+          free -h
+          swapon --show
+          df -h /var/tmp
+
+      - name: Build libmpv-windows (${{ matrix.arch }})
+        if: inputs.target == 'windows'
+        run: |
+          cd "$MPV_WINDOWS_WORKSPACE"
+          bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/build.sh" ${{ matrix.arch }}
+
+      # package.sh names the zip by content key itself, so the build leg
+      # uploads it as-is; publish records every variant at once. Beside it
+      # goes the unkeyed libmpv-windows-<arch>-symbols.zip (libmpv-2.pdb),
+      # which record-platform names by the same key; *.zip below carries it.
+      - name: Package dev zip and symbols (${{ matrix.arch }})
+        if: inputs.target == 'windows'
+        run: |
+          cd "$MPV_WINDOWS_WORKSPACE"
+          bash "$MPV_WINDOWS_WORKSPACE/platforms/windows/package.sh" ${{ matrix.arch }}
+
+      # A rebuild of a published key has to reproduce its bytes (publish-assets
+      # refuses anything else), so no file may carry a build's clock. The scan
+      # reaches back to 2020: a restored build tree keeps the stamps of the
+      # runs that compiled each package, weeks before this one.
+      - name: Check the zips for a build date (${{ matrix.arch }})
+        if: inputs.target == 'windows'
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Save build state cache
+        if: always() && inputs.target == 'windows'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/windows/${{ matrix.arch }}
+            build/windows/src
+            build/windows/rustup
+          key: windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ github.run_id }}
+
+      - name: Upload platform build (${{ matrix.arch }})
+        if: inputs.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: ./dist/release/*.zip
+          if-no-files-found: error
+
+  bundled-android-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && inputs.target == 'android-release'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/android.yml
+    with:
+      natives: true
+      runner-pool: public
+      reuse-arm64-run: ${{ inputs.reuse_arm64_run }}
+      reuse-x86-run: ${{ inputs.reuse_x86_run }}
+      reuse-native-run: ${{ inputs.reuse_native_run }}
+
+  apple-libmpv:
+    name: Build ordered PCM apple ${{ matrix.name }}
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'apple-libmpv' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public'
+    permissions:
+      contents: read
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      # Public native Apple builds leave the private app runner available.
+      # Keep small Python and Rust caches on local APFS for reliable metadata access.
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      RUSTUP_AUTO_INSTALL: '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: macos
+            platforms: macos
+            platform_type: macos
+          - name: maccatalyst
+            platforms: maccatalyst
+            platform_type: maccatalyst
+          - name: iphoneos
+            platforms: ios-device
+            platform_type: ios
+          - name: iphonesimulator
+            platforms: ios-simulator
+            platform_type: isimulator
+          - name: tvos
+            platforms: tvos-device
+            platform_type: tvos
+          - name: tvsimulator
+            platforms: tvos-simulator
+            platform_type: tvsimulator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify Apple toolchain and install pinned Meson
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang python@3.12
+          for formula in autoconf automake libtool ninja python@3.12; do
+            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
+          done
+          for tool in autoconf automake glibtool ninja cmake pkg-config wget nasm sdl2-config glslang python3 xcodebuild xcrun; do
+            command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          for sdk in macosx iphoneos iphonesimulator appletvos appletvsimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            test -d "$sdk_path" || { echo "missing Xcode SDK: $sdk" >&2; exit 1; }
+          done
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          meson_bin="$RUNNER_TEMP/meson-venv/bin"
+          "$meson_bin/python" -m pip install --disable-pip-version-check meson==1.4.2
+          echo "$meson_bin" >> "$GITHUB_PATH"
+          export PATH="$meson_bin:$PATH"
+          meson --version
+
+      # Only the stale libraries are compiled; the rest are restored from their
+      # published per-platform zips. No version= argument: the URLs the build
+      # script would spell from it are replaced by the manifest's
+      # content-addressed ones in the publish job.
+      - name: Bootstrap pinned rustup and install pinned Rust toolchain
+        run: |
+          bash scripts/install_pinned_rustup_macos.sh
+          rust_version="$(sed -n 's/^rust=//p' toolchain/apple.txt)"
+          test -n "$rust_version"
+          # What build_spatial.py runs, named instead of left to a profile:
+          # rustc and cargo, and rust-std for every target spatialTarget()
+          # returns (only the slices with spatial audio build Rust).
+          rustup toolchain install "$rust_version" --profile minimal --no-self-update \
+            --component rustc,cargo,rust-std \
+            --target aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,aarch64-apple-tvos,aarch64-apple-tvos-sim
+          # build_spatial.py resolves the toolchain's rustc through rustup, so
+          # no proxy has to be on the driver's PATH.
+          rustup which --toolchain "$rust_version" rustc
+          rustup which --toolchain "$rust_version" cargo
+
+      - name: Build GPL version (${{ matrix.name }})
+        run: |
+          make build use-prebuilt libs=libmpv platform=${{ matrix.platforms }}
+
+      - name: Require Plezy ordered PCM ABI (${{ matrix.platform_type }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=("dist/libmpv/${{ matrix.platform_type }}/thin/"*/lib/libmpv.a)
+          if (( ${#archives[@]} == 0 )); then
+            echo "No libmpv archives were produced for ${{ matrix.platform_type }}" >&2
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            python3 scripts/check_plezy_audio_tap_export.py "$archive"
+          done
+
+      # Each spatial slice: the prelinked core's exports, a link with libdovi's
+      # Rust runtime force-loaded, and an Objective-C consumer through the
+      # packaged mpv.pc. Slices without spatial audio are skipped. Only a leg
+      # that compiled libmpv has the patched source and packaged mpv.pc this
+      # needs; a libmpv restored from its published zips was checked when it
+      # was built. stale_apple has no delimiters, so add them for an exact test.
+      - name: Check spatial slices and combined archive links (${{ matrix.platform_type }})
+        shell: bash
+        run: |
+          mpv_version="$(python3 -c 'import json; print(json.load(open("versions.json"))["components"]["mpv"]["version"])')"
+          bash scripts/test_spatial_archives.sh "dist/libmpv-$mpv_version" "${{ matrix.platform_type }}"
+
+      - name: Name per-platform binaries by content (${{ matrix.platform_type }})
+        run: |
+          python3 scripts/keys.py record-platform \
+            --platform-group apple \
+            --platform ${{ matrix.platform_type }} \
+            --release-dir dist/release
+
+      # A rebuild of a published key has to reproduce its bytes (publish-assets
+      # refuses anything else), so no file may carry a build's clock. A stamp
+      # publishes fine once and fails only the rebuild, weeks later.
+      - name: Check the zips for a build date (${{ matrix.name }})
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Upload platform build (${{ matrix.name }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-${{ matrix.name }}
+          path: |
+            ./dist/release/*.zip
+            ./dist/release/*.checksum.txt
+          if-no-files-found: error
+
+
+  apple-assemble:
+    name: Assemble verified Apple libmpv
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'apple-assemble' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify all source slices and their content keys
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN: ${{ inputs.reuse_apple_run }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          run = os.environ['REUSE_RUN']
+          if not re.fullmatch(r'[0-9]+', run):
+              raise SystemExit('reuse_apple_run must be a numeric run ID')
+          repo = os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run}' + path]))
+          data = api('')
+          if data['head_repository']['full_name'] != repo:
+              raise SystemExit('Apple reuse requires this trusted repository')
+          jobs = api('/jobs?per_page=100')['jobs']
+          for platform in ('macos', 'maccatalyst', 'iphoneos', 'iphonesimulator', 'tvos', 'tvsimulator'):
+              if not any(j['name'] == 'Build ordered PCM apple ' + platform and j['conclusion'] == 'success' for j in jobs):
+                  raise SystemExit('Apple source slice is not successful: ' + platform)
+          subprocess.run(['git', 'fetch', '--no-tags', 'origin', data['head_sha']], check=True)
+          def keys():
+              return json.loads(subprocess.check_output(['python3', 'scripts/keys.py', 'keys', '--platform-group', 'apple']))
+          current = keys()
+          subprocess.run(['git', 'worktree', 'add', '--detach', 'previous-native-inputs', data['head_sha']], check=True)
+          previous = json.loads(subprocess.check_output(['python3', 'scripts/keys.py', 'keys', '--platform-group', 'apple'], cwd='previous-native-inputs'))
+          subprocess.run(['git', 'worktree', 'remove', 'previous-native-inputs'], check=True)
+          if current != previous:
+              raise SystemExit('Apple source/build content keys differ; refusing artifact reuse')
+          PYCODE
+
+      - name: Download platform builds
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_apple_run }}
+          pattern: apple-*
+          path: ./dist/partials
+
+      - name: Merge platform XCFrameworks
+        run: python3 scripts/merge_xcframeworks.py dist/partials dist/release
+
+      - name: Check the merged XCFrameworks for a build date
+        run: bash scripts/test_build_date.sh dist/release/*.zip
+
+      - name: Name frameworks by content and record them
+        run: python3 scripts/keys.py record-frameworks --platform-group apple --release-dir dist/release
+
+      - name: Render Package.swift from the manifest
+        run: python3 scripts/keys.py render --platform-group apple
+
+      - name: Verify manifest matches this commit
+        run: python3 scripts/keys.py verify --platform-group apple
+
+      # Pinned by release and archive checksum, since it gates publish-assets.
+      - name: Install XcodeGen 2.46.0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" \
+            | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Link Objective-C-only SwiftPM consumers on iOS and tvOS
+        run: bash scripts/test_spatial_swiftpm.sh dist/release
+
+      - name: Upload manifest for the commit job
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-assembled
+          path: |
+            ./artifacts.json
+            ./Package.swift
+            ./dist/release/*.zip
+            ./dist/release/*.checksum.txt
+          if-no-files-found: error
+

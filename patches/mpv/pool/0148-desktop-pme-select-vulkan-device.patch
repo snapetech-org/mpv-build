@@ -1,0 +1,97 @@
+From: PlezyNG
+Subject: [PATCH] PME: select and report the Vulkan compute device
+
+Let the PME filter target a requested Vulkan device by a device-name substring
+through PLEZY_PME_VULKAN_DEVICE. This is separate from mpv's display renderer,
+so multi-GPU systems can reserve motion compute for a dedicated accelerator.
+An unmatched explicit request bypasses Vulkan instead of silently selecting a
+different GPU. Report the selected physical-device name in PME metadata so the
+performance overlay identifies the hardware that ran the GPU stages.
+
+diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -124,6 +124,7 @@
+ struct vk_compute {
+     VkInstance instance;
+     VkPhysicalDevice physDev;
++    char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+     VkDevice device;
+     VkQueue queue;
+     uint32_t queueFamily;
+@@ -313,13 +314,52 @@
+     };
+     VK_CHECK(vkCreateInstance(&ici, NULL, &vk->instance), fail);
+ 
+-    // --- Physical device (first GPU) ---
+-    uint32_t devCount = 1;
+-    VK_CHECK(vkEnumeratePhysicalDevices(vk->instance, &devCount, &vk->physDev), fail);
++    // --- Select a physical device ---
++    // The filter owns a separate Vulkan device from mpv's renderer. This lets
++    // local multi-GPU setups keep motion compute on a dedicated card without
++    // moving the display renderer. The override is a case-sensitive substring
++    // of VkPhysicalDeviceProperties::deviceName; an unmatched request fails
++    // closed instead of silently using another GPU.
++    uint32_t devCount = 0;
++    VK_CHECK(vkEnumeratePhysicalDevices(vk->instance, &devCount, NULL), fail);
+     if (devCount == 0) {
+         MP_WARN(f, "Vulkan: no physical devices\n");
+         goto fail;
+     }
++    VkPhysicalDevice *devices = calloc(devCount, sizeof(*devices));
++    if (!devices) {
++        MP_WARN(f, "Vulkan: could not allocate physical-device list\n");
++        goto fail;
++    }
++    VkResult devices_result = vkEnumeratePhysicalDevices(vk->instance, &devCount, devices);
++    if (devices_result != VK_SUCCESS) {
++        MP_WARN(f, "Vulkan: could not enumerate physical devices (%d)\n", (int)devices_result);
++        free(devices);
++        goto fail;
++    }
++
++    const char *requested_device = getenv("PLEZY_PME_VULKAN_DEVICE");
++    uint32_t selected_index = 0;
++    if (requested_device && requested_device[0]) {
++        int found = 0;
++        for (uint32_t i = 0; i < devCount; i++) {
++            VkPhysicalDeviceProperties properties;
++            vkGetPhysicalDeviceProperties(devices[i], &properties);
++            if (strstr(properties.deviceName, requested_device)) {
++                selected_index = i;
++                found = 1;
++                break;
++            }
++        }
++        if (!found) {
++            MP_WARN(f, "Vulkan: requested device '%s' was not found; compute will bypass\n",
++                    requested_device);
++            free(devices);
++            goto fail;
++        }
++    }
++    vk->physDev = devices[selected_index];
++    free(devices);
+ 
+     // --- Find compute queue family ---
+     uint32_t qfCount = 0;
+@@ -685,8 +725,9 @@
+ 
+     VkPhysicalDeviceProperties devProps;
+     vkGetPhysicalDeviceProperties(vk->physDev, &devProps);
++    snprintf(vk->device_name, sizeof(vk->device_name), "%s", devProps.deviceName);
+     MP_INFO(f, "Vulkan: GPU compute ready — %s, sm=%dx%d\n",
+-            devProps.deviceName, vk->sW, vk->sH);
++            vk->device_name, vk->sW, vk->sH);
+     return 0;
+ 
+ fail:
+@@ -2593,7 +2634,7 @@
+                     p->pme.device_kind == PME_DEVICE_GPU ? "gpu" :
+                     p->pme.device_kind == PME_DEVICE_CPU ? "cpu" : "unknown");
+     mp_tags_set_str(tags, "active", stats.last_frame_generated ? "yes" : "no");
+-    mp_tags_set_str(tags, "gpu", p->vk.ready ? "vulkan" : "cpu");
++    mp_tags_set_str(tags, "gpu", p->vk.ready ? p->vk.device_name : "cpu");
+     mp_tags_set_str(tags, "inference-ms", mp_tprintf(32, "%.3f", stats.last_inference_ms));
+     mp_tags_set_str(tags, "inference-p95-ms", mp_tprintf(32, "%.3f", stats.inference_p95_ms));
+     mp_tags_set_str(tags, "generated-frames", mp_tprintf(32, "%llu", stats.generated_frames));

@@ -1,0 +1,40 @@
+--- a/meson.build
++++ b/meson.build
+@@ -1075,14 +1075,14 @@
+ endif
+ 
+ wayland = {
+-    'deps': [dependency('wayland-client', version: '>= 1.23.0', required: get_option('wayland')),
+-             dependency('wayland-cursor', version: '>= 1.23.0', required: get_option('wayland')),
++    'deps': [dependency('wayland-client', version: '>= 1.22.0', required: get_option('wayland')),
++             dependency('wayland-cursor', version: '>= 1.22.0', required: get_option('wayland')),
+              dependency('wayland-protocols', version: '>= 1.38', required: get_option('wayland')),
+              dependency('xkbcommon', version: '>= 0.3.0', required: get_option('wayland'))],
+     'header': cc.has_header('linux/input-event-codes.h', required: get_option('wayland'),
+                             # Pass CFLAGS from a related package as a hint for non-Linux
+                             dependencies: dependency('wayland-client', required: get_option('wayland'))),
+-    'scanner': find_program('wayland-scanner', version: '>= 1.23.0', required: get_option('wayland')),
++    'scanner': find_program('wayland-scanner', version: '>= 1.22.0', required: get_option('wayland')),
+ }
+ wayland_deps = true
+ foreach dep: wayland['deps']
+--- a/video/out/wayland_common.c
++++ b/video/out/wayland_common.c
+@@ -3348,7 +3348,7 @@
+         wp_color_management_surface_feedback_v1_get_preferred(wl->color_surface_feedback);
+     struct wp_image_description_info_v1 *description_info =
+         wp_image_description_v1_get_information(image_description);
+-    struct wl_event_queue *image_description_info_queue = wl_display_create_queue_with_name(wl->display, "image description info queue");
++    struct wl_event_queue *image_description_info_queue = wl_display_create_queue(wl->display);
+     wl->image_description_info_done = false;
+     wl_proxy_set_queue((struct wl_proxy *)description_info, image_description_info_queue);
+     wp_image_description_info_v1_add_listener(description_info, &image_description_info_listener, wd);
+@@ -4618,7 +4618,7 @@
+     if (wl->color_manager) {
+         wl->color_surface_feedback = wp_color_manager_v1_get_surface_feedback(wl->color_manager, wl->callback_surface);
+         wp_color_management_surface_feedback_v1_add_listener(wl->color_surface_feedback, &surface_feedback_listener, wl);
+-        wl->color_queue = wl_display_create_queue_with_name(wl->display, "image description creator queue");
++        wl->color_queue = wl_display_create_queue(wl->display);
+     } else {
+         MP_VERBOSE(wl, "Compositor doesn't support the %s protocol!\n",
+                    wp_color_manager_v1_interface.name);

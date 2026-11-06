@@ -114,6 +114,9 @@ jobs:
       - name: Test AVFoundation timebase servo
         run: ./scripts/test_avf_timebase_servo.sh
 
+      - name: Test AVFoundation host presentation clock
+        run: bash ./scripts/test_avf_host_present.sh
+
       - name: Test AVFoundation PiP frame-space OSD
         run: ./scripts/test_avf_pip_frame_space_osd.sh
 
@@ -227,6 +230,8 @@ jobs:
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
           python3 scripts/test_prepare_android_java.py
+          python3 scripts/test_prepare_android_qairt.py
+          python3 scripts/test_inspect_pcm_package.py
 
       - name: Test shared extractor
         run: ./scripts/test_extract.sh
@@ -426,6 +431,21 @@ jobs:
         run: |
           make build use-prebuilt libs=${{ needs.plan.outputs.stale_apple }} platform=${{ matrix.platforms }}
 
+      - name: Require Plezy ordered PCM ABI (${{ matrix.platform_type }})
+        if: contains(format(',{0},', needs.plan.outputs.stale_apple), ',libmpv,')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=("dist/libmpv/${{ matrix.platform_type }}/thin/"*/lib/libmpv.a)
+          if (( ${#archives[@]} == 0 )); then
+            echo "No libmpv archives were produced for ${{ matrix.platform_type }}" >&2
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            python3 scripts/check_plezy_audio_tap_export.py "$archive"
+          done
+
       # Each spatial slice: the prelinked core's exports, a link with libdovi's
       # Rust runtime force-loaded, and an Objective-C consumer through the
       # packaged mpv.pc. Slices without spatial audio are skipped. Only a leg
@@ -541,6 +561,7 @@ jobs:
     if: contains(needs.plan.outputs.stale_groups, ',android,')
     permissions:
       contents: read
+      actions: read
     # The tarball legs only when libmpv-android is stale; the AAR always, from
     # this run's tarballs or the published ones artifacts.json pins.
     uses: ./.github/workflows/android.yml
@@ -577,6 +598,9 @@ jobs:
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=x86_64 bash platforms/linux/container-build.sh
+
+      - name: Require Plezy ordered PCM ABI
+        run: python3 scripts/check_plezy_audio_tap_export.py libmpv-prefix/lib/libmpv.so
 
       - name: Check the tarball and symbols for a build date
         run: |
@@ -711,6 +735,10 @@ jobs:
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=aarch64 bash platforms/linux/container-build.sh
 
+      - name: Require Plezy ordered PCM ABI
+        working-directory: ${{ env.BUILD_ROOT }}/src
+        run: python3 scripts/check_plezy_audio_tap_export.py libmpv-prefix/lib/libmpv.so
+
       - name: Check the tarball and symbols for a build date
         shell: bash
         working-directory: ${{ env.BUILD_ROOT }}/src
@@ -793,7 +821,7 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
           sudo apt-get update
           sudo apt-get install -y \
-            git cmake ninja-build build-essential pkg-config curl unzip \
+            git cmake ninja-build build-essential pkg-config curl wget unzip \
             zip patch ca-certificates python3 python3-pip autoconf automake libtool \
             libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \
             gcc-multilib g++-multilib clang lld libc++-dev libc++abi-dev \
@@ -878,6 +906,14 @@ jobs:
 
       - name: Build libmpv-windows (${{ matrix.arch }})
         run: bash platforms/windows/build.sh ${{ matrix.arch }}
+
+      - name: Require Plezy ordered PCM ABI (${{ matrix.arch }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          dev_dir="$(find "build/windows/${{ matrix.arch }}" -maxdepth 1 -type d -name 'mpv-dev-*' -print -quit)"
+          test -n "$dev_dir" || { echo "mpv-dev package was not produced" >&2; exit 1; }
+          python3 scripts/check_plezy_audio_tap_export.py "$dev_dir/libmpv-2.dll"
 
       # package.sh names the zip by content key itself, so the build leg
       # uploads it as-is; publish records every variant at once. Beside it

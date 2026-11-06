@@ -1,0 +1,35 @@
+From: PlezyNG
+Subject: [PATCH] PME: prefer cached coherent Vulkan memory
+
+Prefer cached host-visible coherent memory for PME mapped Vulkan buffers.
+The first-match allocator selected uncached system memory on AMD and made
+CPU reads of the GPU-produced tensor dominate end-to-end playback latency.
+
+diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -202,12 +202,20 @@
+ {
+     VkPhysicalDeviceMemoryProperties memProps;
+     vkGetPhysicalDeviceMemoryProperties(pd, &memProps);
++    uint32_t fallback = UINT32_MAX;
+     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
+-        if ((typeBits & (1 << i)) &&
+-            (memProps.memoryTypes[i].propertyFlags & props) == props)
++        if (!(typeBits & (1 << i)) ||
++            (memProps.memoryTypes[i].propertyFlags & props) != props)
++            continue;
++        // PME reads large GPU-produced tensors back on the CPU before handing
++        // them to ONNX Runtime. Prefer a coherent cached host-visible heap so
++        // that readback does not become an uncached PCIe/host-memory walk.
++        if (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+             return i;
+-    }
+-    return UINT32_MAX;
++        if (fallback == UINT32_MAX)
++            fallback = i;
++    }
++    return fallback;
+ }
+ 
+ // Create a HOST_VISIBLE | HOST_COHERENT SSBO and map it

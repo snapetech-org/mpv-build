@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <vector>
 
 /**
@@ -40,6 +41,7 @@ struct Session {
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
 
+  std::atomic<double> visualization_pts{std::numeric_limits<double>::quiet_NaN()};
   const uint64_t id;
   mpv_handle* const handle;
 

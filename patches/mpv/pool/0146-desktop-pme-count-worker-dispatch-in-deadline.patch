@@ -1,0 +1,67 @@
+From: PlezyNG
+Subject: [PATCH] PME: count worker dispatch in the frame deadline
+
+Measure a desktop PME pair from the filter's submission point, rather than
+starting its deadline clock after the worker wakes and allocates its frame
+workspace. This makes the deadline governor account for scheduling and first-
+frame allocation costs as well as preprocessing, inference, and reconstruction.
+
+diff --git a/video/filter/vf_plezy_pme.c b/video/filter/vf_plezy_pme.c
+--- a/video/filter/vf_plezy_pme.c
++++ b/video/filter/vf_plezy_pme.c
+@@ -1700,6 +1700,7 @@
+     struct mp_image *pme_worker_curr;
+     const AVMotionVector *pme_worker_mvs;
+     int pme_worker_n_mvs;
++    double pme_worker_submitted_ms;
+     struct pme_stats_snapshot published_stats;
+ 
+ 
+@@ -1938,5 +1939,6 @@
+ static struct mp_image *compute_interpolated(struct priv *p, struct mp_filter *f,
+                                               struct mp_image *prev,
+                                               struct mp_image *curr,
+-                                              const AVMotionVector *mvs, int n_mvs)
++                                              const AVMotionVector *mvs, int n_mvs,
++                                              double submitted_ms)
+ {
+@@ -1943,11 +1945,11 @@
+     const int W = curr->w, H = curr->h;
+     const size_t pixels = (size_t)W * H;
++    const double started = submitted_ms;
+     p->last_pme_success = false;
+     p->last_frame_generated = false;
+     alloc_workspace(p, W, H);
+     if (!p->flow_x || !p->flow_y || !p->sm_a || !p->sm_b || !p->sm_tmp ||
+         !p->blend_rgb[0] || !p->blend_rgb[1] || !p->blend_rgb[2] ||
+         !p->nhwc_cached || !p->pme.input_buf || !p->pme.output_buf)
+         return NULL;
+-    const double started = get_time_ms();
+ #ifdef PLEZY_HAVE_PME_VULKAN
+@@ -2093,7 +2095,9 @@
+         struct mp_image *curr = p->pme_worker_curr;
+         const AVMotionVector *mvs = p->pme_worker_mvs;
+         const int n_mvs = p->pme_worker_n_mvs;
++        const double submitted_ms = p->pme_worker_submitted_ms;
+         pthread_mutex_unlock(&p->pme_worker_mutex);
+ 
+-        p->interp = compute_interpolated(p, p->filter, prev, curr, mvs, n_mvs);
++        p->interp = compute_interpolated(p, p->filter, prev, curr, mvs, n_mvs,
++                                         submitted_ms);
+         mp_image_unrefp(&prev);
+@@ -2180,13 +2184,14 @@
+     p->pme_worker_prev = prev_ref;
+     p->pme_worker_curr = curr_ref;
+     p->pme_worker_mvs = mvs;
+     p->pme_worker_n_mvs = n_mvs;
++    p->pme_worker_submitted_ms = get_time_ms();
+     p->pme_worker_discard = 0;
+     p->pme_worker_done = 0;
+     p->pme_async_pair = 1;
+     p->pme_worker_active = 1;
+     p->pme_worker_pending = 1;
+     pthread_cond_signal(&p->pme_worker_start_cond);
+     pthread_mutex_unlock(&p->pme_worker_mutex);
+     return true;
+ }
+

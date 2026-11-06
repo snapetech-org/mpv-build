@@ -122,6 +122,7 @@ jni_func(jint, nativeInit, jlong session) {
   // until the client continues it (MpvPlayer.Listener.onHook, then
   // MpvPlayer.continueHook, or the library's own continuation).
   mpv_hook_add(guard.mpv, 0, "on_preloaded", 0);
+  mpv_observe_property(guard.mpv, UINT64_MAX-2, "time-pos", MPV_FORMAT_DOUBLE);
 
   if (pthread_create(&s.event_thread, NULL, event_thread, &s) != 0) {
     die("thread create failed");

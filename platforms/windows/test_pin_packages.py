@@ -12,6 +12,7 @@ Run: python3 platforms/windows/test_pin_packages.py
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,7 @@ CHECKOUT_FILES.update({Path(r).name: r for r in pin_packages.EXTRA_COMPONENTS.va
 CHECKOUT_FILES["custom_steps.cmake"] = "cmake/custom_steps.cmake"
 CHECKOUT_FILES["davs2.cmake"] = "packages/davs2.cmake"
 CHECKOUT_FILES["highway.cmake"] = "packages/highway.cmake"
+CHECKOUT_FILES["llvm-libcxx.cmake"] = "toolchain/llvm/llvm-libcxx.cmake"
 COMPONENT_FILES = {c: f"{c}.cmake" for c in pin_packages.COMPONENTS}
 COMPONENT_FILES.update({c: Path(r).name for c, r in pin_packages.EXTRA_COMPONENTS.items()})
 IDIOM_FIXTURE = "mbedtls.cmake"
@@ -67,7 +69,10 @@ def series_entries(component):
     """The repo's resolved windows series, read independently of the driver:
     series.common first, then series.<group>, comments and blanks ignored."""
     entries = []
-    for name in ("series.common", f"series.{pin_packages.GROUP}"):
+    component_pin = json.loads((REPO / "versions.json").read_text())["components"][component]
+    variant = component_pin.get("overrides", {}).get("windows", {}).get("patchSet", component_pin.get("patchSet"))
+    suffix = f".{variant}" if variant else ""
+    for name in (f"series.common{suffix}", f"series.{pin_packages.GROUP}{suffix}"):
         path = REPO / "patches" / component / name
         if path.is_file():
             entries += [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
@@ -81,6 +86,49 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_ffmpeg9_drops_removed_output_device_option(self):
+        text = (TESTDATA/'ffmpeg.cmake').read_text()
+        self.assertIn('--enable-opengl', text)
+        updated = pin_packages.remove_ffmpeg9_obsolete_options(text)
+        self.assertNotIn('--enable-opengl', updated)
+        self.assertIn('--enable-libplacebo', updated)
+        self.assertIn('--enable-openal', updated)
+        self.assertEqual(pin_packages.remove_ffmpeg9_obsolete_options(updated), updated)
+
+    def test_ffmpeg_patch_step_restores_sparse_fate_references(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/'source'; source.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(source), *args], text=True).strip()
+            git('init', '-q')
+            reference = source/'tests/ref/fate/hdr_dynamic_metadata'
+            reference.parent.mkdir(parents=True); reference.write_text('before\n')
+            (source/'source.c').write_text('int main(void) { return 0; }\n')
+            git('add', '.')
+            git('-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
+            commit = git('rev-parse', 'HEAD')
+            git('sparse-checkout', 'set', '--no-cone', '/*', '!/tests')
+            self.assertFalse(reference.exists())
+            patch_file = root/'ffmpeg-0001-fate.patch'
+            patch_file.write_text('--- a/tests/ref/fate/hdr_dynamic_metadata\n'
+                                  '+++ b/tests/ref/fate/hdr_dynamic_metadata\n'
+                                  '@@ -1 +1 @@\n-before\n+after\n')
+            pins = {'url': 'https://example.invalid/ffmpeg', 'ref': commit,
+                    'commit': commit, 'version': 'fixture'}
+            rewritten = pin_packages.rewrite((TESTDATA/'ffmpeg.cmake').read_text(), 'ffmpeg', pins, True)
+            command = next(line for line in rewritten.splitlines() if line.strip().startswith('PATCH_COMMAND'))
+            command = command.split('${EXEC} "', 1)[1].rsplit('"', 1)[0]
+            command = command.replace('${CMAKE_CURRENT_SOURCE_DIR}', str(root))
+            subprocess.run(['bash', '-c', command], cwd=source, check=True)
+            self.assertEqual(reference.read_text(), 'after\n')
+
+    def test_windows_uses_the_selected_fel_sources_and_patches(self):
+        self.assertEqual(pin_packages.resolve_series(REPO, "ffmpeg"), [
+            "0900-fel-common-integration.patch", "0901-fel-windows-libssh-host-key.patch"])
+        self.assertIn("0902-fel-ordered-audio-tap.patch", pin_packages.resolve_series(REPO, "mpv"))
+        self.assertIn("0900-fel-reject-failed-composition.patch", pin_packages.resolve_series(REPO, "libplacebo"))
+        self.assertIn("libplacebo", pin_packages.COMPONENTS)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="pin-packages-test-"))
         self.addCleanup(shutil.rmtree, self.tmp)
@@ -179,7 +227,7 @@ class PinPackagesTest(unittest.TestCase):
             '    UPDATE_COMMAND ""\n'
             "    GIT_REMOTE_NAME origin\n"
             f"    GIT_TAG {pins['commit']}\n"
-            f"    GIT_RESET {pins['commit']} # {pins['version']}\n",
+            f"    GIT_RESET {pins['commit']} # {pins['ref']} {pins['version']}\n",
             pinned,
         )
 
@@ -228,6 +276,15 @@ class PinPackagesTest(unittest.TestCase):
         self.assertIn(pin_packages.DAVS2_BUILD_TIME, davs2)
         highway = (self.winbuild / "packages/highway.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.HIGHWAY_TESTS_STANDALONE, highway)
+        self.assertIn("-nostdinc++", (self.winbuild / "toolchain/llvm/llvm-libcxx.cmake").read_text())
+
+    def test_libcxx_bootstrap_excludes_cached_standard_headers(self):
+        original = (TESTDATA / 'llvm-libcxx.cmake').read_text()
+        fixed = pin_packages.isolate_libcxx_bootstrap(original)
+        self.assertIn('-DCMAKE_CXX_FLAGS=-nostdinc++', fixed)
+        self.assertEqual(pin_packages.isolate_libcxx_bootstrap(fixed), fixed)
+        with self.assertRaises(SystemExit):
+            pin_packages.isolate_libcxx_bootstrap(original.replace('-DCMAKE_CXX_COMPILER=', '-DRENAMED_COMPILER='))
 
     def test_main_converges_on_a_second_run(self):
         self.run_main()

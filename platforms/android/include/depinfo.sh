@@ -48,11 +48,11 @@ recipe_mpv=meson
 args_dav1d="-Denable_tests=false -Db_lto=true -Dstack_alignment=16"
 args_fribidi="-Dtests=false -Ddocs=false"
 args_harfbuzz="-Dtests=disabled -Ddocs=disabled"
-args_libplacebo="-Dvulkan=disabled -Ddemos=false"
+args_libplacebo="-Dvulkan=disabled -Ddemos=false -Dopengl=enabled -Dgl-proc-addr=enabled -Dtests=false -Ddovi=enabled -Dlibdovi=disabled"
 # No build date: mpv would stamp __DATE__/__TIME__ into libmpv.so, and a
 # rebuild of a published content key has to reproduce its bytes (keys.py
 # publish-assets checks). The linux driver passes the same flag.
-args_mpv="--default-library shared -Diconv=disabled -Dlua=enabled -Dlibmpv=true -Dcplayer=false -Dmanpage-build=disabled -Dbuild-date=false"
+args_mpv="--default-library shared -Diconv=disabled -Dlua=enabled -Dlibmpv=true -Dcplayer=false -Dmanpage-build=disabled -Dbuild-date=false -Dgl=enabled -Degl=enabled -Degl-android=enabled -Dplain-gl=enabled"
 
 args_libass="--enable-libunibreak --disable-require-system-font-provider"
 

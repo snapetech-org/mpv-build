@@ -31,6 +31,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$ROOT/dist/release"
 
 BUILD="$ROOT/build/windows/$ARCH"
+# The bootstrap already provides architecture-independent LLVM PE inspectors.
+# GNU objdump on an x64 host cannot inspect ARM64 PE files. Use the verified
+# build toolchain for export checks on both architectures.
+export PATH="$BUILD/install/bin:$PATH"
 shopt -s nullglob
 DEV_DIRS=("$BUILD"/mpv-dev-*/)
 shopt -u nullglob
@@ -82,3 +86,5 @@ rm -f "$ASSET"
   && find . -type f | LC_ALL=C sort | zip -q -X -9 "$ASSET" -@)
 echo "$ASSET"
 echo "$SYMBOLS"
+
+python3 "$ROOT/scripts/inspect_pcm_package.py" "$ASSET" --expected 1 --motion-platform windows

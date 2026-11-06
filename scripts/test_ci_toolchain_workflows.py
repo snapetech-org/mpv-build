@@ -76,7 +76,7 @@ for token in (
         f"and serialize nested Ninja builds: {token}"
     )
 assert WINDOWS_BUILD.index('export PATH="$NINJA_WRAPPER_DIR:$PATH"') < WINDOWS_BUILD.index(
-    'cmake -S "$SRC"'
+    'cmake "${cmake_args[@]}"'
 ), "the Ninja wrapper must be active before CMake configures nested builds"
 
 wrapper_start = WINDOWS_BUILD.index("<<'SH'\n") + len("<<'SH'\n")
@@ -252,3 +252,26 @@ assert "python3 scripts/test_linux_arm64_runtime_workflow.py" in CI
 assert "python3 scripts/test_ci_toolchain_workflows.py" in PUBLISH
 
 print("Private Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")
+
+# GitHub validates reusable workflow permissions before evaluating job ifs.
+# A skipped legacy caller must still allow the callee's artifact read scope.
+for workflow, job in ((CI, "android"), (CI, "bundled-android-release"), (PUBLISH, "build-android")):
+    assert "      actions: read" in job_section(workflow, job), (
+        f"{job} must allow the Android callee to read verified prior-run artifacts"
+    )
+
+# Artifact reuse has no installed prefix. Inspect the actual reused archive and
+# allow its ARM64 starter to accompany the other three successful native jobs.
+natives = job_section(ANDROID, "natives")
+assert "if: steps.reuse.outputs.sha == ''" in named_step(natives, "Require Plezy ordered PCM ABI (${{ matrix.abi }})")
+reused_pcm = named_step(natives, "Require ordered PCM in reused native package (${{ matrix.abi }})")
+assert "if: steps.reuse.outputs.sha != ''" in reused_pcm
+assert 'scripts/inspect_pcm_package.py' in reused_pcm and '--expected 1' in reused_pcm
+assert "REUSE_ALL: ${{ inputs.reuse-native-run != '' && !(matrix.abi == 'arm64-v8a' && inputs.reuse-arm64-run != '') }}" in natives
+
+# JNI and its packaged development headers must use the engine's exact PCM ABI.
+tap_patch = (ROOT / "patches/mpv/pool/0210-plezy-ordered-audio-tap.patch").read_text()
+tap_section = tap_patch.split("diff --git a/include/mpv/plezy_audio_tap.h", 1)[1].split("\ndiff --git", 1)[0]
+tap_header = "\n".join(line[1:] for line in tap_section.splitlines() if line.startswith("+") and not line.startswith("+++")) + "\n"
+assert (ROOT / "platforms/android/lib/src/main/headers/mpv/plezy_audio_tap.h").read_text() == tap_header
+assert 'from("src/main/headers") { into("$abi/include") }' in (ROOT / "platforms/android/lib/build.gradle.kts").read_text()

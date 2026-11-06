@@ -84,8 +84,21 @@ if [ -z "$libmpv_so" ]; then
   exit 1
 fi
 libmpv_dir="$(dirname "$libmpv_so")"
+# A shared library can link successfully with unresolved C++ symbols. Catch
+# those against the exact runtime bundle before publishing a broken engine.
+link_check="$(LD_LIBRARY_PATH="$PREFIX/lib:$(dirname "$libmpv_so"):${LD_LIBRARY_PATH:-}" ldd -r "$libmpv_so" 2>&1)"
+if [[ "$link_check" == *"undefined symbol:"* || "$link_check" == *"not found"* ]]; then
+  printf '%s\n' "$link_check" >&2
+  echo "libmpv has unresolved runtime dependencies" >&2
+  exit 1
+fi
+
 if ! compgen -G "$PREFIX/lib/libshaderc_shared.so*" >/dev/null; then
   echo "no libshaderc_shared.so* under $PREFIX/lib; the build did not complete" >&2
+  exit 1
+fi
+if ! compgen -G "$PREFIX/lib/libvulkan.so*" >/dev/null; then
+  echo "no bundled Vulkan loader under $PREFIX/lib; the build did not complete" >&2
   exit 1
 fi
 
@@ -98,6 +111,7 @@ libmpv_rel="$(relative "$libmpv_dir")"
 mkdir -p "$stage/$libmpv_rel" "$stage/lib"
 cp -a "$libmpv_dir"/libmpv.so* "$stage/$libmpv_rel/"
 cp -a "$PREFIX"/lib/libshaderc_shared.so* "$stage/lib/"
+cp -a "$PREFIX"/lib/libvulkan.so* "$stage/lib/"
 
 if [ ! -d "$PREFIX/include" ]; then
   echo "no include/ under $PREFIX; the artifact could not be compiled against" >&2
@@ -163,3 +177,5 @@ tar --sort=name --owner=0 --group=0 --numeric-owner \
   --mtime='2020-01-01 00:00:00 UTC' \
   --zstd -C "$stage" -cf "$artifact" .
 echo "==> Packaged $artifact"
+
+python3 "$REPO_ROOT/scripts/inspect_pcm_package.py" "$artifact" --expected 1 --motion-platform linux
