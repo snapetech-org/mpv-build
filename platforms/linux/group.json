@@ -17,7 +17,9 @@
         "dav1d",
         "shaderc",
         "nv-codec-headers",
-        "wayland-protocols"
+        "wayland-protocols",
+        "vulkan-headers",
+        "vulkan-loader"
       ],
       "variants": [
         "x86_64",

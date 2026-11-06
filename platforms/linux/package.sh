@@ -97,6 +97,10 @@ if ! compgen -G "$PREFIX/lib/libshaderc_shared.so*" >/dev/null; then
   echo "no libshaderc_shared.so* under $PREFIX/lib; the build did not complete" >&2
   exit 1
 fi
+if ! compgen -G "$PREFIX/lib/libvulkan.so*" >/dev/null; then
+  echo "no bundled Vulkan loader under $PREFIX/lib; the build did not complete" >&2
+  exit 1
+fi
 
 relative() {
   local path="$1"
@@ -107,6 +111,7 @@ libmpv_rel="$(relative "$libmpv_dir")"
 mkdir -p "$stage/$libmpv_rel" "$stage/lib"
 cp -a "$libmpv_dir"/libmpv.so* "$stage/$libmpv_rel/"
 cp -a "$PREFIX"/lib/libshaderc_shared.so* "$stage/lib/"
+cp -a "$PREFIX"/lib/libvulkan.so* "$stage/lib/"
 
 if [ ! -d "$PREFIX/include" ]; then
   echo "no include/ under $PREFIX; the artifact could not be compiled against" >&2

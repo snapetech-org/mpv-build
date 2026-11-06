@@ -18,8 +18,12 @@ Its optional compute device remains independent of the renderer: auto selection
 prefers an exact RX7900XT when present, and an explicit device-name override
 takes precedence. This is a hardware preference, not a qualification result.
 
-Both Linux libplacebo and MPV build with Vulkan enabled, and the pinned Linux
-container installs libvulkan-dev. Desktop package inspection requires the actual
+Both Linux libplacebo and MPV build with Vulkan enabled. Linux builds the pinned
+Khronos 1.4.309 headers and matching loader because Ubuntu 24.04's development
+package predates the engine's minimum. The loader is included in the native
+archive and final app beside libmpv; hardware ICD drivers stay system supplied.
+Never spoof the pkg-config version to accept an older SDK.
+Desktop package inspection requires the actual
 PME Vulkan implementation marker as well as the filter/runtime markers and
 records pmeVulkan:true. A CPU-only PME build cannot satisfy this contract,
 even when archive metadata claims GPU support. Provider/device availability

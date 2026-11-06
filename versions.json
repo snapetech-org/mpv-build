@@ -511,6 +511,30 @@
         "android"
       ],
       "overrides": {}
+    },
+    "vulkan-headers": {
+      "kind": "git",
+      "version": "1.4.309",
+      "url": "https://github.com/KhronosGroup/Vulkan-Headers",
+      "ref": "v1.4.309",
+      "commit": "952f776f6573aafbb62ea717d871cd1d6816c387",
+      "provenance": "Official Khronos v1.4.309 annotated tag object 691fa560c8a27d1255fa97e350a04cdca676e772 dereferences to this root commit. Verified with git ls-remote against the upstream repository. Matches the minimum Vulkan headers required by the pinned FEL engine.",
+      "platforms": [
+        "linux"
+      ],
+      "overrides": {}
+    },
+    "vulkan-loader": {
+      "kind": "git",
+      "version": "1.4.309",
+      "url": "https://github.com/KhronosGroup/Vulkan-Loader",
+      "ref": "v1.4.309",
+      "commit": "809941a4ca137df69dc9c6e8eb456bd70309197c",
+      "provenance": "Official Khronos lightweight tag v1.4.309 points directly to this root commit, verified with git ls-remote. Its project declares version 1.4.309; build against the matching separately pinned headers without automatic dependency updates. Bundle the resulting Linux loader, while hardware ICD drivers remain system supplied.",
+      "platforms": [
+        "linux"
+      ],
+      "overrides": {}
     }
   }
 }

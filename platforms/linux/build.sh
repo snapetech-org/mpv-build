@@ -63,6 +63,14 @@ SHADERC_VERSION shaderc version
 SHADERC_URL shaderc url
 SHADERC_REF shaderc ref
 SHADERC_COMMIT shaderc commit
+VULKAN_HEADERS_VERSION vulkan-headers version
+VULKAN_HEADERS_URL vulkan-headers url
+VULKAN_HEADERS_REF vulkan-headers ref
+VULKAN_HEADERS_COMMIT vulkan-headers commit
+VULKAN_LOADER_VERSION vulkan-loader version
+VULKAN_LOADER_URL vulkan-loader url
+VULKAN_LOADER_REF vulkan-loader ref
+VULKAN_LOADER_COMMIT vulkan-loader commit
 LIBPLACEBO_VERSION libplacebo version
 LIBPLACEBO_URL libplacebo url
 LIBPLACEBO_MIRROR libplacebo mirror optional
@@ -120,7 +128,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git libplacebo:git libass:git mpv:git
+resolve_pins wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -199,6 +207,40 @@ apply_patch_series() {
 finish_step() {
   cd "$srcdir"
   printf '\n==> %s done.\n\n' "$1"
+}
+
+build_vulkan_sdk() {
+  # The pinned FEL engine requires Vulkan 1.4.309 headers. Ubuntu 24.04's
+  # development package is older, so build matching, verified headers and
+  # loader instead of overriding pkg-config's advertised version. Ship the
+  # loader with libmpv; device drivers remain supplied by the user's system.
+  echo "==> Installing Vulkan headers $VULKAN_HEADERS_VERSION..."
+  checkout_verified_ref \
+    "$VULKAN_HEADERS_URL" "$VULKAN_HEADERS_REF" "$VULKAN_HEADERS_COMMIT" \
+    "$srcdir/vulkan-headers-$VULKAN_HEADERS_VERSION"
+  apply_patch_series vulkan-headers "$srcdir/vulkan-headers-$VULKAN_HEADERS_VERSION"
+  cd "vulkan-headers-$VULKAN_HEADERS_VERSION"
+  cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$prefix"
+  cmake --install build
+  finish_step vulkan-headers
+
+  echo "==> Building Vulkan loader $VULKAN_LOADER_VERSION..."
+  checkout_verified_ref \
+    "$VULKAN_LOADER_URL" "$VULKAN_LOADER_REF" "$VULKAN_LOADER_COMMIT" \
+    "$srcdir/vulkan-loader-$VULKAN_LOADER_VERSION"
+  apply_patch_series vulkan-loader "$srcdir/vulkan-loader-$VULKAN_LOADER_VERSION"
+  cd "vulkan-loader-$VULKAN_LOADER_VERSION"
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+    -DCMAKE_PREFIX_PATH="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--build-id \
+    -DBUILD_TESTS=OFF -DUPDATE_DEPS=OFF \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF \
+    -DBUILD_WSI_XLIB_XRANDR_SUPPORT=OFF -DBUILD_WSI_WAYLAND_SUPPORT=ON
+  cmake --build build -j"$jobs"
+  cmake --install build
+  finish_step vulkan-loader
+
 }
 
 cleanup_srcdir=""
@@ -352,6 +394,8 @@ main() {
   cmake --build build -j"$jobs"
   cmake --install build
   finish_step shaderc
+
+  build_vulkan_sdk
 
   # ─── Step 5: libplacebo (static library) ───────────────────────────────────
   echo "==> Building libplacebo $LIBPLACEBO_VERSION (static)..."
