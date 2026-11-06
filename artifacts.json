@@ -4,10 +4,10 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "cb63eb7db59b",
+          "key": "62aeff80c50c",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-cb63eb7db59b-arm64-v8a.tar.gz",
+              "asset": "libmpv-android-62aeff80c50c-arm64-v8a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
                 "artifactSha256": "84b5b8743d6c9f42f2e02e02947050d9fdbe9304fecb6677b48796c33699a934",
@@ -45,7 +45,7 @@
               "checksum": "84b5b8743d6c9f42f2e02e02947050d9fdbe9304fecb6677b48796c33699a934"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-cb63eb7db59b-armeabi-v7a.tar.gz",
+              "asset": "libmpv-android-62aeff80c50c-armeabi-v7a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
                 "artifactSha256": "aea648421ccf37f337682402dd30b73ba1341f613448d6a9edcddebb60620df5",
@@ -80,7 +80,7 @@
               "checksum": "aea648421ccf37f337682402dd30b73ba1341f613448d6a9edcddebb60620df5"
             },
             "x86": {
-              "asset": "libmpv-android-cb63eb7db59b-x86.tar.gz",
+              "asset": "libmpv-android-62aeff80c50c-x86.tar.gz",
               "capabilities": {
                 "appleSlices": [],
                 "artifactSha256": "d91d4ea5ddb37ddab5fd8c0566d503c10c814f73807e399cb1335b3a8ca67614",
@@ -115,7 +115,7 @@
               "checksum": "d91d4ea5ddb37ddab5fd8c0566d503c10c814f73807e399cb1335b3a8ca67614"
             },
             "x86_64": {
-              "asset": "libmpv-android-cb63eb7db59b-x86_64.tar.gz",
+              "asset": "libmpv-android-62aeff80c50c-x86_64.tar.gz",
               "capabilities": {
                 "appleSlices": [],
                 "artifactSha256": "e590c85e26d9210407ecdb52c3e4b9746bd498e43d380bdeb2dc784f32aafc58",
@@ -152,7 +152,7 @@
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-c65223007150.aar",
+          "asset": "mpv-android-4b15750616bb.aar",
           "capabilities": {
             "appleSlices": [],
             "artifactSha256": "80927152e3887d819334a8c8d3005057e0c34203129ec579d66ee330c4d322d9",
@@ -212,22 +212,22 @@
             "symbol": "mpv_plezy_audio_tap_read_next"
           },
           "checksum": "80927152e3887d819334a8c8d3005057e0c34203129ec579d66ee330c4d322d9",
-          "key": "c65223007150",
+          "key": "4b15750616bb",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-c65223007150-arm64-v8a-symbols.zip",
+              "asset": "mpv-android-4b15750616bb-arm64-v8a-symbols.zip",
               "checksum": "425f21d3e9faa625c0d3ddadf9e9227b146865af2d9c18836699a446ee6e7ef8"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-c65223007150-armeabi-v7a-symbols.zip",
+              "asset": "mpv-android-4b15750616bb-armeabi-v7a-symbols.zip",
               "checksum": "f98db119cf4f7779bc8bc1d8695be4658f9e678a502038536e7a388729c930b5"
             },
             "x86": {
-              "asset": "mpv-android-c65223007150-x86-symbols.zip",
+              "asset": "mpv-android-4b15750616bb-x86-symbols.zip",
               "checksum": "505d99d37851f8185cf5e30e6025512550853f7efffd568e4e3925f3944e53a3"
             },
             "x86_64": {
-              "asset": "mpv-android-c65223007150-x86_64-symbols.zip",
+              "asset": "mpv-android-4b15750616bb-x86_64-symbols.zip",
               "checksum": "3aacdfa3e3f0e4900ce682ff6b394e0976f10718bfb95590e6f675076fe3fb92"
             }
           }
@@ -427,13 +427,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
-          "key": "1a0f47035efd",
+          "key": "d2cb23af80db",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-linux-1a0f47035efd-aarch64.tar.zst",
+              "asset": "libmpv-linux-d2cb23af80db-aarch64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "3c3856cc7d943fd0cf56927aa67710ddd5e11c586bc58ca6a8d9d9289f79b0bc",
+                "artifactSha256": "1df4e4f9a31fda4028a93dfc42d442f7e16e4c3de9f317415928740640d1531c",
                 "binaries": [
                   "lib/aarch64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -443,10 +443,18 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "4b670cf92d2b917536cd6e9fd645da65c15c75bf34b13555130ed99bda8a1d72"
+                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "c2ff3dbdf93d1883fdbe16f46d1fcaadfb0e8d19c419185a603720b2f62f567a"
                 },
                 "executionQualified": false,
-                "inspectionSchema": 3,
+                "inspectionSchema": 4,
+                "motionPlatform": "linux",
+                "neuralFilters": {
+                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": {
+                    "arm64": [
+                      "pme"
+                    ]
+                  }
+                },
                 "orderedSubtitlePcmAbi": 1,
                 "requiredSymbols": [
                   "mpv_plezy_audio_tap_version",
@@ -456,13 +464,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "3c3856cc7d943fd0cf56927aa67710ddd5e11c586bc58ca6a8d9d9289f79b0bc"
+              "checksum": "1df4e4f9a31fda4028a93dfc42d442f7e16e4c3de9f317415928740640d1531c"
             },
             "x86_64": {
-              "asset": "libmpv-linux-1a0f47035efd-x86_64.tar.zst",
+              "asset": "libmpv-linux-d2cb23af80db-x86_64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "127d1780b532e5772f09fd351a91af288551bd7ceef5224f79a4d1743a4c8302",
+                "artifactSha256": "b2e7affb9dfdb9e33735da0c2622e1506e40bb308a977288183c4a400255a08b",
                 "binaries": [
                   "lib/x86_64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -472,10 +480,18 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "0498294d0fd1797492f6fc1544ca85287729215d370e7e3cfc7a8f9ffd51ddda"
+                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "0358a5f29c03143d7786c31f62ffbbe7b35624aaddba6346485df5989d8ae0fe"
                 },
                 "executionQualified": false,
-                "inspectionSchema": 3,
+                "inspectionSchema": 4,
+                "motionPlatform": "linux",
+                "neuralFilters": {
+                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": {
+                    "x86_64": [
+                      "pme"
+                    ]
+                  }
+                },
                 "orderedSubtitlePcmAbi": 1,
                 "requiredSymbols": [
                   "mpv_plezy_audio_tap_version",
@@ -485,17 +501,17 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "127d1780b532e5772f09fd351a91af288551bd7ceef5224f79a4d1743a4c8302"
+              "checksum": "b2e7affb9dfdb9e33735da0c2622e1506e40bb308a977288183c4a400255a08b"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-linux-1a0f47035efd-aarch64-symbols.zip",
-              "checksum": "df063d9e8e51cb152e0b6f73a38c3235c6c49fadba0ccbe7c0a14fc3449224a2"
+              "asset": "libmpv-linux-d2cb23af80db-aarch64-symbols.zip",
+              "checksum": "54aa91c106acb5b384c094d7023f2a9f8321e349428230efadf3c333b323007e"
             },
             "x86_64": {
-              "asset": "libmpv-linux-1a0f47035efd-x86_64-symbols.zip",
-              "checksum": "d4efab79cf8e069eefbfda6b606e9adcd432b7c6ba488685698956fef82a93cc"
+              "asset": "libmpv-linux-d2cb23af80db-x86_64-symbols.zip",
+              "checksum": "244c2b4e877089baf9a16b51a8057ebecc9c361a64c9c140167ae3886dbe77f4"
             }
           }
         }
