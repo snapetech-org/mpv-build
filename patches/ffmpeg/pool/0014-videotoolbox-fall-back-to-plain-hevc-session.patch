@@ -1,30 +1,18 @@
-From 4505c4956ad1ea208a5d888334ece27c3efd6cc1 Mon Sep 17 00:00:00 2001
-From: edde746 <86283021+edde746@users.noreply.github.com>
-Date: Wed, 10 Jun 2026 10:01:17 +0200
-Subject: [PATCH] videotoolbox: fall back to plain HEVC when Dolby Vision
- session fails
+Subject: [PATCH] videotoolbox: fall back to plain HEVC when Dolby Vision session fails
 
-If VideoToolbox rejects a Dolby Vision HEVC session (unsupported dvvC
-combination, hardware limits, ...), retry once with a plain HEVC
-session so profile 8 streams degrade to hardware HDR10/HLG decode of
-the backward-compatible base layer instead of falling all the way back
-to software decode. Profile 5 is excluded: its IPT base layer would
-render with wrong colors, and the existing software fallback at least
-renders it correctly.
+If VideoToolbox rejects a Dolby Vision HEVC session, retry once with a plain
+HEVC session so profile 8 streams can still use hardware HDR10/HLG decode of
+the backward-compatible base layer. Keep profile 5 on the existing software
+fallback because its IPT base layer would render with incorrect colors.
 
-Key the per-frame Dolby Vision handling (RPU forwarding, attachment
-preservation and tagging) off the live session codec type instead of
-the stream side data, so a downgraded session is treated exactly like
-a plain HEVC one.
----
- libavcodec/videotoolbox.c | 115 ++++++++++++++++++++++++++++++++++------------
- 1 file changed, 85 insertions(+), 30 deletions(-)
+Key per-frame Dolby Vision handling off the active session codec type, so a
+downgraded stream follows the plain HEVC path.
 
 diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
-index 933ac15..82c01b5 100644
+index 8237fa1f20..2c9c276bc1 100644
 --- a/libavcodec/videotoolbox.c
 +++ b/libavcodec/videotoolbox.c
-@@ -122,7 +122,7 @@ int ff_videotoolbox_buffer_append(VTContext *vtctx,
+@@ -124,7 +124,7 @@ int ff_videotoolbox_buffer_append(VTContext *vtctx,
      return 0;
  }
  
@@ -33,7 +21,7 @@ index 933ac15..82c01b5 100644
  static void videotoolbox_dovi_tag_output_attachments(AVCodecContext *avctx,
                                                       CVPixelBufferRef pixbuf);
  
-@@ -142,7 +142,7 @@ static int videotoolbox_postproc_frame(void *avctx, AVFrame *frame)
+@@ -144,7 +144,7 @@ static int videotoolbox_postproc_frame(void *avctx, AVFrame *frame)
      frame->crop_top = 0;
      frame->crop_bottom = 0;
  
@@ -42,7 +30,7 @@ index 933ac15..82c01b5 100644
          (ret = av_vt_pixbuf_set_attachments(avctx, ref->pixbuf, frame)) < 0)
          return ret;
      videotoolbox_dovi_tag_output_attachments(avctx, ref->pixbuf);
-@@ -876,9 +876,17 @@ static int videotoolbox_dovi_is_apple_hevc(const AVDOVIDecoderConfigurationRecor
+@@ -878,9 +878,17 @@ static int videotoolbox_dovi_is_apple_hevc(const AVDOVIDecoderConfigurationRecor
      }
  }
  
@@ -62,7 +50,7 @@ index 933ac15..82c01b5 100644
  }
  
  static int videotoolbox_dovi_is_hlg(const AVDOVIDecoderConfigurationRecord *dovi)
-@@ -902,6 +910,9 @@ static void videotoolbox_dovi_tag_output_attachments(AVCodecContext *avctx,
+@@ -904,6 +912,9 @@ static void videotoolbox_dovi_tag_output_attachments(AVCodecContext *avctx,
      CGColorSpaceRef colorspace;
      CFStringRef transfer_function;
  
@@ -72,7 +60,7 @@ index 933ac15..82c01b5 100644
      if (!videotoolbox_dovi_is_apple_hevc(dovi) ||
          !videotoolbox_dovi_has_hdr_compatible_base(dovi))
          return;
-@@ -1118,13 +1129,41 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+@@ -1121,13 +1132,41 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
      return config_info;
  }
  
@@ -115,16 +103,16 @@ index 933ac15..82c01b5 100644
  
      if (!videotoolbox) {
          av_log(avctx, AV_LOG_ERROR, "hwaccel context is not set\n");
-@@ -1193,6 +1232,8 @@ static int videotoolbox_start(AVCodecContext *avctx)
+@@ -1199,6 +1238,8 @@ static int videotoolbox_start(AVCodecContext *avctx)
          break;
      }
  
 +    cm_codec_type = videotoolbox->cm_codec_type;
 +
  #if defined(MAC_OS_X_VERSION_10_9) && !TARGET_OS_IPHONE && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9) && AV_HAS_BUILTIN(__builtin_available)
-     if (avctx->codec_id == AV_CODEC_ID_PRORES) {
+     if (avctx->codec_id == AV_CODEC_ID_PRORES || avctx->codec_id == AV_CODEC_ID_PRORES_RAW) {
          if (__builtin_available(macOS 10.9, *)) {
-@@ -1207,25 +1248,6 @@ static int videotoolbox_start(AVCodecContext *avctx)
+@@ -1213,25 +1254,6 @@ static int videotoolbox_start(AVCodecContext *avctx)
      }
  #endif
  
@@ -150,7 +138,7 @@ index 933ac15..82c01b5 100644
      buf_attr = videotoolbox_buffer_attributes_create(avctx->width,
                                                       avctx->height,
                                                       videotoolbox->cv_pix_fmt_type);
-@@ -1233,12 +1255,42 @@ static int videotoolbox_start(AVCodecContext *avctx)
+@@ -1239,12 +1261,42 @@ static int videotoolbox_start(AVCodecContext *avctx)
      decoder_cb.decompressionOutputCallback = videotoolbox_decoder_callback;
      decoder_cb.decompressionOutputRefCon   = avctx->internal->hwaccel_priv_data;
  
@@ -199,7 +187,7 @@ index 933ac15..82c01b5 100644
  
      if (!status && videotoolbox->cm_codec_type == kCMVideoCodecType_DolbyVisionHEVC_FF) {
          OSStatus property_status;
-@@ -1420,6 +1472,9 @@ static int videotoolbox_hevc_append_dovi_rpus(AVCodecContext *avctx)
+@@ -1426,6 +1478,9 @@ static int videotoolbox_hevc_append_dovi_rpus(AVCodecContext *avctx)
      const AVDOVIDecoderConfigurationRecord *dovi = videotoolbox_dovi_get_conf(avctx);
      int convert_p7 = videotoolbox_dovi_needs_p81_conversion(dovi);
  

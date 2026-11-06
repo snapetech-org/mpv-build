@@ -1,5 +1,5 @@
 {
-  "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-android",
+  "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
   "toolchain": "toolchain/android.txt",
   "driver": [
     "platforms/android/build.sh",
@@ -7,6 +7,7 @@
     "platforms/android/package.sh",
     "platforms/android/include/depinfo.sh",
     "platforms/android/include/download-sdk.sh",
+    "platforms/android/include/fetch-git.sh",
     "platforms/android/include/libdovi/rpu_parser.h",
     "platforms/android/include/loadarch.sh",
     "platforms/android/include/path.sh",
@@ -15,7 +16,8 @@
     "platforms/android/scripts/libdovi.sh",
     "platforms/android/scripts/lua.sh",
     "platforms/android/scripts/meson.sh",
-    "platforms/android/scripts/openssl.sh"
+    "platforms/android/scripts/openssl.sh",
+    "scripts/prepare_android_qairt.py"
   ],
   "artifacts": {
     "libmpv-android": {
@@ -31,14 +33,26 @@
         "harfbuzz",
         "libunibreak",
         "lua",
-        "libdovi"
+        "libdovi",
+        "qairt"
       ],
-      "variants": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"],
+      "variants": [
+        "arm64-v8a",
+        "armeabi-v7a",
+        "x86",
+        "x86_64"
+      ],
       "assetPattern": "libmpv-android-{key}-{variant}.tar.gz"
     },
     "mpv-android": {
-      "inputs": ["libmpv-android"],
-      "sources": ["platforms/android/lib", "scripts/symbols.py"],
+      "inputs": [
+        "libmpv-android"
+      ],
+      "sources": [
+        "platforms/android/lib",
+        "scripts/symbols.py",
+        "scripts/prepare_android_java.py"
+      ],
       "assetPattern": "mpv-android-{key}.aar",
       "symbolsPattern": "mpv-android-{key}-{variant}-symbols.zip"
     }

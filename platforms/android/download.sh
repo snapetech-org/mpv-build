@@ -12,12 +12,13 @@ set -euo pipefail
 cd "$( dirname "${BASH_SOURCE[0]}" )"
 root="$( cd ../.. && pwd )"
 . ./include/depinfo.sh
+. ./include/fetch-git.sh
 
 # Every pin the run needs, from the resolver the android content key uses
 # (keys.py, override-aware). One interpreter for the lot, not one startup per
 # field; the function prints shell assignments that pin() reads back, with the
-# optional fields versions.json may not carry (ref and commit on archives,
-# sha256 on git pins) coming back empty.
+# optional fields versions.json may not carry (ref, commit and mirror on
+# archives, sha256 on git pins) coming back empty.
 pin_block () {
 	python3 - "$root" "$components" <<'PY'
 import shlex, sys
@@ -31,7 +32,7 @@ for component in sys.argv[2].split():
     kind = keys.resolved_kind(versions, component, "android")
     print(f"pin_{component}_kind={shlex.quote(kind)}")
     print(f"pin_{component}_url={shlex.quote(pins['url'])}")
-    for field in ("ref", "sha256", "commit"):
+    for field in ("ref", "sha256", "commit", "mirror"):
         print(f"pin_{component}_{field}={shlex.quote(pins.get(field, ''))}")
 PY
 }
@@ -61,18 +62,12 @@ fetch_git () {
 	if [ -d "deps/$component" ]; then
 		return 0
 	fi
-	local url ref commit head
+	local url ref commit mirror
 	url=$(pin "$component" url)
 	ref=$(pin "$component" ref)
 	commit=$(pin "$component" commit)
-	git clone --depth 1 --branch "$ref" "$@" "$url" "deps/$component"
-	if [ -n "$commit" ]; then
-		head=$(git -C "deps/$component" rev-parse HEAD)
-		if [ "$head" != "$commit" ]; then
-			echo >&2 "$component: $ref is $head, versions.json pins $commit"
-			exit 1
-		fi
-	fi
+	mirror=$(pin "$component" mirror)
+	fetch_pinned_git "$component" "$url" "$mirror" "$ref" "$commit" "deps/$component" "$@"
 	apply_patches "$component"
 }
 
@@ -85,7 +80,11 @@ fetch_archive () {
 	url=$(pin "$component" url)
 	sha=$(pin "$component" sha256)
 	archive="deps/.$component.archive"
-	curl -fsSL -o "$archive" "$url"
+	echo "$component: downloading pinned archive from $url"
+	if ! curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 -o "$archive" "$url"; then
+		echo >&2 "$component: archive download failed; check the private runner's source egress policy"
+		return 1
+	fi
 	digest=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$archive")
 	if [ -z "$sha" ]; then
 		echo >&2 "$component: warning: versions.json pins no sha256 (downloaded $digest)"

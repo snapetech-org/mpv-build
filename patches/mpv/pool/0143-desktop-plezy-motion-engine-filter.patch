@@ -16,8 +16,7 @@ diff --git a/filters/user_filters.h b/filters/user_filters.h
 index 639ffe7..4c02463 100644
 --- a/filters/user_filters.h
 +++ b/filters/user_filters.h
-@@ -37,3 +37,6 @@ extern const struct mp_user_filter_entry vf_vavpp;
- extern const struct mp_user_filter_entry vf_d3d11vpp;
+@@ -38,2 +38,5 @@
  extern const struct mp_user_filter_entry vf_fingerprint;
  extern const struct mp_user_filter_entry vf_gpu;
 +#ifdef PLEZY_HAVE_PME
@@ -46,10 +45,9 @@ index fb10be5..42d81a5 100644
      features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
 diff --git a/video/filter/plezy_motion_engine/pme_runtime.h b/video/filter/plezy_motion_engine/pme_runtime.h
 new file mode 100644
-index 0000000..fd285fb
 --- /dev/null
 +++ b/video/filter/plezy_motion_engine/pme_runtime.h
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,106 @@
 +#pragma once
 +
 +#include <stddef.h>
@@ -83,9 +81,11 @@ index 0000000..fd285fb
 +
 +/*
 + * Plugin candidates name their provider library. Built-in ONNX Runtime
-+ * providers use provider-specific "builtin", "builtin-dml", or
-+ * "builtin-vitisai" markers. Candidates are tried in order; CPU EP fallback is
-+ * disabled for every accelerator.
++ * providers use provider-specific "builtin", "builtin-migraphx",
++ * "builtin-dml", or "builtin-vitisai" markers; Windows ML catalog candidates
++ * use "windows-ml". The built-in MIGraphX marker may use ORT C API v23 on
++ * Linux; plugin and catalog providers require API v27 or newer. Candidates
++ * are tried in order; CPU EP fallback is disabled for every accelerator.
 + */
 +typedef struct pme_provider_candidate {
 +  uint32_t struct_size;
@@ -107,6 +107,7 @@ index 0000000..fd285fb
 +  uint8_t allow_cpu_provider;
 +  /* QNN EP HTP mode: burst, balanced, or sustained_high_performance. */
 +  const char* htp_performance_mode;
++  /* Optional cooperative cancellation during provider acquisition/setup. */
 +  pme_runtime_cancelled_fn is_cancelled;
 +  void* cancel_context;
 +} pme_runtime_config;
@@ -121,6 +122,7 @@ index 0000000..fd285fb
 +  uint32_t struct_size;
 +  uint32_t abi_version;
 +  char provider_name[64];
++  /* Runtime-reported vendor or GPU model/device-type label for the provider. */
 +  char provider_vendor[64];
 +  pme_device_kind device_kind;
 +  pme_tensor_shape input;

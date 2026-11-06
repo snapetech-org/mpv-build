@@ -1,0 +1,54 @@
+--- a/video/out/avfoundation_motion.m
++++ b/video/out/avfoundation_motion.m
+@@ -98,6 +98,19 @@
+ - (void)configureEnabled:(bool)enabled width:(int)frameWidth
+                   height:(int)frameHeight frameCount:(int)frames
+ {
++#if TARGET_OS_SIMULATOR
++    // Apple's SDK omits interpolation classes on Simulator. Keep settings and
++    // diagnostics available while ordinary frames continue without synthesis.
++    @synchronized (self) {
++        generation++;
++        requested = enabled;
++        width = frameWidth;
++        height = frameHeight;
++        frame_count = frames;
++        stream_eligible = false;
++        state = enabled ? MOTION_UNAVAILABLE : MOTION_OFF;
++    }
++#else
+     frames = frames == 3 || frames == 7 ? frames : 1;
+     int configurationDepth = frames == 7 ? 3 : frames == 3 ? 2 : 1;
+     NSUInteger requestGeneration;
+@@ -288,6 +301,7 @@
+             }
+         }
+     });
++#endif
+ }
+ 
+ - (const char *)statusName
+@@ -322,6 +336,15 @@
+             outputs:(CVPixelBufferRef[7])outputs
+           timestamps:(int64_t[7])timestamps
+ {
++#if TARGET_OS_SIMULATOR
++    // Apple's SDK omits interpolation classes on Simulator. Keep settings and
++    // diagnostics available while ordinary frames continue without synthesis.
++    for (int i = 0; i < 7; i++) {
++        outputs[i] = NULL;
++        timestamps[i] = 0;
++    }
++    return 0;
++#else
+     for (int i = 0; i < 7; i++) {
+         outputs[i] = NULL;
+         timestamps[i] = 0;
+@@ -476,6 +499,7 @@
+         [sourceFrame release];
+         return resultCount;
+     }
++#endif
+ }
+ 
+ - (void)markPresented

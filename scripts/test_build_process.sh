@@ -4,6 +4,12 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/path"
+cat > "$work/path/path-tool" <<'TOOL'
+#!/bin/sh
+printf path-ok
+TOOL
+chmod +x "$work/path/path-tool"
 cat > "$work/main.swift" <<'SWIFT'
 import Foundation
 enum BaseBuild { static let defaultPath = "/usr/bin:/bin" }
@@ -14,6 +20,11 @@ python3 "$root/scripts/extract.py" range \
 cat "$work/utility.swift" >> "$work/main.swift"
 cat >> "$work/main.swift" <<'SWIFT'
 }
+let customPath = CommandLine.arguments[1]
+let explicitPathResult = try Utility.launch(path: "path-tool", arguments: [], isOutput: true, environment: ["PATH": customPath])
+precondition(explicitPathResult == "path-ok", "explicit PATH was ignored")
+let inheritedPathResult = try Utility.launch(path: "path-tool", arguments: [], isOutput: true)
+precondition(inheritedPathResult == "path-ok", "inherited PATH was ignored")
 for _ in 0..<64 {
     let result = try Utility.launch(path: "/usr/bin/printf", arguments: ["/sdk/pkgconfig"], isOutput: true)
     precondition(result == "/sdk/pkgconfig", "short process output was lost")
@@ -30,5 +41,5 @@ do {
 print("process output capture and failure propagation passed")
 SWIFT
 xcrun swiftc -swift-version 5 "$work/main.swift" -o "$work/test"
-"$work/test" > "$work/test.log" 2>&1 || { cat "$work/test.log"; exit 1; }
+PATH="$work/path:$PATH" "$work/test" "$work/path" > "$work/test.log" 2>&1 || { cat "$work/test.log"; exit 1; }
 tail -n 1 "$work/test.log"

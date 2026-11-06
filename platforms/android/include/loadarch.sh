@@ -73,6 +73,17 @@ setup_prefix () {
 		cpu_family=x86
 	fi
 
+	# EGL is an NDK system library, but the NDK does not supply its .pc
+	# descriptor. mpv requires it to build the Android GPU render contexts.
+	mkdir -p "$prefix_dir/lib/pkgconfig"
+	cat >"$prefix_dir/lib/pkgconfig/egl.pc" <<'EGL'
+Name: EGL
+Description: Android NDK EGL system library
+Version: 1.4.0
+Libs: -lEGL
+Cflags:
+EGL
+
 	# meson wants to be spoonfed this file, so create it ahead of time
 	# also define: release build, static libs and no source downloads at runtime(!!!)
 	# -gline-tables-only adds source lines (no types or variables) to the

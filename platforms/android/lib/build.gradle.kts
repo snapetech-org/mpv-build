@@ -39,7 +39,13 @@ val mpvNatives = layout.buildDirectory.dir("mpv")
 /** build/mpv/<abi>/{lib,include}: the tarballs unpacked. */
 val extractMpvNatives = tasks.register<Sync>("extractMpvNatives") {
     for (abi in abis) {
-        from(provider { tarTree(resources.gzip(tarball(abi))) }) { into(abi) }
+        from(provider { tarTree(resources.gzip(tarball(abi))) }) {
+            exclude("include/mpv/plezy_audio_tap.h")
+            into(abi)
+        }
+        // This public extension header is checked byte-for-byte against the
+        // engine patch. Ship it in the AAR SDK as well as compiling JNI with it.
+        from("src/main/headers") { into("$abi/include") }
     }
     into(mpvNatives)
 }

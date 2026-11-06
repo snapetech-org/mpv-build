@@ -1,8 +1,8 @@
 # mpv-build
 
 [![mpv](https://img.shields.io/badge/mpv-v0.41.0-blue.svg)](https://github.com/mpv-player/mpv)
-[![ffmpeg](https://img.shields.io/badge/ffmpeg-n8.0.1-blue.svg)](https://github.com/FFmpeg/FFmpeg)
-[![license](https://img.shields.io/github/license/edde746/mpv-build)](https://github.com/edde746/mpv-build/blob/main/LICENSE)
+[![ffmpeg](https://img.shields.io/badge/ffmpeg-n9.0.2-blue.svg)](https://github.com/FFmpeg/FFmpeg)
+[![license](https://img.shields.io/github/license/snapetech-org/mpv-build)](https://github.com/snapetech-org/mpv-build/blob/main/LICENSE)
 
 One repository for every mpv supply chain Plezy ships: the upstream pins, the
 patch series, and the build drivers that turn them into `libmpv` binaries for
@@ -38,7 +38,7 @@ Development history up to the unification lives in those repositories.
 ### Swift Package Manager
 
 ```
-https://github.com/edde746/mpv-build.git
+https://github.com/snapetech-org/mpv-build.git
 ```
 
 SwiftPM consumers moving from `edde746/MPVKit` change the package URL and pin a
@@ -62,7 +62,7 @@ from the component's pins in `versions.json`, its resolved patch series, the
 build flags, the platform tuple, the build driver and the toolchain generation.
 Assets are therefore immutable, and each platform group publishes to its own
 rolling prerelease:
-[`binaries-apple`](https://github.com/edde746/mpv-build/releases/tag/binaries-apple),
+[`binaries-apple`](https://github.com/snapetech-org/mpv-build/releases/tag/binaries-apple),
 `binaries-android`, `binaries-linux` and `binaries-windows`. A semver release
 is a tag plus notes and carries no assets of its
 own. `artifacts.json` records which asset belongs to which library in which
@@ -900,7 +900,7 @@ the key as the version, no authentication:
 dependencyResolutionManagement {
     repositories {
         ivy {
-            url = uri("https://github.com/edde746/mpv-build/releases/download")
+            url = uri("https://github.com/snapetech-org/mpv-build/releases/download")
             patternLayout { artifact("binaries-android/[artifact]-[revision].[ext]") }
             metadataSources { artifact() }
             content { includeModule("edde746", "mpv-android") }
@@ -919,7 +919,7 @@ libmpv-android is stale) and then the AAR (`platforms/android/lib/build-aar.sh`,
 with the JVM tests), from that run's tarballs or the published ones
 `artifacts.json` pins. `publish.yml` runs it for main, records the AAR and its
 symbols zips with `keys.py record-packages`, verifies and uploads them with
-the tarballs; `ci.yml` runs it for pull requests (tarballs only when the
+the tarballs; the explicitly dispatched `ci.yml` runs it for validation (tarballs only when the
 change moves their key) and also builds the device tests' APK. The AAR's
 `.so` files compile against the
 tarball's `include/`, which carries mpv's headers and the patched FFmpeg's
@@ -927,6 +927,14 @@ tarball's `include/`, which carries mpv's headers and the patched FFmpeg's
 
 Building it locally needs JDK 17+ and an Android SDK (`ANDROID_HOME`); Gradle
 installs the NDK `toolchain/android.txt` pins:
+
+Private JIT builds provision their prerequisites explicitly: the native legs
+install checksum-pinned rustup and the Rust version in `toolchain/android.txt`;
+the AAR leg installs JDK 21, configures Java's proxy from the runner's
+`HTTPS_PROXY`, then installs and verifies its SDK, Build Tools, NDK, CMake and
+symbol tools. `scripts/prepare_android_java.py` reads the SDK and CMake versions
+from the AAR build file. The official Lua archive host `www.lua.org` must also
+be reachable through the private source-download proxy.
 
 ```bash
 # the tarballs this checkout's artifacts.json pins (fetched, sha256-checked)
@@ -1032,3 +1040,33 @@ If you want the demo app to use the local build version, you need to modify `Pac
 ## License
 
 The bundles (`frameworks`, `xcframeworks`), which include both `libmpv` and `FFmpeg` libraries, are licensed under the GPL v3.0.
+
+### Bundled Dolby Vision experiments
+
+Normal Android, Linux and Windows engines include the pinned Profile 7 FEL
+implementation. PlezyNG's saved Settings preference controls activation and
+remains off by default. Device/pixel qualification is reported independently
+from engine availability. Apple keeps its existing mpv pin; PlezyNG bundles a
+separate, lazily loaded Apple runtime in the ordinary app package.
+
+`versions.json` selects the `fel` patch series for the three affected platforms.
+These series retain the existing production playback changes, rebased onto the
+FEL sources; they do not use the earlier Android prototype that removed the
+MediaCodec callback and OSD paths. The Android AAR carries matching installed
+FFmpeg headers and all four ABI identities. Linux keeps the Ubuntu 24.04 client
+ABI and builds pinned HDR protocol definitions; package validation rejects
+unresolved runtime symbols. Content keys include the selected patch series.
+
+### Ordered subtitle PCM package receipt
+
+Final package inspection schema 2 requires the complete additive tap ABI:
+`mpv_plezy_audio_tap_version`, `mpv_plezy_audio_tap_enable`,
+`mpv_plezy_audio_tap_read`, and `mpv_plezy_audio_tap_read_next`. Every packaged
+native member and every Apple architecture must expose all four. Windows
+inspection distinguishes PE exports from imported names; ELF default symbol
+versions are supported. The receipt binds the archive and individual member
+hashes, and records the exact required symbol set. Older one-symbol receipts
+cannot satisfy immutable reuse or PlezyNG promotion. The inspection scripts are
+content-key inputs, so this stronger contract changes affected artifact names.
+These source changes did not run builds, symbol inspection, packaging or CI;
+static exports alone do not qualify execution or device performance.

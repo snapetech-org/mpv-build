@@ -18,6 +18,11 @@
 # python3, unzip, zip and that NDK's llvm-objcopy.
 set -euo pipefail
 
+# Fail before Gradle if symbol packaging cannot complete on this host.
+for tool in python3 java zip unzip tar find sort; do
+	command -v "$tool" >/dev/null || { echo "build-aar.sh: missing required tool: $tool" >&2; exit 1; }
+done
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 
@@ -118,5 +123,6 @@ done
 
 mkdir -p "$root/dist/release"
 cp "$aar" "$root/dist/release/mpv-android.aar"
+python3 "$here/bundle-engine-metadata.py" "$root/dist/release/mpv-android.aar" "$here/build/mpv"
 mv "$work/out/"*.zip "$root/dist/release/"
 echo "built dist/release/mpv-android.aar and its mpv-android-<abi>-symbols.zip from $tarballs"

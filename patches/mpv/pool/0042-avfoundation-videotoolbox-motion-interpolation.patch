@@ -1,8 +1,9 @@
 diff --git a/meson.build b/meson.build
-index 5748825..43fa0b5 100644
+index bf48be9..26a99c9 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -833,6 +833,6 @@
+@@ -833,7 +833,7 @@ if features['spatial-audio']
+     sources += files('audio/out/ao_spatial.m')
  endif
  
 -vo_avfoundation_frameworks = ['AVFoundation', 'CoreMedia', 'CoreVideo',
@@ -10,7 +11,8 @@ index 5748825..43fa0b5 100644
                               'CoreImage', 'QuartzCore', 'Metal']
  if cc.has_header('UIKit/UIKit.h')
      vo_avfoundation_frameworks += ['UIKit']
-@@ -845,6 +845,7 @@
+@@ -845,7 +845,8 @@ vo_avfoundation = dependency('appleframeworks', modules: vo_avfoundation_framewo
+ features += {'vo-avfoundation': vo_avfoundation.found()}
  if features['vo-avfoundation']
      dependencies += vo_avfoundation
 -    sources += files('video/out/vo_avfoundation.m')
@@ -23,7 +25,8 @@ diff --git a/player/command.c b/player/command.c
 index be75261..56b57ef 100644
 --- a/player/command.c
 +++ b/player/command.c
-@@ -3052,5 +3052,15 @@
+@@ -3051,6 +3051,16 @@ static int mp_property_vo(void *ctx, struct m_property *p, int action, void *arg
+                                 mpctx->video_out->driver->name : NULL);
  }
  
 +static int mp_property_vo_interpolation(void *ctx, struct m_property *p,
@@ -39,7 +42,8 @@ index be75261..56b57ef 100644
  static int mp_property_gpu_context(void *ctx, struct m_property *p, int action, void *arg)
  {
      MPContext *mpctx = ctx;
-@@ -4505,5 +4515,6 @@
+@@ -4504,6 +4514,7 @@ static const struct m_property mp_properties_base[] = {
+     {"vo-passes", mp_property_vo_passes},
      {"perf-info", mp_property_perf_info},
      {"current-vo", mp_property_vo},
 +    {"video-out-interpolation", mp_property_vo_interpolation},
@@ -48,7 +52,7 @@ index be75261..56b57ef 100644
      {"estimated-vf-fps", mp_property_vf_fps},
 diff --git a/video/out/avfoundation_motion.h b/video/out/avfoundation_motion.h
 new file mode 100644
-index 0000000..7b3bf6d
+index 0000000..d5d8b65
 --- /dev/null
 +++ b/video/out/avfoundation_motion.h
 @@ -0,0 +1,30 @@
@@ -84,7 +88,7 @@ index 0000000..7b3bf6d
 +void avf_motion_mark_presented(struct avf_motion_interpolator *motion);
 diff --git a/video/out/avfoundation_motion.m b/video/out/avfoundation_motion.m
 new file mode 100644
-index 0000000..e67dbcc
+index 0000000..572e0db
 --- /dev/null
 +++ b/video/out/avfoundation_motion.m
 @@ -0,0 +1,554 @@
@@ -646,14 +650,16 @@ diff --git a/video/out/vo.h b/video/out/vo.h
 index 160d860..8b96b53 100644
 --- a/video/out/vo.h
 +++ b/video/out/vo.h
-@@ -117,5 +117,6 @@
+@@ -116,6 +116,7 @@ enum mp_voctrl {
+     VOCTRL_GET_ICC_PROFILE,             // bstr*
      VOCTRL_GET_AMBIENT_LUX,             // double*
      VOCTRL_GET_DISPLAY_FPS,             // double*
 +    VOCTRL_GET_MOTION_INTERPOLATION,    // struct voctrl_motion_interpolation*
      VOCTRL_GET_HIDPI_SCALE,             // double*
      VOCTRL_GET_DISPLAY_RES,             // int[2]
      VOCTRL_GET_WINDOW_ID,               // int64_t*
-@@ -136,5 +137,10 @@
+@@ -135,6 +136,11 @@ enum mp_voctrl {
+     VOCTRL_SET_CLIPBOARD,
  };
  
 +struct voctrl_motion_interpolation {
@@ -665,17 +671,19 @@ index 160d860..8b96b53 100644
  enum mp_content_type {
      MP_CONTENT_NONE, // used for force-window
 diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
-index 93e801e..bf3e0b8 100644
+index c60b4e6..9176836 100644
 --- a/video/out/vo_avfoundation.m
 +++ b/video/out/vo_avfoundation.m
-@@ -39,5 +39,6 @@
+@@ -38,6 +38,7 @@
+ #include "video/mp_image.h"
  #include "video/hwdec.h"
  #include "sub/osd.h"
 +#include "avfoundation_motion.h"
  
  #import <CoreMedia/CoreMedia.h>
  #import <AVFoundation/AVFoundation.h>
-@@ -130,5 +131,7 @@
+@@ -129,6 +130,8 @@ enum avf_presentation_mode {
+ struct avfoundation_opts {
      bool composite_osd;
      bool pip_composite_osd;
 +    bool motion_interpolation;
@@ -683,7 +691,8 @@ index 93e801e..bf3e0b8 100644
      int queue_lead_ms;
      int presentation;
      int osd_max_height;
-@@ -352,5 +355,16 @@
+@@ -351,8 +354,19 @@ struct priv {
+ 
      struct mp_image *next_image;
      double next_pts;
 +    struct avf_motion_interpolator *motion;
@@ -700,7 +709,10 @@ index 93e801e..bf3e0b8 100644
      CMTimebaseRef timebase;
      int64_t next_present_host_ns;
      // Latest host stamp given to a video frame; see avf_host_present_ns().
-@@ -1385,5 +1397,84 @@
+     int64_t last_host_present_ns;
+     int64_t next_media_pts_ns;
+@@ -1305,6 +1319,85 @@ static void avfoundation_opts_wakeup(void *ctx)
+     vo_wakeup(ctx);
  }
  
 +static int motion_interpolated_frame_count(int preset)
@@ -785,7 +797,8 @@ index 93e801e..bf3e0b8 100644
  static void update_avfoundation_options(struct vo *vo)
  {
      struct priv *p = vo->priv;
-@@ -1397,5 +1484,7 @@
+@@ -1317,6 +1410,8 @@ static void update_avfoundation_options(struct vo *vo)
+     int old_queue_lead_ms = p->opts->queue_lead_ms;
      int old_osd_max_height = p->opts->osd_max_height;
      bool old_osd_video_res = p->opts->osd_video_res;
 +    bool old_motion_interpolation = p->opts->motion_interpolation;
@@ -793,7 +806,8 @@ index 93e801e..bf3e0b8 100644
  
      if (!m_config_cache_update(p->opts_cache))
          return;
-@@ -1409,5 +1498,14 @@
+@@ -1329,6 +1424,15 @@ static void update_avfoundation_options(struct vo *vo)
+         old_pip_composite_osd != p->opts->pip_composite_osd;
      bool osd_scale_changed = old_osd_max_height != p->opts->osd_max_height ||
          old_osd_video_res != p->opts->osd_video_res;
 +    bool motion_changed = old_motion_interpolation != p->opts->motion_interpolation ||
@@ -808,7 +822,8 @@ index 93e801e..bf3e0b8 100644
  
      if (!composite_changed && !osd_scale_changed)
          return;
-@@ -4061,5 +4159,8 @@
+@@ -3921,6 +4025,9 @@ static int preinit(struct vo *vo)
+ 
      p->opts_cache = m_config_cache_alloc(p, vo->global, &avfoundation_conf);
      p->opts = p->opts_cache->opts;
 +    p->motion = avf_motion_create();
@@ -817,7 +832,8 @@ index 93e801e..bf3e0b8 100644
      m_config_cache_set_wakeup_cb(p->opts_cache, avfoundation_opts_wakeup, vo);
  
      if (vo->opts->WinID == -1) {
-@@ -4423,7 +4524,57 @@
+@@ -4282,8 +4389,58 @@ static void flip_page(struct vo *vo)
+         int64_t t = mp_time_ns();
          CMSampleBufferRef video_buf = create_video_sample_buffer(vo, p->next_image);
          p->perf.video_sample_ns += mp_time_ns() - t;
 +        CVPixelBufferRef current_pixel = video_buf
@@ -875,7 +891,8 @@ index 93e801e..bf3e0b8 100644
  
          if (video_buf && wait_until_ready_for_more_media_data(vo, p->next_present_host_ns)) {
              if (!p->presentation_host)
-@@ -4450,11 +4593,46 @@
+@@ -4307,12 +4464,47 @@ static void flip_page(struct vo *vo)
+                 }
              }
  
 -            enqueue_video_sample(vo, video_buf);
@@ -923,7 +940,8 @@ index 93e801e..bf3e0b8 100644
          if (osd_buf)
              CFRelease(osd_buf);
          if (video_buf)
-@@ -4499,10 +4676,13 @@
+@@ -4356,6 +4548,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     mp_image_unrefp(&p->next_image);
  
      if (!frame->current || (frame->repeat && !frame->redraw)) {
 +        reset_motion_reference(p);
@@ -931,13 +949,16 @@ index 93e801e..bf3e0b8 100644
          p->next_pts = MP_NOPTS_VALUE;
          p->next_present_host_ns = mp_time_ns();
          p->next_media_pts_valid = false;
-         p->next_timebase_rate_valid = false;
+@@ -4363,6 +4557,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
          return true;
      }
  
 +    p->next_motion_vsyncs = frame->display_synced ? frame->num_vsyncs : -1;
      p->next_image = mp_image_new_ref(frame->current);
-@@ -4590,5 +4768,9 @@
+     if (!p->next_image)
+         return false;
+@@ -4450,6 +4645,10 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+ 
      // Clear subtitles when video configuration changes
      struct priv *p = vo->priv;
 +    p->motion_width = params->w;
@@ -947,7 +968,8 @@ index 93e801e..bf3e0b8 100644
      p->ahead_last_pts = MP_NOPTS_VALUE;
      osd_cadence_reset(&p->ahead_cadence);
      mp_image_unrefp(&p->ahead_shown_image);
-@@ -4603,5 +4785,9 @@
+@@ -4463,6 +4662,10 @@ static void uninit(struct vo *vo)
+ {
      struct priv *p = vo->priv;
  
 +    reset_motion_reference(p);
@@ -957,7 +979,8 @@ index 93e801e..bf3e0b8 100644
      report_osd_perf(vo);
      report_ahead_perf(vo);
      if (p->ahead.started)
-@@ -4719,5 +4905,10 @@
+@@ -4576,6 +4779,11 @@ static int control(struct vo *vo, uint32_t request, void *data)
+     struct priv *p = vo->priv;
  
      switch (request) {
 +    case VOCTRL_GET_MOTION_INTERPOLATION: {
@@ -968,14 +991,16 @@ index 93e801e..bf3e0b8 100644
      case VOCTRL_CHECK_EVENTS:
          if (atomic_exchange(&p->pending_presentation_resync, false))
              recover_display_layer(vo, "presentation resume", true);
-@@ -4746,5 +4937,6 @@
+@@ -4603,6 +4811,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
+         // seeks; the OSD layer is still cleared so stale subtitles don't
          // linger over the held frame.
          p->ahead_last_pts = MP_NOPTS_VALUE;
 +        reset_motion_reference(p);
          osd_cadence_reset(&p->ahead_cadence);
          clear_subtitle_cache(p);
          p->not_ready_drop_count = 0;
-@@ -4803,5 +4995,10 @@
+@@ -4661,6 +4870,11 @@ static const struct m_option avfoundation_options[] = {
+     {"presentation", OPT_CHOICE(presentation,
          {"media", AVF_PRESENTATION_MEDIA},
          {"host", AVF_PRESENTATION_HOST})},
 +    {"motion-interpolation", OPT_BOOL(motion_interpolation)},
@@ -986,7 +1011,8 @@ index 93e801e..bf3e0b8 100644
      // Cap the OSD/subtitle rasterization height (0 = display resolution).
      // Inline OSD layer mode only; the layer upscales the result.
      {"osd-max-height", OPT_INT(osd_max_height), M_RANGE(0, 4320)},
-@@ -4818,5 +5015,6 @@
+@@ -4676,6 +4890,7 @@ static const struct m_sub_options avfoundation_conf = {
+     .size = sizeof(struct avfoundation_opts),
      .defaults = &(const struct avfoundation_opts){
          .queue_lead_ms = 128,
 +        .motion_preset = 1,

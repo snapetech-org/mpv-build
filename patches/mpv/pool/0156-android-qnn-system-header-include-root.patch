@@ -1,0 +1,11 @@
+--- a/meson.build
++++ b/meson.build
+@@ -1783,7 +1783,7 @@
+ if host_machine.system() == 'android' and host_machine.cpu_family() == 'aarch64'
+     qairt_root = run_command('sh', '-c', 'printf %s "$QAIRT_SDK_ROOT"', check: false).stdout().strip()
+     if qairt_root != '' and fs.is_file(qairt_root / 'include/QNN/QnnInterface.h')
+-        anvil_includes += include_directories(qairt_root / 'include')
++        anvil_includes += include_directories(qairt_root / 'include', qairt_root / 'include/QNN')
+         dependencies += cc.find_library('vulkan', required: true)
+         anvil_c_args += ['-DPLEZY_HAVE_ANVIL']
+         sources += files('video/filter/vf_anvil.c')

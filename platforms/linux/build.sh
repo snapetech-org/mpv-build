@@ -63,6 +63,14 @@ SHADERC_VERSION shaderc version
 SHADERC_URL shaderc url
 SHADERC_REF shaderc ref
 SHADERC_COMMIT shaderc commit
+VULKAN_HEADERS_VERSION vulkan-headers version
+VULKAN_HEADERS_URL vulkan-headers url
+VULKAN_HEADERS_REF vulkan-headers ref
+VULKAN_HEADERS_COMMIT vulkan-headers commit
+VULKAN_LOADER_VERSION vulkan-loader version
+VULKAN_LOADER_URL vulkan-loader url
+VULKAN_LOADER_REF vulkan-loader ref
+VULKAN_LOADER_COMMIT vulkan-loader commit
 LIBPLACEBO_VERSION libplacebo version
 LIBPLACEBO_URL libplacebo url
 LIBPLACEBO_MIRROR libplacebo mirror optional
@@ -80,6 +88,10 @@ NV_CODEC_HEADERS_VERSION nv-codec-headers version
 NV_CODEC_HEADERS_URL nv-codec-headers url
 NV_CODEC_HEADERS_REF nv-codec-headers ref
 NV_CODEC_HEADERS_COMMIT nv-codec-headers commit
+WAYLAND_PROTOCOLS_VERSION wayland-protocols version
+WAYLAND_PROTOCOLS_URL wayland-protocols url
+WAYLAND_PROTOCOLS_REF wayland-protocols ref
+WAYLAND_PROTOCOLS_COMMIT wayland-protocols commit
 """.strip().splitlines()
 
 with open(sys.argv[1], encoding="utf-8") as source:
@@ -116,7 +128,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git libplacebo:git libass:git mpv:git
+resolve_pins wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -143,9 +155,18 @@ checkout_verified_ref() {
   rm -rf "$destination"
   for source in "$url" ${mirror:+"$mirror"}; do
     for attempt in 1 2 3; do
-      if git clone --quiet --depth 1 --branch "$ref" --no-checkout \
-        "$source" "$destination"; then
-        break 2
+      if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+        if git init --quiet "$destination" \
+          && git -C "$destination" remote add origin "$source" \
+          && git -C "$destination" fetch --quiet --depth 1 origin "$ref" \
+          && git -C "$destination" checkout --quiet --detach FETCH_HEAD; then
+          break 2
+        fi
+      else
+        if git clone --quiet --depth 1 --branch "$ref" --no-checkout \
+          "$source" "$destination"; then
+          break 2
+        fi
       fi
       rm -rf "$destination"
       # No point pausing before giving up on this source.
@@ -186,6 +207,40 @@ apply_patch_series() {
 finish_step() {
   cd "$srcdir"
   printf '\n==> %s done.\n\n' "$1"
+}
+
+build_vulkan_sdk() {
+  # The pinned FEL engine requires Vulkan 1.4.309 headers. Ubuntu 24.04's
+  # development package is older, so build matching, verified headers and
+  # loader instead of overriding pkg-config's advertised version. Ship the
+  # loader with libmpv; device drivers remain supplied by the user's system.
+  echo "==> Installing Vulkan headers $VULKAN_HEADERS_VERSION..."
+  checkout_verified_ref \
+    "$VULKAN_HEADERS_URL" "$VULKAN_HEADERS_REF" "$VULKAN_HEADERS_COMMIT" \
+    "$srcdir/vulkan-headers-$VULKAN_HEADERS_VERSION"
+  apply_patch_series vulkan-headers "$srcdir/vulkan-headers-$VULKAN_HEADERS_VERSION"
+  cd "vulkan-headers-$VULKAN_HEADERS_VERSION"
+  cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$prefix"
+  cmake --install build
+  finish_step vulkan-headers
+
+  echo "==> Building Vulkan loader $VULKAN_LOADER_VERSION..."
+  checkout_verified_ref \
+    "$VULKAN_LOADER_URL" "$VULKAN_LOADER_REF" "$VULKAN_LOADER_COMMIT" \
+    "$srcdir/vulkan-loader-$VULKAN_LOADER_VERSION"
+  apply_patch_series vulkan-loader "$srcdir/vulkan-loader-$VULKAN_LOADER_VERSION"
+  cd "vulkan-loader-$VULKAN_LOADER_VERSION"
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+    -DCMAKE_PREFIX_PATH="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--build-id \
+    -DBUILD_TESTS=OFF -DUPDATE_DEPS=OFF \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF \
+    -DBUILD_WSI_XLIB_XRANDR_SUPPORT=OFF -DBUILD_WSI_WAYLAND_SUPPORT=ON
+  cmake --build build -j"$jobs"
+  cmake --install build
+  finish_step vulkan-loader
+
 }
 
 cleanup_srcdir=""
@@ -302,7 +357,7 @@ main() {
     --enable-muxer=spdif \
     --disable-devices \
     --disable-bsfs \
-    --enable-bsf=aac_adtstoasc,av1_metadata,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
+    --enable-bsf=aac_adtstoasc,av1_metadata,dovi_split,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
     --disable-filters \
     --enable-filter=aformat,aresample,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
     --enable-gnutls \
@@ -340,6 +395,8 @@ main() {
   cmake --install build
   finish_step shaderc
 
+  build_vulkan_sdk
+
   # ─── Step 5: libplacebo (static library) ───────────────────────────────────
   echo "==> Building libplacebo $LIBPLACEBO_VERSION (static)..."
   checkout_verified_ref \
@@ -352,13 +409,20 @@ main() {
   meson setup build \
     --prefix="$prefix" \
     --default-library=static \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
+    -Dopengl=enabled \
+    -Ddovi=enabled \
+    -Dlibdovi=disabled \
     -Ddemos=false \
     -Dtests=false
 
   ninja -C build -j"$jobs"
   ninja -C build install
+  # Static libplacebo's shader compiler uses C++ charconv symbols. Its pkg
+  # config metadata omits the C++ runtime on this Linux toolchain; propagate
+  # it explicitly rather than leaving a shared libmpv with unresolved symbols.
+  find "$prefix" -name libplacebo.pc -exec sed -i '/^Libs:/ s|$| -lstdc++|' {} \;
   finish_step libplacebo
 
   # ─── Step 6: libass (static library, our fork) ─────────────────────────────
@@ -392,6 +456,20 @@ main() {
   make -j"$jobs"
   make install
   finish_step libass
+
+  # New HDR/color protocol descriptions are build-time inputs, not a newer
+  # system Wayland ABI. Keep the pinned Ubuntu client library; the mpv patch
+  # uses unnamed event queues (identical dispatch semantics, no debug label).
+  echo "==> Installing Wayland protocol descriptions $WAYLAND_PROTOCOLS_VERSION..."
+  checkout_verified_ref \
+    "$WAYLAND_PROTOCOLS_URL" "$WAYLAND_PROTOCOLS_REF" "$WAYLAND_PROTOCOLS_COMMIT" \
+    "$srcdir/wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}"
+  cd "wayland-protocols-${WAYLAND_PROTOCOLS_VERSION}"
+  meson setup build --prefix="$prefix" -Dtests=false
+  ninja -C build -j"$jobs"
+  ninja -C build install
+  export PKG_CONFIG_PATH="$prefix/share/pkgconfig:$PKG_CONFIG_PATH"
+  finish_step wayland-protocols
 
   # ─── Step 7: mpv (shared libmpv) ───────────────────────────────────────────
   echo "==> Building mpv $MPV_VERSION (shared libmpv only)..."
@@ -429,7 +507,7 @@ main() {
     -Dcplugins=disabled \
     -Dmanpage-build=disabled \
     -Djack=disabled \
-    -Dvulkan=disabled \
+    -Dvulkan=enabled \
     -Dd3d11=disabled \
     -Dgl=enabled \
     -Degl=enabled \

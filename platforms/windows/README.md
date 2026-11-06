@@ -10,7 +10,7 @@ pinned as the versions.json component `mpv-winbuild-cmake`.
 
 `build.sh` shallow-fetches the pinned winbuild commit, runs `pin_packages.py`
 to rewrite every source winbuild builds onto the versions.json pins -- the
-payload packages (`packages/{mpv,ffmpeg,libass}.cmake`, whose upstream tracks
+payload packages (`packages/{mpv,ffmpeg,libass,libplacebo}.cmake`, whose upstream tracks
 master) plus winbuild's live-fetch toolchain and ffmpeg-side packages
 (`toolchain/mingw-w64.cmake`, `toolchain/llvm/llvm.cmake`,
 `packages/svtav1.cmake`, `packages/nvcodec-headers.cmake`) and OpenSSL
@@ -32,7 +32,7 @@ sets `-Dgl=disabled -Degl-angle=disabled` for that target.
 
 ## Key coarseness
 
-`group.json` lists components `mpv`, `ffmpeg`, `libass`,
+`group.json` lists components `mpv`, `ffmpeg`, `libass`, `libplacebo`,
 `mpv-winbuild-cmake`, `mingw-w64`, `llvm`, `svt-av1`, `nv-codec-headers`
 and `openssl` (the last five being the packages
 `pin_packages.EXTRA_COMPONENTS` pins). The winbuild graph builds ~60 more dependencies (freetype,
@@ -51,8 +51,74 @@ toolchain-bootstrap time, and it defines the target ABI (headers + CRT), so
 dirty toolchain subgraph through the always-run toolchain targets. The pin
 exists because the 2026-08-29 secure-API header restructure on mingw-w64
 master broke libvpl's MinGW compat macros mid-day; llvm's `release/22.x`
-branch is the remaining live-fetch in the toolchain and freezes only inside
-a warm cache -- pin it the same way if it ever bites.
+branch is also pinned through `versions.json`; a warm cache must still match
+that exact source revision.
+
+## Building on a local Linux host
+
+The Windows dependency producer can run directly on a compatible Linux host.
+Use the dependency packages listed by the Windows job in `.github/workflows/ci.yml`,
+check out the exact producer revision, then run the same drivers used by CI:
+
+```sh
+platforms/windows/build.sh x86_64
+platforms/windows/package.sh x86_64
+platforms/windows/build.sh aarch64
+platforms/windows/package.sh aarch64
+```
+
+Run the two architectures sequentially when they share `build/windows/src`.
+Keep the complete compiler and dependency cache between attempts. Record the
+source revision, container image digest, logs and output checksums. Packaging
+verifies the ordered PCM exports and the DLL/PDB pair before an artifact can
+be recorded or published. Application jobs still require their compatible
+Windows OS and architecture.
+
+### Sharing a completed host LLVM compiler
+
+The Linux x64 LLVM host compiler builds both Windows targets. To reuse it,
+export only its host tools and Clang resource headers after installation:
+
+```sh
+python3 platforms/windows/host_llvm_cache.py export \
+  --prefix build/windows/aarch64/install \
+  --stamps build/windows/aarch64/toolchain/llvm-prefix/src/llvm-stamp \
+  --source build/windows/src/llvm --image "$container_image_digest" \
+  --archive "$task_scratch/host-llvm.tar.gz"
+```
+
+Keep the printed SHA-256 and archive together. On a compatible host with the
+same pinned LLVM source and configuration, set `PLEZY_WINDOWS_HOST_LLVM_CACHE`,
+`PLEZY_WINDOWS_HOST_LLVM_SHA256` and `PLEZY_WINDOWS_HOST_LLVM_IMAGE` before
+running `build.sh`. The driver acquires the pinned LLVM source checkout if it
+is absent, since target runtimes still compile from that source. It compares
+the original CMake arguments, source
+commit, container image, runtime-library hashes, relocated resource headers,
+and real C++ COFF compilation for both targets. Its LLVM ExternalProject then
+runs explicit cache validation and installation steps. The installed receipt
+records the imported compiler's archive and binary hashes.
+
+Target wrappers, CRT/sysroot, runtime libraries and build stamps remain specific
+to the receiving architecture. Stop only your own build before changing its
+compiler route; preserve its partial build directory. Never replace a running
+compiler or copy donor stamps. This cache establishes toolchain reuse and
+compiled architecture, without claiming native Windows execution qualification.
+
+The cache overlay preserves the pinned recipe's Clang resource version for
+target runtime installation. Every build then links a real Windows C++ consumer
+against its own CRT and standard library before starting package dependencies.
+FFmpeg patching materializes sparse-checkout FATE references required by the
+complete patch series.
+
+If GitHub rejects dispatch with `Actions has been disabled for this repository`,
+inspect the failed check annotations and repository/workflow permissions once.
+An active workflow and `enabled: true` can coexist with a separate GitHub-controlled
+restriction. Repeated enable requests or dispatches do not repair that state;
+retain the evidence for GitHub Support, as described in
+[GitHub's Actions settings documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
+A local build uses the owner's own compute and the same source/packaging
+checks. Do not move the workflow to another repository to evade an Actions
+restriction.
 
 ## CI build-state caching
 
@@ -215,3 +281,15 @@ resolved series is non-empty), the neutralized check-git step, and a second
 run converging. The remaining tests pin the pure rewrites -- the injected
 block matches the mbedtls idiom, the aarch64 cuda gate, the mpv option
 gate, the libmpv-2.pdb capture, and the davs2 build-time rewrite.
+
+
+### Source and patch preflight
+
+The Windows driver uses the shared override-aware patch resolver. `patchSet: fel`
+selects the FEL common and Windows series for the pinned FFmpeg, mpv and
+libplacebo sources; libplacebo is pinned and included in the Windows content key.
+Before compiler bootstrapping, `check_patches.py` checks every selected payload
+series on a pristine checkout of its exact source commit. It reuses cached Git
+objects without changing cached source trees. This catches source/patch drift
+before a long Windows toolchain build. Compatible public CI and private runners
+use the same driver and checks.

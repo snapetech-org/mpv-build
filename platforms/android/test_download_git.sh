@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Regression test for Android pinned Git source fallback and commit checking.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "$root/platforms/android/include/fetch-git.sh"
+
+# Keep the Android-only freetype pin on the upstream GitHub mirror while
+# preserving a full commit check. The private runner proxy rejects its primary
+# GitLab host, so the generic fallback test below must not drift away from the
+# real pinned dependency that exposed the outage.
+python3 - "$root" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts"))
+import keys
+
+pins = keys.resolved_pins(keys.load_versions(root), "freetype", "android")
+if pins["url"] != "https://gitlab.freedesktop.org/freetype/freetype":
+    raise SystemExit("freetype primary URL changed; review the Android transport fallback")
+if pins.get("mirror") != "https://github.com/freetype/freetype.git":
+    raise SystemExit("freetype must retain the official GitHub source mirror")
+if not re.fullmatch(r"[0-9a-f]{40}", pins.get("commit", "")):
+    raise SystemExit("freetype fallback requires a full pinned commit")
+print("freetype uses the official mirror and a full commit pin")
+PY
+
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT
+
+source_repo="$temporary/source"
+mirror_repo="$temporary/mirror.git"
+destination="$temporary/fetched"
+git init --quiet "$source_repo"
+git -C "$source_repo" config user.name "Android source fetch test"
+git -C "$source_repo" config user.email "android-source-fetch-test@example.invalid"
+printf 'pinned dav1d fixture\n' > "$source_repo/source.txt"
+git -C "$source_repo" add source.txt
+git -C "$source_repo" commit --quiet -m fixture
+git -C "$source_repo" tag 1.5.4
+git clone --quiet --bare "$source_repo" "$mirror_repo"
+expected_commit=$(git -C "$source_repo" rev-parse HEAD)
+
+fetch_pinned_git dav1d "$temporary/missing-primary.git" "$mirror_repo" 1.5.4 "$expected_commit" "$destination"
+actual_commit=$(git -C "$destination" rev-parse HEAD)
+test "$actual_commit" = "$expected_commit"
+test -f "$destination/source.txt"
+
+existing="$temporary/existing"
+mkdir "$existing"
+printf 'preserve existing content\n' > "$existing/marker.txt"
+if fetch_pinned_git dav1d "$temporary/missing-primary.git" "$mirror_repo" 1.5.4 "$expected_commit" "$existing" >/dev/null 2>&1; then
+	echo >&2 "fetch_pinned_git overwrote an existing destination"
+	exit 1
+fi
+test "$(cat "$existing/marker.txt")" = 'preserve existing content'
+
+if fetch_pinned_git dav1d "$temporary/missing-primary.git" "$mirror_repo" 1.5.4 "$(printf '0%.0s' {1..40})" "$temporary/mismatch" >/dev/null 2>&1; then
+	echo >&2 "fetch_pinned_git accepted a commit that did not match the pin"
+	exit 1
+fi
+test ! -e "$temporary/mismatch"
+echo "Android Git source fallback uses the mirror and enforces the commit pin"
+
+# FEL sources name exact commits, including commits behind the default tip.
+printf 'newer tip\n' >> "$source_repo/source.txt"
+git -C "$source_repo" commit --quiet -am 'newer tip'
+git -C "$source_repo" push --quiet "$mirror_repo" HEAD:refs/heads/new-tip
+git -C "$mirror_repo" symbolic-ref HEAD refs/heads/new-tip
+fetch_pinned_git ffmpeg "$temporary/missing-primary.git" "$mirror_repo" "$expected_commit" "$expected_commit" "$temporary/commit-pin"
+test "$(git -C "$temporary/commit-pin" rev-parse HEAD)" = "$expected_commit"
+if fetch_pinned_git ffmpeg "$mirror_repo" "" "$expected_commit" "$(printf '0%.0s' {1..40})" "$temporary/commit-mismatch" >/dev/null 2>&1; then
+  echo >&2 "raw commit acquisition ignored a mismatched pin"
+  exit 1
+fi
+test ! -e "$temporary/commit-mismatch"
+echo "Android raw-commit pins fetch the exact object and reject mismatches"

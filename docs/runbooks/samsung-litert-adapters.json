@@ -1,0 +1,25 @@
+{
+  "artifact": "litert-samsung-android-arm64-c6cc754e1073.zip",
+  "build": {
+    "architecture": "arm64",
+    "bazel": "7.7.0",
+    "buildRecipeCommit": "8619932b721caabc1b23e94db4dc8e4dbd2a22aa",
+    "buildRecipeRepository": "https://github.com/snapetech-org/PlezyNG",
+    "component": "LiteRT Samsung Android ARM64 adapters",
+    "elfPageAlignment": 16384,
+    "executionQualified": false,
+    "files": {
+      "LICENSE.txt": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "arm64-v8a/libLiteRtCompilerPlugin_Samsung.so": "3f3f0ee8066b3d34706c79091e741496d376ec7f87bed50d519461e565ca16cf",
+      "arm64-v8a/libLiteRtDispatch_Samsung.so": "f781e07defd572d311a3d4617b6ce857e6eaa2271a5dbc6f59606c0f88847c74"
+    },
+    "ndk": "29.0.14206865",
+    "schema": 1,
+    "sdkArchiveSha256": "a107f154bfa9bfafa0e26789919d89aa4062dd22e24292c66fd4f912d9a3498f",
+    "sdkLibrariesIncluded": false,
+    "sourceCommit": "4352e261d3f1b3cda00345db5dbd75859d3bf0d3",
+    "sourceRepository": "https://github.com/google-ai-edge/LiteRT"
+  },
+  "sha256": "c6cc754e1073eb36a8013823bbbb257c499daa0c2df1f7b4ec88b3b75a9b9662",
+  "url": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-neural/litert-samsung-android-arm64-c6cc754e1073.zip"
+}

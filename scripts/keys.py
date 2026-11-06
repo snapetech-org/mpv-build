@@ -269,7 +269,7 @@ GROUPS = {
     "apple": Group(
         self_built=("libass", "FFmpeg", "libmpv"),
         platforms=("ios", "isimulator", "maccatalyst", "macos", "tvos", "tvsimulator"),
-        asset_base="https://github.com/edde746/mpv-build/releases/download/binaries-apple",
+        asset_base="https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple",
         driver_sources=(
             Path("Sources/BuildScripts/Package.swift"),
             Path("Sources/BuildScripts/XCFrameworkBuild/base.swift"),
@@ -434,10 +434,10 @@ def resolved_kind(versions: dict, component: str, group: str) -> str:
 def resolved_pins(versions: dict, component: str, group: str) -> dict[str, str]:
     """The component's pin fields with the group's overrides folded in."""
     entry = _component_entry(versions, component)
-    fields = ("version", "url", "ref", "sha256", "commit")
+    fields = ("version", "url", "ref", "sha256", "commit", "mirror")
     pins = {field: entry[field] for field in fields if field in entry}
     for field, value in (entry.get("overrides", {}).get(group) or {}).items():
-        if field in ("version", "url", "ref", "sha256", "commit"):
+        if field in ("version", "url", "ref", "sha256", "commit", "mirror"):
             pins[field] = value
     # An archive pin's identity is its sha256; ref and commit only mean
     # something for a git pin. Folding an override in must not carry the base
@@ -449,6 +449,7 @@ def resolved_pins(versions: dict, component: str, group: str) -> dict[str, str]:
     if resolved_kind(versions, component, group) != "git":
         pins.pop("commit", None)
         pins.pop("ref", None)
+        pins.pop("mirror", None)
     for field in ("version", "url"):
         if field not in pins:
             raise SystemExit(f"{VERSIONS_PATH}: {component} has no {field}")
@@ -467,9 +468,7 @@ def _series_entries(path: Path) -> list[str]:
 def patch_entries(root: Path, component: str, group: str) -> list[tuple[str, str]]:
     """(name, sha256) of every patch in the component's resolved series, in order."""
     directory = root / PATCHES_ROOT / component
-    names = _series_entries(directory / "series.common") + _series_entries(
-        directory / f"series.{group}"
-    )
+    names = [name for path in patches.series_files(component, group, root=root) for name in _series_entries(path)]
     entries = []
     for name in names:
         pool_file = directory / "pool" / name
@@ -540,6 +539,8 @@ def _artifact_key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if "mpv" in spec.components:
+        text.extend(pcm_inspection_key_inputs(root))
     for component in sorted(spec.components):
         for name, digest in patch_entries(root, component, group.name):
             text.append(f"patch={component}/{name}:{digest}")
@@ -625,12 +626,91 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         f"driver={driver_digest(root, group)}",
         f"toolchain={_sha256_bytes(toolchain_path.read_bytes())}",
     ]
+    if component == "mpv":
+        text.extend(pcm_inspection_key_inputs(root))
     for name, digest in patch_entries(root, component, group.name):
         text.append(f"patch={name}:{digest}")
     if group.name == "apple" and artifact == "libmpv":
         for name, digest in patch_entries(root, "spatialaudiobridge", group.name):
             text.append(f"patch=spatialaudiobridge/{name}:{digest}")
     return "\n".join(text) + "\n"
+
+
+def pcm_inspection_key_inputs(root: Path) -> list[str]:
+    # A changed package inspection contract cannot reuse a previously published
+    # immutable name that was accepted under weaker symbol/receipt checks.
+    return [f"pcm-inspector={name}:{_sha256_file(root / name)}" for name in (
+        "scripts/inspect_pcm_package.py", "scripts/check_plezy_audio_tap_export.py")]
+
+
+def pcm_receipt_problems(entry: dict, label: str, expected=None, motion_platform=None) -> list[str]:
+    receipt = entry.get("capabilities")
+    if not isinstance(receipt, dict):
+        return [f"{label}: no packaged ordered-PCM receipt"]
+    binaries = receipt.get("binaries")
+    hashes = receipt.get("binarySha256")
+    architectures = receipt.get("binaryArchitectures")
+    if (receipt.get("orderedSubtitlePcmAbi") != 1 or
+            receipt.get("inspectionSchema") != 4 or
+            receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
+                "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
+            receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
+            receipt.get("artifactSha256") != entry.get("checksum") or
+            not isinstance(binaries, list) or not binaries or
+            any(not isinstance(name, str) for name in binaries) or
+            len(set(binaries)) != len(binaries) or
+            expected is not None and len(binaries) != expected or
+            not isinstance(hashes, dict) or set(hashes) != set(binaries) or
+            any(not isinstance(value, str) or not CHECKSUM_RE.fullmatch(value) for value in hashes.values()) or
+            not isinstance(architectures, dict) or set(architectures) != set(binaries) or
+            any(not isinstance(value, list) or not value or any(arch not in ('i386', 'armv7', 'arm64', 'arm64e', 'x86_64')
+                for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
+        return [f"{label}: mismatched packaged ordered-PCM receipt"]
+    if motion_platform:
+        if motion_platform in ('linux', 'windows') and receipt.get('pmeVulkan') is not True:
+            return [f"{label}: no compiled PME Vulkan reconstruction receipt"]
+        neural = receipt.get("neuralFilters")
+        if receipt.get("motionPlatform") != motion_platform or not isinstance(neural, dict) or set(neural) != set(binaries):
+            return [f"{label}: no packaged neural filter receipt"]
+        for binary in binaries:
+            wanted = {}
+            for architecture in architectures[binary]:
+                if motion_platform == "android":
+                    features = ["anvil", "litert"] if architecture == "arm64" else []
+                elif motion_platform == "apple":
+                    features = ["videotoolbox"]
+                else:
+                    features = ["pme"]
+                wanted[architecture] = features
+            if neural[binary] != wanted:
+                return [f"{label}: packaged neural filter coverage does not match its architectures"]
+    if expected == 1 and label in ('x86_64', 'aarch64'):
+        machine = 'arm64' if label == 'aarch64' else 'x86_64'
+        if any(value != [machine] for value in architectures.values()):
+            return [f"{label}: packaged machine does not match the platform variant"]
+    if expected == 4:
+        android = {'arm64-v8a': 'arm64', 'armeabi-v7a': 'armv7', 'x86': 'i386', 'x86_64': 'x86_64'}
+        if {f'jni/{abi}/libmpv.so' for abi in android} != set(binaries) or any(
+                architectures.get(f'jni/{abi}/libmpv.so') != [machine] for abi, machine in android.items()):
+            return [f"{label}: Android ABI paths and packaged machines differ"]
+    if any('.xcframework/' in name.lower() for name in binaries):
+        slices = receipt.get('appleSlices')
+        if not isinstance(slices, list) or not slices or len(slices) > 32:
+            return [f"{label}: missing Apple platform coverage"]
+        coverage, covered = set(), set()
+        for row in slices:
+            if (not isinstance(row, dict) or row.get('binary') not in architectures or
+                    row['binary'] in covered or row.get('architectures') != architectures[row['binary']] or
+                    not isinstance(row.get('platform'), str) or not isinstance(row.get('variant'), str)):
+                return [f"{label}: inconsistent Apple slice receipt"]
+            covered.add(row['binary'])
+            coverage.update((row['platform'], row['variant'], arch) for arch in row['architectures'])
+        required = {('ios', '', 'arm64'), ('ios', 'simulator', 'arm64'), ('ios', 'simulator', 'x86_64'),
+            ('ios', 'maccatalyst', 'arm64'), ('ios', 'maccatalyst', 'x86_64'), ('macos', '', 'arm64'), ('macos', '', 'x86_64'),
+            ('tvos', '', 'arm64'), ('tvos', '', 'arm64e'), ('tvos', 'simulator', 'arm64'), ('tvos', 'simulator', 'x86_64')}
+        if covered != set(binaries) or not required <= coverage:
+            return [f"{label}: incomplete Apple platform coverage"]
+    return []
 
 
 def library_key(root: Path, group: Group, artifact: str) -> str:
@@ -665,7 +745,7 @@ def load_manifest(root: Path) -> dict:
 
 def group_section(manifest: dict, group: Group) -> dict:
     section = manifest["platforms"].setdefault(group.name, {})
-    section.setdefault("assetBase", group.asset_base)
+    section["assetBase"] = group.asset_base
     section.setdefault("libraries", {})
     return section
 
@@ -681,7 +761,17 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
         return ["no manifest entry"]
 
     if group.artifacts is not None:
-        return _artifact_entry_problems(entry, key, group.artifacts[library])
+        problems = _artifact_entry_problems(entry, key, group.artifacts[library])
+        if library == "mpv-android":
+            problems.extend(pcm_receipt_problems(entry, library, 4, group.name))
+            paths = (entry.get("capabilities") or {}).get("binaries", [])
+            required = {f"jni/{abi}/libmpv.so" for abi in group.platforms}
+            if not isinstance(paths, list) or set(name for name in paths if isinstance(name, str)) != required:
+                problems.append("mpv-android: ordered-PCM receipt does not cover every ABI")
+        elif "mpv" in group.artifacts[library].components:
+            for variant, value in (entry.get("prebuilt") or {}).items():
+                if isinstance(value, dict): problems.extend(pcm_receipt_problems(value, variant, 1, group.name))
+        return problems
 
     problems = []
     if entry.get("key") != key:
@@ -699,6 +789,8 @@ def entry_problems(entry: dict | None, key: str, library: str, group: Group) -> 
     if not frameworks:
         problems.append("no frameworks recorded")
     for name, framework in sorted(frameworks.items()):
+        if library == "libmpv":
+            problems.extend(pcm_receipt_problems(framework, name, motion_platform=group.name))
         asset = framework.get("asset")
         checksum = framework.get("checksum", "")
         if asset != framework_asset(name, key):
@@ -879,6 +971,8 @@ def _record_variant(args, root: Path, group: Group) -> int:
             "asset": asset,
             "checksum": _sha256_file(target),
         }
+        if "mpv" in spec.components:
+            entry["prebuilt"][args.platform]["capabilities"] = pcm_capability(root, target, 1, group.name)
         if spec.symbols_pattern:
             entry.setdefault("symbols", {}).update(
                 _record_symbols(release, artifact_id, spec, key, (args.platform,))
@@ -891,6 +985,14 @@ def _record_variant(args, root: Path, group: Group) -> int:
         save_manifest(root, manifest)
         print(f"wrote {MANIFEST_PATH}")
     return 0
+
+
+def pcm_capability(root: Path, artifact: Path, expected=None, motion_platform=None):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("plezy_pcm_package", root / "scripts/inspect_pcm_package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.inspect(artifact, expected, motion_platform)
 
 
 def cmd_record_platform(args, root: Path, group: Group) -> int:
@@ -953,6 +1055,8 @@ def cmd_record_packages(args, root: Path, group: Group) -> int:
             print(f"{artifact_id}: not built in this run, keeping the recorded entry")
             continue
         entry = {"key": key, "asset": target.name, "checksum": _sha256_file(target)}
+        if artifact_id == "mpv-android":
+            entry["capabilities"] = pcm_capability(root, target, 4, group.name)
         if spec.symbols_pattern:
             entry["symbols"] = _record_symbols(
                 release, artifact_id, spec, key, spec.symbols_variants
@@ -1014,6 +1118,8 @@ def cmd_record_frameworks(args, root: Path, group: Group) -> int:
                 "asset": addressed.name,
                 "checksum": swiftpm_checksum(addressed),
             }
+            if library == "libmpv":
+                frameworks[name]["capabilities"] = pcm_capability(root, addressed, motion_platform=group.name)
 
         if not frameworks:
             raise SystemExit(f"{library}: no static libraries found in {reference.name}")
@@ -1104,6 +1210,24 @@ def cmd_render(args, root: Path, group: Group) -> int:
     for name in skipped:
         print(f"{name}: pinned to a local path, left untouched")
     return 0
+
+
+def cmd_sync_asset_bases(args, root: Path, group: Group | None) -> int:
+    """Retarget manifest URLs to this repository without rebuilding binary bytes."""
+    manifest = load_manifest(root)
+    changed = False
+    for current in GROUPS.values():
+        section = manifest["platforms"].setdefault(current.name, {})
+        if section.get("assetBase") != current.asset_base:
+            section["assetBase"] = current.asset_base
+            changed = True
+            print(f"updated platforms.{current.name}.assetBase")
+        section.setdefault("libraries", {})
+    if changed:
+        save_manifest(root, manifest)
+    else:
+        print("all artifact asset bases already target this repository")
+    return cmd_render(args, root, GROUPS["apple"])
 
 
 # ---- queries and gate -----------------------------------------------------
@@ -1397,6 +1521,12 @@ def main(argv: list[str]) -> int:
         "render", parents=[common], help="point Package.swift at the manifest's assets"
     )
     render.set_defaults(func=cmd_render)
+
+    sync_asset_bases = subparsers.add_parser(
+        "sync-asset-bases",
+        help="retarget every published asset URL to this repository without rebuilding binaries",
+    )
+    sync_asset_bases.set_defaults(func=cmd_sync_asset_bases)
 
     verify = subparsers.add_parser(
         "verify",

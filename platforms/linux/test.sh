@@ -205,6 +205,18 @@ manifest="$temporary/versions.json"
 cat >"$manifest" <<JSON
 {
   "components": {
+    "vulkan-headers": {
+      "kind": "git", "version": "1.4.309", "url": "file://$libplacebo_repository",
+      "ref": "release", "commit": "$libplacebo_commit"
+    },
+    "vulkan-loader": {
+      "kind": "git", "version": "1.4.309", "url": "file://$libplacebo_repository",
+      "ref": "release", "commit": "$libplacebo_commit"
+    },
+    "wayland-protocols": {
+      "kind": "git", "version": "1.44", "url": "file://$libplacebo_repository",
+      "ref": "release", "commit": "$libplacebo_commit"
+    },
     "ffmpeg": {
       "kind": "git",
       "version": "$ffmpeg_version",
@@ -315,11 +327,12 @@ grep -q "kind 'archive'" "$temporary/kind-drift.log" ||
   fail "kind drift was not reported"
 
 recorded_call() {
-  local program="$1" directory="$2" candidate
+  local program="$1" directory="$2" argument="${3:-}" candidate
   for candidate in "$records"/record.*; do
     [ -f "$candidate" ] || continue
     if [ "$(sed -n 1p "$candidate")" = "$program" ] &&
-      [ "$(basename -- "$(sed -n 2p "$candidate")")" = "$directory" ]; then
+      [ "$(basename -- "$(sed -n 2p "$candidate")")" = "$directory" ] &&
+      { [ -z "$argument" ] || tail -n +3 "$candidate" | grep -Fxq -- "$argument"; }; then
       printf '%s\n' "$candidate"
       return 0
     fi
@@ -344,6 +357,7 @@ assert_argument "$mpv_meson" "-Dwayland=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dx11=disabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dvaapi=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dgl=enabled" "mpv's meson setup"
+assert_argument "$mpv_meson" "-Dvulkan=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Degl=enabled" "mpv's meson setup"
 
 # The DRM-derived providers are the ones that keep hardware decoding alive when
@@ -398,8 +412,17 @@ assert_argument "$dav1d_meson" "--default-library=static" "dav1d's meson setup"
 
 # libplacebo runs meson as well, and its call carries no Wayland flag: finding
 # it separately is what proves the directory above really discriminated.
-recorded_call meson "libplacebo-v$libplacebo_version" >/dev/null ||
+libplacebo_meson="$(recorded_call meson "libplacebo-v$libplacebo_version")" ||
   fail "the build plan never ran meson in the libplacebo source tree"
+assert_argument "$libplacebo_meson" "-Dvulkan=enabled" "libplacebo's meson setup"
+
+# Build the matching loader from verified pins; do not accept the older
+# distro development package or silently fetch unpinned dependencies.
+vulkan_cmake="$(recorded_call cmake vulkan-loader-1.4.309 -S)" ||
+  fail "the build plan never configured the Vulkan loader"
+assert_argument "$vulkan_cmake" "-DUPDATE_DEPS=OFF" "Vulkan loader configure"
+assert_argument "$vulkan_cmake" "-DCMAKE_PREFIX_PATH=$(realpath "$temporary/prefix")" "Vulkan loader configure"
+assert_argument "$vulkan_cmake" "-DBUILD_WSI_WAYLAND_SUPPORT=ON" "Vulkan loader configure"
 
 # libass is the fork the whole platform set renders subtitles with, so the
 # build must configure OUR checkout - the directory pins that - and must pin

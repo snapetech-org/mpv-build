@@ -19,6 +19,7 @@
 # raw.githubusercontent.com at the new commit and hash as listed below.
 #
 # sha256 of each fixture as fetched:
+#   26b46bc1f08f35d7fda6f2bab349224e39a3972942ccad7aca3b8b768954fa87  highway.cmake
 #   359c9c7da360f57d3a438e6fe117af6169cbd9aa3672751fd2bfc31e02be8fff  ffmpeg.cmake
 #   41ec0c08160e4d0a31b2d9dc214985056ad9b61d77530c526ee77b0acc9c84b6  libass.cmake
 #   c43469d77f50652718044e792b10f7db4ee378cb81949cdd3020e78b414083d6  mbedtls.cmake
@@ -48,9 +49,21 @@
 # custom_steps.cmake carries the check-git step whose injection
 # pin_packages.neutralize_check_git suppresses for warm-cache correctness; the
 # tests assert the audited idiom still matches and that the rewrite converges.
+# highway.cmake was read from the same 87e22100 checkout on 2026-10-28 and
+# exercises the standalone-test option that avoids GoogleTest resolution when
+# release builds already disable Highway tests, examples, and contrib.
 # davs2.cmake carries the configure step that pin_davs2_build_time extends
 # with a rewrite of the build time davs2's version.sh reads from `date`.
 #
 # When bumping the mpv-winbuild-cmake pin in versions.json, refresh these
 # twelve fixtures from the new commit and update the hashes above;
 # test_pin_packages.py asserts them, so a stale fixture fails the suite.
+
+# llvm-libcxx.cmake: fetched from the same pinned 87e22100 commit on 2026-11-05.
+# 3926fbe1fb01e70881800fd52089f67e3b47f83f5a8339f8a8ff68c34fbdf5d8  llvm-libcxx.cmake
+
+# fontconfig.cmake: fetched from pinned winbuild 87e22100 on 2026-11-05.
+# c20c10d75476bf1f99818e5dda7644c94ae157372b9fd396c09f1b2122b006aa  fontconfig.cmake
+
+# libplacebo.cmake: fetched from the same pinned commit via GitHub Contents API on 2026-11-06.
+#   64c407a343a43bfe8b372b12d5dac4621d1362f094239cfb2c215e6ce213332f  libplacebo.cmake

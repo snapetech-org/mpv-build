@@ -58,7 +58,7 @@ def run(repo, *args, expect=0, env=None):
 LIBRARIES = {"libass": ["libass"], "FFmpeg": ["libavcodec", "libavutil"], "libmpv": ["libmpv"]}
 COMPONENTS = {"libass": "libass", "FFmpeg": "ffmpeg", "libmpv": "mpv"}
 PLATFORMS = ("ios", "isimulator", "maccatalyst", "macos", "tvos", "tvsimulator")
-ASSET_BASE = "https://github.com/edde746/mpv-build/releases/download/binaries-apple"
+ASSET_BASE = "https://github.com/snapetech-org/mpv-build/releases/download/binaries-apple"
 
 VERSIONS = {
     "formatVersion": 1,
@@ -74,9 +74,9 @@ VERSIONS = {
         },
         "ffmpeg": {
             "kind": "git",
-            "version": "n8.0.1",
+            "version": "n9.0.2",
             "url": "https://github.com/FFmpeg/FFmpeg",
-            "ref": "n8.0.1",
+            "ref": "n9.0.2",
             "provenance": "test fixture",
             "platforms": ["apple", "android", "linux", "windows"],
         },
@@ -144,6 +144,26 @@ def make_repo(directory):
     repo = Path(directory)
     (repo / "scripts").mkdir(parents=True)
     shutil.copy2(tool, repo / "scripts" / "keys.py")
+    for name in ("inspect_pcm_package.py", "check_plezy_audio_tap_export.py"):
+        shutil.copy2(root / "scripts" / name, repo / "scripts" / name)
+    # These fixtures contain text placeholders, not native binaries. Isolate
+    # naming/hashing tests from ABI inspection only in this disposable copy.
+    # test_inspect_pcm_package.py exercises the real inspector on compiled ELF.
+    fixture_tool = repo / "scripts" / "keys.py"
+    fixture_tool.write_text(fixture_tool.read_text().replace(
+        'if __name__ == "__main__":',
+        '''def pcm_capability(root, artifact, expected=None, motion_platform=None):
+    config = root / "platforms" / "android" / "group.json"
+    variants = []
+    if config.exists():
+        for spec in json.loads(config.read_text())["artifacts"].values():
+            variants.extend(spec.get("variants", []))
+    return {"binaries": [f"jni/{abi}/libmpv.so" for abi in sorted(set(variants))]}
+
+def pcm_receipt_problems(*args, **kwargs):
+    return []
+
+if __name__ == "__main__":'''))
     (repo / "scripts/build_spatial.py").write_text("# source build\n")
     # keys.py reads the series format through patches.py, so the fixture carries
     # it too; the sandbox mirrors the real scripts/ layout.
@@ -337,6 +357,30 @@ with tempfile.TemporaryDirectory() as tmp:
 with tempfile.TemporaryDirectory() as tmp:
     repo = make_repo(tmp)
     before = keys(repo)
+
+    # A mirror changes only where a pinned tree is fetched, not the tree's
+    # identity. Resolvers must expose it to platform fetchers without putting
+    # it into the content key.
+    versions = json.loads(json.dumps(VERSIONS))
+    versions["components"]["libass"]["mirror"] = "https://mirror.example/libass.git"
+    write_versions(repo, versions)
+    check(keys(repo) == before, "a source mirror must not move the content key")
+    resolved = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'scripts'); import keys; "
+            "print(keys.resolved_pins(keys.load_versions(keys.repo_root()), 'libass', 'apple').get('mirror', ''))",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    check(
+        resolved.stdout.strip() == "https://mirror.example/libass.git",
+        "resolved_pins must expose the source mirror to download drivers",
+    )
 
     # Another group's override is not apple's business.
     versions = json.loads(json.dumps(VERSIONS))
@@ -603,7 +647,7 @@ with tempfile.TemporaryDirectory() as tmp:
 #     group; keys are multi-component; recording is per variant with
 #     checksums; there are no frameworks and nothing to render.
 GROUP_JSON = {
-    "assetBase": "https://github.com/edde746/mpv-build/releases/download/binaries-android",
+    "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
     "toolchain": "toolchain/android.txt",
     "driver": ["platforms/android/build.sh", "platforms/android/package.sh"],
     "artifacts": {
@@ -942,6 +986,7 @@ with tempfile.TemporaryDirectory() as tmp:
             "key": current["mpv-android"],
             "asset": aar,
             "checksum": hashlib.sha256(b"aar bytes").hexdigest(),
+            "capabilities": {"binaries": ["jni/arm64-v8a/libmpv.so", "jni/x86_64/libmpv.so"]},
         },
         f"the package entry: {entry}",
     )
@@ -1203,6 +1248,7 @@ with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bin_
             "key": key,
             "asset": aar,
             "checksum": sha256(b"aar bytes"),
+            "capabilities": {"binaries": ["jni/arm64-v8a/libmpv.so", "jni/x86_64/libmpv.so"]},
             "symbols": {
                 "arm64-v8a": {"asset": arm64_symbols, "checksum": sha256(b"arm64 symbols")},
                 "x86_64": {"asset": x86_64_symbols, "checksum": sha256(b"x86_64 symbols")},

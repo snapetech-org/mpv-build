@@ -53,6 +53,13 @@ elif [[ -n "${2:-}" ]]; then
   usage
 fi
 
+# cppwinrt fetches Windows.winmd after the compiler bootstrap. Check its
+# downloader now so a minimal host cannot spend hours building LLVM first.
+if [[ "$CONFIGURE_ONLY" == 0 ]] && ! command -v wget >/dev/null 2>&1; then
+  echo "wget is required for the Windows toolchain bootstrap" >&2
+  exit 1
+fi
+
 # winbuild's own patch steps run `git am` (spirv-cross, fontconfig, ...),
 # which hard-fails without a committer identity -- upstream's CI configures
 # one globally as its first step. Scope ours to this process instead of
@@ -83,6 +90,39 @@ SRC="$WORK/mpv-winbuild-cmake"
 BUILD="$WORK/$ARCH"
 mkdir -p "$WORK"
 
+# Upstream passes `--jobs=1` to Ninja, but supported Ninja releases accept
+# `-j 1` instead. Normalize all job options and drop load-average limits so
+# I/O or system load never stalls a build; keep one compiler for the 8 GiB
+# guest's peak memory use. This lives in the build driver so its content key
+# moves and Windows artifacts rebuild when the wrapper contract changes.
+NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"
+mkdir -p "$NINJA_WRAPPER_DIR"
+cat > "$NINJA_WRAPPER_DIR/ninja" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+args=()
+skip_next=0
+for arg in "$@"; do
+  if (( skip_next )); then
+    skip_next=0
+    continue
+  fi
+  case "$arg" in
+    --jobs|--load-average|-j|-l)
+      skip_next=1
+      ;;
+    --jobs=*|--load-average=*|-j*|-l*)
+      ;;
+    *)
+      args+=("$arg")
+      ;;
+  esac
+done
+exec /usr/bin/ninja -j 1 "${args[@]}"
+SH
+chmod 0755 "$NINJA_WRAPPER_DIR/ninja"
+export PATH="$NINJA_WRAPPER_DIR:$PATH"
+
 echo "==> mpv-winbuild-cmake @ $WINBUILD_COMMIT"
 if [[ ! -d "$SRC/.git" ]]; then
   # The unified repo may itself be a git worktree whose admin dir sits outside
@@ -105,6 +145,9 @@ git -C "$SRC" reset --hard -q "$WINBUILD_COMMIT"
 echo "==> pinning packages to versions.json"
 python3 "$HERE/pin_packages.py" --winbuild "$SRC"
 
+# Check the selected patches on pristine source before bootstrapping compilers.
+python3 "$HERE/check_patches.py" --source-root "$WORK/src"
+
 echo "==> configuring for $ARCH-w64-mingw32 (clang toolchain)"
 # SINGLE_SOURCE_LOCATION and RUSTUP_LOCATION sit outside the per-arch build
 # dir so the x86_64 and aarch64 legs share sources and the rust toolchain.
@@ -113,13 +156,37 @@ echo "==> configuring for $ARCH-w64-mingw32 (clang toolchain)"
 # it when no ccache binary is on the host, so --configure-only hosts need
 # nothing extra. It absorbs the rebuild cost of the packages a pin bump
 # dirties on a warm tree (and of bootstrap retries after a timeout).
-cmake -S "$SRC" -B "$BUILD" -G Ninja \
-  -DTARGET_ARCH="$ARCH-w64-mingw32" \
-  -DCOMPILER_TOOLCHAIN=clang \
-  -DENABLE_CCACHE=ON \
-  -DCCACHE_MAXSIZE=2G \
-  -DSINGLE_SOURCE_LOCATION="$WORK/src" \
-  -DRUSTUP_LOCATION="$WORK/rustup"
+if [[ -n "${PLEZY_WINDOWS_HOST_LLVM_CACHE:-}" && ! -d "$WORK/src/llvm/.git" ]]; then
+  # The Windows CRT/libc++/compiler-rt builds still need pinned LLVM sources.
+  # Refuse an unfamiliar populated directory; remove only an empty placeholder.
+  if [[ -e "$WORK/src/llvm" ]]; then
+    rmdir "$WORK/src/llvm"
+  fi
+  python3 "$ROOT/scripts/patches.py" fetch-pinned llvm windows "$WORK/src/llvm"
+fi
+
+cmake_args=(-S "$SRC" -B "$BUILD" -G Ninja
+  -DTARGET_ARCH="$ARCH-w64-mingw32"
+  -DCOMPILER_TOOLCHAIN=clang
+  -DENABLE_CCACHE=ON
+  -DCCACHE_MAXSIZE=2G
+  -DSINGLE_SOURCE_LOCATION="$WORK/src"
+  -DRUSTUP_LOCATION="$WORK/rustup")
+cmake "${cmake_args[@]}"
+
+# The same Linux host compiler can target both Windows architectures. Import
+# only verified LLVM executables/resource headers, then build this target's
+# wrappers, sysroot and runtimes normally. No prior build stamps are adopted.
+if [[ -n "${PLEZY_WINDOWS_HOST_LLVM_CACHE:-}" ]]; then
+  python3 "$HERE/host_llvm_cache.py" prepare \
+    --archive "$PLEZY_WINDOWS_HOST_LLVM_CACHE" \
+    --sha256 "${PLEZY_WINDOWS_HOST_LLVM_SHA256:?host LLVM cache checksum required}" \
+    --image "${PLEZY_WINDOWS_HOST_LLVM_IMAGE:?host LLVM container image required}" \
+    --source "$WORK/src/llvm" --prefix "$BUILD/install" \
+    --config "$BUILD/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt" \
+    --build "$BUILD" --winbuild "$SRC"
+  cmake "${cmake_args[@]}"
+fi
 
 if [[ "$CONFIGURE_ONLY" == 1 ]]; then
   echo "==> --configure-only: stopping after cmake configure"
@@ -282,6 +349,33 @@ echo "==> toolchain targets (llvm, rustup, llvm-clang; no-ops when clean)"
 ninja -C "$BUILD" llvm
 ninja -C "$BUILD" rustup
 ninja -C "$BUILD" llvm-clang
+
+# Verify this target's CRT/C++ runtime and resource layout before dependencies.
+link_probe="$BUILD/toolchain-link-check"
+mkdir -p "$link_probe"
+cat > "$link_probe/consumer.cpp" <<'CPP'
+#include <windows.h>
+#include <string>
+#include <vector>
+int main() {
+    std::vector<std::string> values{std::to_string(GetCurrentProcessId())};
+    return static_cast<int>(values.front().size());
+}
+CPP
+"$BUILD/install/bin/$ARCH-w64-mingw32-g++" "$link_probe/consumer.cpp" -o "$link_probe/consumer.exe"
+python3 - "$link_probe/consumer.exe" "$ARCH" <<'PY'
+from pathlib import Path
+import hashlib, json, struct, sys
+path, arch = Path(sys.argv[1]), sys.argv[2]
+binary = path.read_bytes()
+offset = struct.unpack_from('<I', binary, 60)[0]
+assert binary[:2] == b'MZ' and binary[offset:offset + 4] == b'PE\0\0'
+assert struct.unpack_from('<H', binary, offset + 4)[0] == {'x86_64': 0x8664, 'aarch64': 0xaa64}[arch]
+path.with_suffix('.json').write_text(json.dumps({'architecture': arch,
+    'sha256': hashlib.sha256(binary).hexdigest(), 'linked': True,
+    'executionQualified': False}, indent=2) + '\n')
+print(f'{arch}: Windows C/C++ runtime consumer linked successfully')
+PY
 
 # mpv is rebuilt from scratch on every run. A restored tree may carry clean
 # mpv stamps whose build directory upstream's postremovebuild step already

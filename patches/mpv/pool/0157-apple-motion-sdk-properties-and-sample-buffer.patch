@@ -1,0 +1,67 @@
+--- a/video/out/avfoundation_motion.m
++++ b/video/out/avfoundation_motion.m
+@@ -217,11 +217,11 @@
+                 NSArray *newFormats = nil;
+ #if !TARGET_OS_TV && !TARGET_OS_MACCATALYST && !TARGET_OS_VISION && !TARGET_OS_SIMULATOR
+                 if (usesFrameRateConversion) {
+-                    newFormats = [((VTFrameRateConversionConfiguration *)configuration).supportedPixelFormats copy];
++                    newFormats = [((VTFrameRateConversionConfiguration *)configuration).frameSupportedPixelFormats copy];
+                 } else
+ #endif
+                 {
+-                    newFormats = [((VTLowLatencyFrameInterpolationConfiguration *)configuration).supportedPixelFormats copy];
++                    newFormats = [((VTLowLatencyFrameInterpolationConfiguration *)configuration).frameSupportedPixelFormats copy];
+                 }
+                 ok = ok && newFormats;
+                 if (ok) {
+--- a/video/out/vo_avfoundation.m
++++ b/video/out/vo_avfoundation.m
+@@ -4137,6 +4137,35 @@
+     }
+ 
+     return 0;
++}
++
++static CMSampleBufferRef create_interpolated_sample_buffer(struct vo *vo,
++    CVPixelBufferRef pixel, int64_t presentation_pts_ns)
++{
++    if (!pixel)
++        return NULL;
++    tag_pixel_buffer_pixel_aspect(vo, pixel);
++    CMVideoFormatDescriptionRef format = NULL;
++    OSStatus err = CMVideoFormatDescriptionCreateForImageBuffer(
++        kCFAllocatorDefault, pixel, &format);
++    if (err != noErr || !format)
++        return NULL;
++    CMSampleTimingInfo timing = {
++        .presentationTimeStamp = cm_time_from_ns(presentation_pts_ns),
++        .duration = kCMTimeInvalid,
++        .decodeTimeStamp = kCMTimeInvalid,
++    };
++    CMSampleBufferRef sample = NULL;
++    err = CMSampleBufferCreateReadyWithImageBuffer(
++        kCFAllocatorDefault, pixel, format, &timing, &sample);
++    CFRelease(format);
++    if (err != noErr) {
++        MP_WARN(vo, "Failed to wrap interpolated frame: %d\n", (int)err);
++        if (sample)
++            CFRelease(sample);
++        return NULL;
++    }
++    return sample;
+ }
+ 
+ static CMSampleBufferRef create_video_sample_buffer(struct vo *vo, mp_image_t *mpi)
+@@ -4430,8 +4459,10 @@
+         int interpolated_output_count = interpolated_count;
+         bool interpolation_samples_ready = interpolated_count > 0;
+         for (int i = 0; i < interpolated_count; i++) {
+-            generated[i] = create_image_sample_buffer(
+-                vo, interpolated[i], interpolated_pts[i], false);
++            if (current_pixel && interpolated[i])
++                CVBufferPropagateAttachments(current_pixel, interpolated[i]);
++            generated[i] = create_interpolated_sample_buffer(
++                vo, interpolated[i], interpolated_pts[i]);
+             if (!generated[i])
+                 interpolation_samples_ready = false;
+         }

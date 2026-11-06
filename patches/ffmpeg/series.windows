@@ -1,5 +1,5 @@
 # Windows patch series for ffmpeg, applied after series.common (the
-# videotoolbox/dolby-vision stack lives in series.apple). Empty today: nothing
-# is Windows-only yet. Entries are staged into the mpv-winbuild-cmake checkout
-# and applied with `git apply` by the injected PATCH_COMMAND (see
-# platforms/windows/pin_packages.py).
+# videotoolbox/dolby-vision stack lives in series.apple). CVE-2026-107675 is
+# Windows-only because this build enables FFmpeg's libssh SFTP handler. Patches
+# are staged into mpv-winbuild-cmake and applied by the injected PATCH_COMMAND.
+0039-libssh-verify-host-key.patch

@@ -34,3 +34,6 @@
 # FFmpeg's log lines reach the instance whose thread logged them, with
 # several instances alive at once.
 0209-av-log-route-ffmpeg-lines-to-their-own-instance.patch
+# Plezy's additive ordered PCM reader. Keep it in common so every shipped
+# libmpv ABI, including Apple static archives, carries the same optional ABI.
+0210-plezy-ordered-audio-tap.patch

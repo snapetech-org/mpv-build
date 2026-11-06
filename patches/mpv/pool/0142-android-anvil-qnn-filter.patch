@@ -16,8 +16,7 @@ diff --git a/filters/user_filters.h b/filters/user_filters.h
 index 639ffe7..a088c06 100644
 --- a/filters/user_filters.h
 +++ b/filters/user_filters.h
-@@ -37,3 +37,6 @@ extern const struct mp_user_filter_entry vf_vavpp;
- extern const struct mp_user_filter_entry vf_d3d11vpp;
+@@ -38,2 +38,5 @@
  extern const struct mp_user_filter_entry vf_fingerprint;
  extern const struct mp_user_filter_entry vf_gpu;
 +#ifdef PLEZY_HAVE_ANVIL
@@ -35,7 +34,7 @@ index fb10be5..68b67b4 100644
  
  # ffmpeg
  libavcodec = dependency('libavcodec', version: '>= 60.31.102')
-@@ -1719,6 +1720,22 @@ if rst2pdf.found()
+@@ -1719,5 +1720,21 @@ if rst2pdf.found()
  endif
  
  
@@ -57,7 +56,6 @@ index fb10be5..68b67b4 100644
 +
  # Set config.h
  conf_data = configuration_data()
- conf_data.set_quoted('CONFIGURATION', meson.build_options())
 @@ -1784,7 +1801,7 @@ minor = client_h_define.split('|')[1].strip('() ')
  client_api_version = major + '.' + minor + '.0'
  
@@ -6816,7 +6814,7 @@ new file mode 100644
 index 0000000..7b3c20f
 --- /dev/null
 +++ b/video/filter/vf_anvil.c
-@@ -0,0 +1,3477 @@
+@@ -0,0 +1,3478 @@
 +/*
 + * vf_anvil.c - ANVIL Video Frame Interpolation filter for mpv
 + *
