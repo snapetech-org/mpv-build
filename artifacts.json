@@ -475,13 +475,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
-          "key": "747c0451bb94",
+          "key": "24046d15c2a3",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-linux-747c0451bb94-aarch64.tar.zst",
+              "asset": "libmpv-linux-24046d15c2a3-aarch64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "1df4e4f9a31fda4028a93dfc42d442f7e16e4c3de9f317415928740640d1531c",
+                "artifactSha256": "31e8480c979bd63f84c0f9ed4911ee700cf70b1a2bf98fb3785ab0804794355f",
                 "binaries": [
                   "lib/aarch64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -491,7 +491,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "c2ff3dbdf93d1883fdbe16f46d1fcaadfb0e8d19c419185a603720b2f62f567a"
+                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "cc8471d21f18943de9d82a1ca4cdb074594e82c9575612455a134fcef9579a2c"
                 },
                 "executionQualified": false,
                 "inspectionSchema": 4,
@@ -504,6 +504,7 @@
                   }
                 },
                 "orderedSubtitlePcmAbi": 1,
+                "pmeVulkan": true,
                 "requiredSymbols": [
                   "mpv_plezy_audio_tap_version",
                   "mpv_plezy_audio_tap_enable",
@@ -512,13 +513,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "1df4e4f9a31fda4028a93dfc42d442f7e16e4c3de9f317415928740640d1531c"
+              "checksum": "31e8480c979bd63f84c0f9ed4911ee700cf70b1a2bf98fb3785ab0804794355f"
             },
             "x86_64": {
-              "asset": "libmpv-linux-747c0451bb94-x86_64.tar.zst",
+              "asset": "libmpv-linux-24046d15c2a3-x86_64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "b2e7affb9dfdb9e33735da0c2622e1506e40bb308a977288183c4a400255a08b",
+                "artifactSha256": "6c3ba549f7fbb5f817fb123afcca2befb500e0b3966b1719090adbc7a8d22340",
                 "binaries": [
                   "lib/x86_64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -528,7 +529,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "0358a5f29c03143d7786c31f62ffbbe7b35624aaddba6346485df5989d8ae0fe"
+                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "c15082fe79b3a6f31332b016c7cb03c0bd87dec00c13cf5345bb680de35afcb0"
                 },
                 "executionQualified": false,
                 "inspectionSchema": 4,
@@ -541,6 +542,7 @@
                   }
                 },
                 "orderedSubtitlePcmAbi": 1,
+                "pmeVulkan": true,
                 "requiredSymbols": [
                   "mpv_plezy_audio_tap_version",
                   "mpv_plezy_audio_tap_enable",
@@ -549,17 +551,17 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "b2e7affb9dfdb9e33735da0c2622e1506e40bb308a977288183c4a400255a08b"
+              "checksum": "6c3ba549f7fbb5f817fb123afcca2befb500e0b3966b1719090adbc7a8d22340"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-linux-747c0451bb94-aarch64-symbols.zip",
-              "checksum": "54aa91c106acb5b384c094d7023f2a9f8321e349428230efadf3c333b323007e"
+              "asset": "libmpv-linux-24046d15c2a3-aarch64-symbols.zip",
+              "checksum": "3f445efded06a60a7b907042094894be21568529a7150201a96a00580f87b080"
             },
             "x86_64": {
-              "asset": "libmpv-linux-747c0451bb94-x86_64-symbols.zip",
-              "checksum": "244c2b4e877089baf9a16b51a8057ebecc9c361a64c9c140167ae3886dbe77f4"
+              "asset": "libmpv-linux-24046d15c2a3-x86_64-symbols.zip",
+              "checksum": "ff3bddb4031adb5e1a5e0984b402f3e334c0df87ab9555343dd52271bc330473"
             }
           }
         }
