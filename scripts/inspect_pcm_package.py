@@ -23,7 +23,7 @@ SYMBOL = 'mpv_plezy_audio_tap_read_next'
 REQUIRED_SYMBOLS = ['mpv_plezy_audio_tap_version', 'mpv_plezy_audio_tap_enable',
                     'mpv_plezy_audio_tap_read', SYMBOL]
 MOTION_MARKERS = {
-    'pme': (b'plezy-pme\0', b'pme_runtime_open\0'),
+    'pme': (b'plezy-pme\0', b'pme_runtime_open_from_manifest\0'),
     'anvil': (b'anvil\0', b'QnnInterface_getProviders\0'),
     'litert': (b'plezy_litert_motion_open\0', b'plezy_litert_motion_run\0'),
     'videotoolbox': (b'avfoundation-motion-interpolation\0', b'avfoundation-motion-preset\0'),

@@ -26,7 +26,7 @@ class NativePackageTest(unittest.TestCase):
         source = '\n'.join(f'int mpv_plezy_audio_tap_{name}(void) {{ return 1; }}' for name in exports)
         if neural:
             source += '\nconst char motion_filter[] = "plezy-pme";'
-            source += '\nconst char runtime_entry[] = "pme_runtime_open";'
+            source += '\nconst char runtime_entry[] = "pme_runtime_open_from_manifest";'
         (self.root / 'fixture.c').write_text(source)
         binary = self.root / 'libmpv.so'
         subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(self.root / 'fixture.c')], check=True)
@@ -35,7 +35,7 @@ class NativePackageTest(unittest.TestCase):
             archive.write(binary, 'lib/libmpv.so')
             if metadata:
                 archive.writestr('features.json', '{"pme":true,"neuralFilters":["pme"]}')
-                archive.writestr('markers.txt', 'plezy-pme\0pme_runtime_open\0')
+                archive.writestr('markers.txt', 'plezy-pme\0pme_runtime_open_from_manifest\0')
         return package
 
     def test_pcm_only_engine_is_rejected(self):

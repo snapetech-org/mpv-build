@@ -9,3 +9,4 @@
 0150-desktop-pme-stage-timing-metadata.patch
 0151-desktop-pme-prefer-cached-host-memory.patch
 0152-desktop-pme-support-reduced-model-shapes.patch
+0155-desktop-pme-build-without-vulkan.patch
