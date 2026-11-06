@@ -8,6 +8,19 @@ import pin_packages
 ROOT = Path(__file__).resolve().parents[2]
 def command(*args, cwd=None):
     subprocess.run(args, cwd=cwd, check=True)
+def clone_cached_source(cached, source, upstream):
+    command('git', 'clone', '--quiet', '--shared', '--no-checkout', str(cached), str(source))
+    partial = subprocess.run(['git', '-C', str(cached), 'config', '--get',
+                              'remote.origin.promisor'], capture_output=True, text=True)
+    if partial.stdout.strip() == 'true':
+        # Shared object alternates do not inherit the donor's promisor remote.
+        # Fetch missing sparse-checkout blobs from the pinned upstream into
+        # this disposable check clone, never by rewriting the active cache.
+        command('git', 'remote', 'set-url', 'origin', upstream, cwd=source)
+        command('git', 'config', 'core.repositoryformatversion', '1', cwd=source)
+        command('git', 'config', 'extensions.partialClone', 'origin', cwd=source)
+        command('git', 'config', 'remote.origin.promisor', 'true', cwd=source)
+        command('git', 'config', 'remote.origin.partialclonefilter', 'blob:none', cwd=source)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, required=True)
@@ -21,7 +34,7 @@ def main():
             source = Path(temporary) / component
             cached = args.source_root / component
             if (cached / '.git').exists():
-                command('git', 'clone', '--quiet', '--shared', '--no-checkout', str(cached), str(source))
+                clone_cached_source(cached, source, pins['url'])
             else:
                 source.mkdir()
                 command('git', 'init', '--quiet', str(source))
