@@ -57,3 +57,25 @@ SDK source, headers, or the downloaded archive.
 Provider libraries, model packs, and the app's filter invocation are separate
 components. Verify the final app bundle as well as libmpv; a filter receipt alone
 does not prove that an inference provider can load or execute on a user's device.
+
+## Consolidated branch fixes (2026-11-06)
+
+The release producer retains the additive changes from the former motion
+branches: desktop pool0170–0179, Apple compressed clock pool0169, Android
+pause-without-flush pool0180, and the Apple host presentation clock and OSD
+lifecycle changes in pool0004. Pool0042 preserves those Apple fields and reset
+semantics alongside VideoToolbox interpolation. Do not replace these combined
+patches with a whole patch file from an older branch.
+
+`test_audiotrack_timing.sh` compiles the actual patched production functions and
+covers retained PCM/raw writes, seek flushes, timestamp qualification and stall
+recovery across pause. `test_avf_host_present.sh` checks monotonic post-seek host
+stamps and drift detection without accessing a display or GPU. These host tests
+do not establish device playback qualification.
+
+The Android device suite includes a pixel comparison for an authored Profile 7
+fixture supplied through instrumentation argument `felMediaUrl`. It needs a
+stationary center-quarter EL residual during the sampled phase around 1.5 s;
+an ordinary arbitrary `mediaUrl` remains suitable for lifecycle tests. Without
+`felMediaUrl` the specialized comparison is skipped, not claimed as passing.
+Record the fixture hash and device/decoder/render diagnostics when qualifying.

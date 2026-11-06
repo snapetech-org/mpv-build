@@ -691,7 +691,7 @@ index c60b4e6..9176836 100644
      int queue_lead_ms;
      int presentation;
      int osd_max_height;
-@@ -351,6 +354,17 @@ struct priv {
+@@ -351,8 +354,19 @@ struct priv {
  
      struct mp_image *next_image;
      double next_pts;
@@ -708,6 +708,8 @@ index c60b4e6..9176836 100644
 +    int motion_width, motion_height;
      CMTimebaseRef timebase;
      int64_t next_present_host_ns;
+     // Latest host stamp given to a video frame; see avf_host_present_ns().
+     int64_t last_host_present_ns;
      int64_t next_media_pts_ns;
 @@ -1305,6 +1319,85 @@ static void avfoundation_opts_wakeup(void *ctx)
      vo_wakeup(ctx);
@@ -990,12 +992,12 @@ index c60b4e6..9176836 100644
          if (atomic_exchange(&p->pending_presentation_resync, false))
              recover_display_layer(vo, "presentation resume", true);
 @@ -4603,6 +4811,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
-         // seeks; the OSD layer still drops so stale subtitles don't linger
-         // over the held frame.
+         // seeks; the OSD layer is still cleared so stale subtitles don't
+         // linger over the held frame.
          p->ahead_last_pts = MP_NOPTS_VALUE;
 +        reset_motion_reference(p);
          osd_cadence_reset(&p->ahead_cadence);
-         clear_subtitle_state(vo);
+         clear_subtitle_cache(p);
          p->not_ready_drop_count = 0;
 @@ -4661,6 +4870,11 @@ static const struct m_option avfoundation_options[] = {
      {"presentation", OPT_CHOICE(presentation,

@@ -1,4 +1,5 @@
 0902-fel-android-integration.patch
+0180-ao-audiotrack-pause-without-flushing.patch
 
 # Normal native builds include opt-in neural processing.
 0142-android-anvil-qnn-filter.patch
