@@ -138,6 +138,9 @@ git -C "$SRC" reset --hard -q "$WINBUILD_COMMIT"
 echo "==> pinning packages to versions.json"
 python3 "$HERE/pin_packages.py" --winbuild "$SRC"
 
+# Check the selected patches on pristine source before bootstrapping compilers.
+python3 "$HERE/check_patches.py" --source-root "$WORK/src"
+
 echo "==> configuring for $ARCH-w64-mingw32 (clang toolchain)"
 # SINGLE_SOURCE_LOCATION and RUSTUP_LOCATION sit outside the per-arch build
 # dir so the x86_64 and aarch64 legs share sources and the rust toolchain.

@@ -215,3 +215,15 @@ resolved series is non-empty), the neutralized check-git step, and a second
 run converging. The remaining tests pin the pure rewrites -- the injected
 block matches the mbedtls idiom, the aarch64 cuda gate, the mpv option
 gate, the libmpv-2.pdb capture, and the davs2 build-time rewrite.
+
+
+### Source and patch preflight
+
+The Windows driver uses the shared override-aware patch resolver. `patchSet: fel`
+selects the FEL common and Windows series for the pinned FFmpeg, mpv and
+libplacebo sources; libplacebo is pinned and included in the Windows content key.
+Before compiler bootstrapping, `check_patches.py` checks every selected payload
+series on a pristine checkout of its exact source commit. It reuses cached Git
+objects without changing cached source trees. This catches source/patch drift
+before a long Windows toolchain build. Compatible public CI and private runners
+use the same driver and checks.

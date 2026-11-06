@@ -64,3 +64,6 @@
 
 # fontconfig.cmake: fetched from pinned winbuild 87e22100 on 2026-11-05.
 # c20c10d75476bf1f99818e5dda7644c94ae157372b9fd396c09f1b2122b006aa  fontconfig.cmake
+
+# libplacebo.cmake: fetched from the same pinned commit via GitHub Contents API on 2026-11-06.
+#   64c407a343a43bfe8b372b12d5dac4621d1362f094239cfb2c215e6ce213332f  libplacebo.cmake

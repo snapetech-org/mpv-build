@@ -26,8 +26,8 @@ versions.json resolved pins (overrides.windows folded in):
     in <pkg>-gitinfo.txt, the only graph input that invalidates the download
     step on a warm cached tree (a textually stable branch or re-pointed tag
     must not silently keep the old source);
-  * the resolved windows patch series (patches/<c>/series.common followed by
-    patches/<c>/series.windows) is staged into packages/ as
+  * the resolved windows patch series (the selected patches/<c>/series.common[.<patchSet>] followed by
+    patches/<c>/series.windows[.<patchSet>]) is staged into packages/ as
     <c>-NNNN-<pool name>.patch and a PATCH_COMMAND is injected directly
     before UPDATE_COMMAND "". It resets the source to the pinned commit and
     then uses `git apply`, not `git am`: our pool patches are plain
@@ -66,12 +66,19 @@ at CHECK_GIT_ORIGINAL).
 """
 
 import argparse
+import importlib.util
 import json
 import shutil
 import sys
 from pathlib import Path
 
-COMPONENTS = ("mpv", "ffmpeg", "libass")
+_patch_spec = importlib.util.spec_from_file_location(
+    "mpv_build_patch_series", Path(__file__).resolve().parents[2] / "scripts/patches.py"
+)
+_patch_tools = importlib.util.module_from_spec(_patch_spec)
+_patch_spec.loader.exec_module(_patch_tools)
+
+COMPONENTS = ("mpv", "ffmpeg", "libass", "libplacebo")
 # Additional pinned packages, component -> cmake file inside the winbuild
 # checkout. These pin through the same strip-before-inject rewrite but carry
 # no patch series of ours (the staged-patch glob is anchored to packages/
@@ -182,8 +189,10 @@ def read_series(path):
 
 
 def resolve_series(repo, component):
-    root = repo / "patches" / component
-    return read_series(root / "series.common") + read_series(root / f"series.{GROUP}")
+    # The exact same override-aware patchSet selection drives content keys and
+    # the other platform builders. A FEL source must never get legacy patches.
+    return [name for path in _patch_tools.series_files(component, GROUP, root=repo)
+            for name in read_series(path)]
 
 
 def stage_patches(repo, component, packages_dir):

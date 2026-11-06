@@ -5,7 +5,9 @@
     "platforms/windows/build.sh",
     "platforms/windows/package.sh",
     "platforms/windows/pin_packages.py",
-    "scripts/symbols.py"
+    "scripts/symbols.py",
+    "scripts/patches.py",
+    "platforms/windows/check_patches.py"
   ],
   "artifacts": {
     "libmpv-windows": {
@@ -18,7 +20,8 @@
         "llvm",
         "svt-av1",
         "nv-codec-headers",
-        "openssl"
+        "openssl",
+        "libplacebo"
       ],
       "variants": [
         "x86_64",

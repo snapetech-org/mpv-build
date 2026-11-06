@@ -68,7 +68,10 @@ def series_entries(component):
     """The repo's resolved windows series, read independently of the driver:
     series.common first, then series.<group>, comments and blanks ignored."""
     entries = []
-    for name in ("series.common", f"series.{pin_packages.GROUP}"):
+    component_pin = json.loads((REPO / "versions.json").read_text())["components"][component]
+    variant = component_pin.get("overrides", {}).get("windows", {}).get("patchSet", component_pin.get("patchSet"))
+    suffix = f".{variant}" if variant else ""
+    for name in (f"series.common{suffix}", f"series.{pin_packages.GROUP}{suffix}"):
         path = REPO / "patches" / component / name
         if path.is_file():
             entries += [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
@@ -82,6 +85,13 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_windows_uses_the_selected_fel_sources_and_patches(self):
+        self.assertEqual(pin_packages.resolve_series(REPO, "ffmpeg"), [
+            "0900-fel-common-integration.patch", "0901-fel-windows-libssh-host-key.patch"])
+        self.assertIn("0902-fel-ordered-audio-tap.patch", pin_packages.resolve_series(REPO, "mpv"))
+        self.assertIn("0900-fel-reject-failed-composition.patch", pin_packages.resolve_series(REPO, "libplacebo"))
+        self.assertIn("libplacebo", pin_packages.COMPONENTS)
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="pin-packages-test-"))
         self.addCleanup(shutil.rmtree, self.tmp)
