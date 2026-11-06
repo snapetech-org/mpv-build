@@ -459,6 +459,11 @@ def gate_ffmpeg_cuda(text):
     return FFMPEG_CUDA_GUARD + text.replace(FFMPEG_CUDA_ORIGINAL, FFMPEG_CUDA_GATED, 1)
 
 
+def remove_ffmpeg9_obsolete_options(text):
+    """FFmpeg 9 removed its OpenGL output-device configure option."""
+    return text.replace('        --enable-opengl\n', '')
+
+
 # davs2 (ffmpeg's AVS2 decoder, linked into libmpv-2.dll) logs the
 # XBUILD_TIME its version.sh writes into source/version.h, and version.sh
 # reads `date`, not SOURCE_DATE_EPOCH: published key 442b5d101e4c carries
@@ -554,7 +559,7 @@ def main(argv):
         text = package_file.read_text(encoding="utf-8")
         pinned = rewrite(text, component, pins, bool(staged))
         if component == "ffmpeg":
-            pinned = gate_ffmpeg_cuda(pinned)
+            pinned = remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned))
         if component == "mpv":
             pinned = capture_libmpv_pdb(gate_mpv_options(pinned))
         if pinned != text:

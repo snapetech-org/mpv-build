@@ -86,6 +86,15 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_ffmpeg9_drops_removed_output_device_option(self):
+        text = (TESTDATA/'ffmpeg.cmake').read_text()
+        self.assertIn('--enable-opengl', text)
+        updated = pin_packages.remove_ffmpeg9_obsolete_options(text)
+        self.assertNotIn('--enable-opengl', updated)
+        self.assertIn('--enable-libplacebo', updated)
+        self.assertIn('--enable-openal', updated)
+        self.assertEqual(pin_packages.remove_ffmpeg9_obsolete_options(updated), updated)
+
     def test_ffmpeg_patch_step_restores_sparse_fate_references(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/'source'; source.mkdir()
