@@ -10,7 +10,7 @@ import tarfile
 import unittest
 import zipfile
 
-from inspect_pcm_package import inspect, required_motion_features
+from inspect_pcm_package import inspect, inspect_motion_features, required_motion_features
 from keys import pcm_receipt_problems
 
 
@@ -87,6 +87,25 @@ class NativePackageTest(unittest.TestCase):
         self.assertEqual(required_motion_features('apple', 'arm64'), ['videotoolbox'])
         with self.assertRaises(ValueError):
             required_motion_features('unknown', 'arm64')
+
+    def test_apple_uses_compiled_suboptions_and_requires_motion_implementation(self):
+        # Exercise byte inspection without invoking Apple tools on Linux. The
+        # release inspector separately verifies real Mach-O architecture slices.
+        self.package()
+        source = self.root / 'fixture.c'
+        source.write_text(source.read_text() + '\n'
+                          'const char motion_option[] = "motion-interpolation";\n'
+                          'const char preset_option[] = "motion-preset";\n')
+        binary = self.root / 'apple-options.so'
+        subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(source)], check=True)
+        with self.assertRaisesRegex(ValueError, 'omits.*videotoolbox'):
+            inspect_motion_features(binary, 'apple', ['arm64'])
+        source.write_text(source.read_text() + '\n'
+                          'const char motion_class[] = "MPVAVFMotionSession";\n'
+                          'int avf_motion_process(void) { return 0; }\n')
+        subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(source)], check=True)
+        self.assertEqual(inspect_motion_features(binary, 'apple', ['arm64']),
+                         {'arm64': ['videotoolbox']})
 
 
 if __name__ == '__main__':

@@ -26,7 +26,10 @@ MOTION_MARKERS = {
     'pme': (b'plezy-pme\0', b'pme_runtime_open_from_manifest\0'),
     'anvil': (b'anvil\0', b'QnnInterface_getProviders\0'),
     'litert': (b'plezy_litert_motion_open\0', b'plezy_litert_motion_run\0'),
-    'videotoolbox': (b'avfoundation-motion-interpolation\0', b'avfoundation-motion-preset\0'),
+    # MPV prefixes VO suboptions at runtime; the compiled option table stores
+    # these unprefixed names. Also require the actual motion implementation.
+    'videotoolbox': (b'motion-interpolation\0', b'motion-preset\0',
+                     b'MPVAVFMotionSession\0', b'avf_motion_process\0'),
 }
 
 
