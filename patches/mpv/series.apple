@@ -26,3 +26,5 @@
 
 # Normal native builds include opt-in neural processing.
 0042-avfoundation-videotoolbox-motion-interpolation.patch
+0157-apple-motion-sdk-properties-and-sample-buffer.patch
+0158-apple-motion-simulator-sdk-compatibility.patch
