@@ -29,6 +29,12 @@ records pmeVulkan:true. A CPU-only PME build cannot satisfy this contract,
 even when archive metadata claims GPU support. Provider/device availability
 continues to be checked at runtime.
 
+Windows libmpv hard-imports `vulkan-1.dll`. The Pleazyng Windows app separately
+verifies and installs the pinned LunarG loader and its license for x64/ARM64;
+see its `windows/CMakeLists.txt`. Absence of that loader from the native dev
+archive alone does not prove an app dependency gap. Inspect the final app
+bundle before adding a second loader or rebuilding an already qualified engine.
+
 Apple pool0169 anchors compressed audio timing to AVPlayer's observed playhead.
 The AVFoundation fallback test covers clock updates when no new samples are
 read, and verifies that fallback stops further clock changes.
