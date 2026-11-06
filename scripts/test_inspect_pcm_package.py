@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Check neural inclusion against compiled bytes, not archive metadata."""
 import hashlib
+import io
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
 import zipfile
 
@@ -61,6 +63,22 @@ class NativePackageTest(unittest.TestCase):
         self.assertEqual(pcm_receipt_problems(entry, 'x86_64', 1, 'linux'), [])
         receipt['neuralFilters']['lib/libmpv.so']['x86_64'] = []
         self.assertTrue(pcm_receipt_problems(entry, 'x86_64', 1, 'linux'))
+
+    @unittest.skipUnless(shutil.which('zstd'), 'requires zstd')
+    def test_valid_zstd_tar_padding_is_consumed_before_decoder_exit(self):
+        self.package(neural=True)
+        tar = io.BytesIO()
+        with tarfile.open(fileobj=tar, mode='w') as archive:
+            archive.add(self.root / 'libmpv.so', arcname='lib/libmpv.so')
+        # More than a pipe buffer makes premature close reliably interrupt the
+        # decoder, even though this padded tar and its zstd checksum are valid.
+        payload = tar.getvalue() + b'\0' * (512 * 1024)
+        package = self.root / 'libmpv.tar.zst'
+        with package.open('wb') as output:
+            subprocess.run(['zstd', '-q', '-c'], input=payload, stdout=output, check=True)
+        subprocess.run(['zstd', '-qt', str(package)], check=True)
+        self.assertEqual(inspect(package, 1, 'linux')['neuralFilters'],
+                         {'lib/libmpv.so': {'x86_64': ['pme']}})
 
     def test_architecture_policy_matches_implemented_filters(self):
         self.assertEqual(required_motion_features('android', 'arm64'), ['anvil', 'litert'])

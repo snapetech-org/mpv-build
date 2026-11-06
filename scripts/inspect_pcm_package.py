@@ -165,6 +165,11 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
                 with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
                     for info in archive:
                         member(info.name, info.size, info.isfile(), lambda info=info: archive.extractfile(info))
+                # tar stops at its end records before the decoder necessarily
+                # writes all record padding. Closing the pipe here races zstd
+                # and can report SIGPIPE for an intact, checksum-valid archive.
+                if len(process.stdout.read(1024 * 1024 + 1)) > 1024 * 1024:
+                    raise ValueError('Excessive trailing tar padding')
                 process.stdout.close()
                 if process.wait(timeout=120): raise ValueError('Invalid zstd package')
             finally:
