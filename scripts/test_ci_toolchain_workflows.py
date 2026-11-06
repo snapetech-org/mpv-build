@@ -76,7 +76,7 @@ for token in (
         f"and serialize nested Ninja builds: {token}"
     )
 assert WINDOWS_BUILD.index('export PATH="$NINJA_WRAPPER_DIR:$PATH"') < WINDOWS_BUILD.index(
-    'cmake -S "$SRC"'
+    'cmake "${cmake_args[@]}"'
 ), "the Ninja wrapper must be active before CMake configures nested builds"
 
 wrapper_start = WINDOWS_BUILD.index("<<'SH'\n") + len("<<'SH'\n")

@@ -5,6 +5,7 @@
     "platforms/windows/build.sh",
     "platforms/windows/package.sh",
     "platforms/windows/pin_packages.py",
+    "platforms/windows/host_llvm_cache.py",
     "scripts/symbols.py",
     "scripts/patches.py",
     "platforms/windows/check_patches.py"

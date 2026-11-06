@@ -102,7 +102,9 @@ jobs:
         run: bash scripts/test_symbols.sh
 
       - name: Test windows package pinning
-        run: python3 platforms/windows/test_pin_packages.py
+        run: |
+          python3 platforms/windows/test_pin_packages.py
+          python3 platforms/windows/test_host_llvm_cache.py
 
       # The linux driver has no other runner. The harness needs only bash, git
       # and python3 (every build tool is stubbed and JOBS=1 keeps nproc out of

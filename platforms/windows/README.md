@@ -74,6 +74,36 @@ verifies the ordered PCM exports and the DLL/PDB pair before an artifact can
 be recorded or published. Application jobs still require their compatible
 Windows OS and architecture.
 
+### Sharing a completed host LLVM compiler
+
+The Linux x64 LLVM host compiler builds both Windows targets. To reuse it,
+export only its host tools and Clang resource headers after installation:
+
+```sh
+python3 platforms/windows/host_llvm_cache.py export \
+  --prefix build/windows/aarch64/install \
+  --stamps build/windows/aarch64/toolchain/llvm-prefix/src/llvm-stamp \
+  --source build/windows/src/llvm --image "$container_image_digest" \
+  --archive "$task_scratch/host-llvm.tar.gz"
+```
+
+Keep the printed SHA-256 and archive together. On a compatible host with the
+same pinned LLVM source and configuration, set `PLEZY_WINDOWS_HOST_LLVM_CACHE`,
+`PLEZY_WINDOWS_HOST_LLVM_SHA256` and `PLEZY_WINDOWS_HOST_LLVM_IMAGE` before
+running `build.sh`. The driver acquires the pinned LLVM source checkout if it
+is absent, since target runtimes still compile from that source. It compares
+the original CMake arguments, source
+commit, container image, runtime-library hashes, relocated resource headers,
+and real C++ COFF compilation for both targets. Its LLVM ExternalProject then
+runs explicit cache validation and installation steps. The installed receipt
+records the imported compiler's archive and binary hashes.
+
+Target wrappers, CRT/sysroot, runtime libraries and build stamps remain specific
+to the receiving architecture. Stop only your own build before changing its
+compiler route; preserve its partial build directory. Never replace a running
+compiler or copy donor stamps. This cache establishes toolchain reuse and
+compiled architecture, without claiming native Windows execution qualification.
+
 If GitHub rejects dispatch with `Actions has been disabled for this repository`,
 inspect the failed check annotations and repository/workflow permissions once.
 An active workflow and `enabled: true` can coexist with a separate GitHub-controlled

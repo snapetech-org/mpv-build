@@ -156,13 +156,37 @@ echo "==> configuring for $ARCH-w64-mingw32 (clang toolchain)"
 # it when no ccache binary is on the host, so --configure-only hosts need
 # nothing extra. It absorbs the rebuild cost of the packages a pin bump
 # dirties on a warm tree (and of bootstrap retries after a timeout).
-cmake -S "$SRC" -B "$BUILD" -G Ninja \
-  -DTARGET_ARCH="$ARCH-w64-mingw32" \
-  -DCOMPILER_TOOLCHAIN=clang \
-  -DENABLE_CCACHE=ON \
-  -DCCACHE_MAXSIZE=2G \
-  -DSINGLE_SOURCE_LOCATION="$WORK/src" \
-  -DRUSTUP_LOCATION="$WORK/rustup"
+if [[ -n "${PLEZY_WINDOWS_HOST_LLVM_CACHE:-}" && ! -d "$WORK/src/llvm/.git" ]]; then
+  # The Windows CRT/libc++/compiler-rt builds still need pinned LLVM sources.
+  # Refuse an unfamiliar populated directory; remove only an empty placeholder.
+  if [[ -e "$WORK/src/llvm" ]]; then
+    rmdir "$WORK/src/llvm"
+  fi
+  python3 "$ROOT/scripts/patches.py" fetch-pinned llvm windows "$WORK/src/llvm"
+fi
+
+cmake_args=(-S "$SRC" -B "$BUILD" -G Ninja
+  -DTARGET_ARCH="$ARCH-w64-mingw32"
+  -DCOMPILER_TOOLCHAIN=clang
+  -DENABLE_CCACHE=ON
+  -DCCACHE_MAXSIZE=2G
+  -DSINGLE_SOURCE_LOCATION="$WORK/src"
+  -DRUSTUP_LOCATION="$WORK/rustup")
+cmake "${cmake_args[@]}"
+
+# The same Linux host compiler can target both Windows architectures. Import
+# only verified LLVM executables/resource headers, then build this target's
+# wrappers, sysroot and runtimes normally. No prior build stamps are adopted.
+if [[ -n "${PLEZY_WINDOWS_HOST_LLVM_CACHE:-}" ]]; then
+  python3 "$HERE/host_llvm_cache.py" prepare \
+    --archive "$PLEZY_WINDOWS_HOST_LLVM_CACHE" \
+    --sha256 "${PLEZY_WINDOWS_HOST_LLVM_SHA256:?host LLVM cache checksum required}" \
+    --image "${PLEZY_WINDOWS_HOST_LLVM_IMAGE:?host LLVM container image required}" \
+    --source "$WORK/src/llvm" --prefix "$BUILD/install" \
+    --config "$BUILD/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt" \
+    --build "$BUILD" --winbuild "$SRC"
+  cmake "${cmake_args[@]}"
+fi
 
 if [[ "$CONFIGURE_ONLY" == 1 ]]; then
   echo "==> --configure-only: stopping after cmake configure"
