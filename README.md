@@ -1070,3 +1070,31 @@ cannot satisfy immutable reuse or PlezyNG promotion. The inspection scripts are
 content-key inputs, so this stronger contract changes affected artifact names.
 These source changes did not run builds, symbol inspection, packaging or CI;
 static exports alone do not qualify execution or device performance.
+
+## Playback compositor integration
+
+Normal Android builds include `--vo-mediacodec-letterbox-fill` and the
+per-video-frame delayed subtitle presentation path, including the bundled FEL
+engine. Opaque margins and zero subtitle delay remain the engine defaults;
+embedders select device-specific compositor behavior.
+
+Apple AVFoundation builds include the libplacebo/MoltenVK GLSL stage, with
+display-sized output and `keepaspect=no` stretching for ambient lighting.
+Dolby Vision, Core Image zoom/pan, composited OSD and background iOS/tvOS frames
+retain the original path; the stage reports these runtime exclusions.
+
+### Upstream sources
+
+[edde746](https://github.com/edde746) contributed these changes to upstream
+mpv-build; Pleazyng independently integrated them with its motion, clock,
+ordered PCM, neural and FEL patches. This does not imply participation in or
+endorsement of this fork. Sources:
+[Apple shader stage](https://github.com/edde746/mpv-build/commit/2b23527),
+[stretch geometry](https://github.com/edde746/mpv-build/commit/9929c5e),
+[letterbox control](https://github.com/edde746/mpv-build/commit/bc87af7),
+[early subtitle queue](https://github.com/edde746/mpv-build/commit/98452a9),
+and [unchanged-frame presentation](https://github.com/edde746/mpv-build/commit/8958474).
+
+Source regression checks pass on Linux. Published binary qualification and
+app dependency updates are tracked separately; source integration alone is
+not a claim that an updated app has shipped.

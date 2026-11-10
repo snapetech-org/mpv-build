@@ -11,12 +11,13 @@ index bf48be9..26a99c9 100644
                               'CoreImage', 'QuartzCore', 'Metal']
  if cc.has_header('UIKit/UIKit.h')
      vo_avfoundation_frameworks += ['UIKit']
-@@ -845,7 +845,8 @@ vo_avfoundation = dependency('appleframeworks', modules: vo_avfoundation_framewo
+@@ -845,8 +845,9 @@ vo_avfoundation = dependency('appleframeworks', modules: vo_avfoundation_framewo
  features += {'vo-avfoundation': vo_avfoundation.found()}
  if features['vo-avfoundation']
      dependencies += vo_avfoundation
--    sources += files('video/out/vo_avfoundation.m')
-+    sources += files('video/out/vo_avfoundation.m',
+     sources += files('video/out/avf_shaders.m',
+-                     'video/out/vo_avfoundation.m')
++                     'video/out/vo_avfoundation.m',
 +                     'video/out/avfoundation_motion.m')
  endif
  
@@ -822,7 +823,7 @@ index c60b4e6..9176836 100644
  
      if (!composite_changed && !osd_scale_changed)
          return;
-@@ -3921,6 +4025,9 @@ static int preinit(struct vo *vo)
+@@ -3921,4 +4025,7 @@ static int preinit(struct vo *vo)
  
      p->opts_cache = m_config_cache_alloc(p, vo->global, &avfoundation_conf);
      p->opts = p->opts_cache->opts;
@@ -830,8 +831,6 @@ index c60b4e6..9176836 100644
 +    if (!p->motion)
 +        MP_WARN(vo, "Could not allocate VideoToolbox motion processor state\n");
      m_config_cache_set_wakeup_cb(p->opts_cache, avfoundation_opts_wakeup, vo);
- 
-     if (vo->opts->WinID == -1) {
 @@ -4282,8 +4389,58 @@ static void flip_page(struct vo *vo)
          int64_t t = mp_time_ns();
          CMSampleBufferRef video_buf = create_video_sample_buffer(vo, p->next_image);

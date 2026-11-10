@@ -1,3 +1,6 @@
 # FEL support is bundled; runtime Settings select reconstruction.
 0900-fel-common-integration.patch
 0902-fel-ordered-audio-tap.patch
+
+# Keep compositor corrections in the normal bundled FEL engine.
+0214-osd-ahead-repeat-an-unchanged-frame-on-request.patch

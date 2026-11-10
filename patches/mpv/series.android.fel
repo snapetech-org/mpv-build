@@ -8,3 +8,8 @@
 0147-android-anvil-report-litert-npu-provider.patch
 0154-android-anvil-normal-build-inclusion.patch
 0156-android-qnn-system-header-include-root.patch
+
+# Keep compositor corrections in the normal bundled FEL engine.
+0142-vo-mediacodec-queue-the-osd-plane-as-early-as-the-video.patch
+0143-vo-mediacodec-letterbox-fill-option.patch
+0145-vo-mediacodec-present-a-delayed-osd-plane-on-every-frame.patch

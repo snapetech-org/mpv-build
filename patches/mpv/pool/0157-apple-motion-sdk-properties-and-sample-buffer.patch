@@ -16,11 +16,7 @@
                  if (ok) {
 --- a/video/out/vo_avfoundation.m
 +++ b/video/out/vo_avfoundation.m
-@@ -4137,6 +4137,35 @@
-     }
- 
-     return 0;
-+}
+@@ -4137,1 +4137,31 @@
 +
 +static CMSampleBufferRef create_interpolated_sample_buffer(struct vo *vo,
 +    CVPixelBufferRef pixel, int64_t presentation_pts_ns)
@@ -49,8 +45,8 @@
 +        return NULL;
 +    }
 +    return sample;
- }
- 
++}
++
  static CMSampleBufferRef create_video_sample_buffer(struct vo *vo, mp_image_t *mpi)
 @@ -4430,8 +4459,10 @@
          int interpolated_output_count = interpolated_count;

@@ -114,6 +114,9 @@ jobs:
       - name: Test AVFoundation timebase servo
         run: ./scripts/test_avf_timebase_servo.sh
 
+      - name: Test AVFoundation shader target geometry
+        run: bash scripts/test_avf_shader_target.sh
+
       - name: Test AVFoundation host presentation clock
         run: bash ./scripts/test_avf_host_present.sh
 

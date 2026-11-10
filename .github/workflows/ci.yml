@@ -724,6 +724,11 @@ jobs:
           rustup which --toolchain "$rust_version" rustc
           rustup which --toolchain "$rust_version" cargo
 
+      - name: Test shader geometry and Apple layer integration
+        run: |
+          bash scripts/test_avf_shader_target.sh
+          bash scripts/test_avf_osd_layer_geometry.sh
+
       - name: Build GPL version (${{ matrix.name }})
         run: |
           make build use-prebuilt libs=libmpv platform=${{ matrix.platforms }}
