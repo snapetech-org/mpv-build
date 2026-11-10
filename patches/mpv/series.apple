@@ -31,3 +31,6 @@
 
 # Keep the passthrough clock attached to the actual AVPlayer playhead.
 0169-avfoundation-anchor-passthrough-clock.patch
+
+# Embedded Cocoa clients can be retired during initialization.
+0170-apple-skip-unowned-audio-tap-teardown.patch

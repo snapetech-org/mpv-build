@@ -1098,3 +1098,9 @@ and [unchanged-frame presentation](https://github.com/edde746/mpv-build/commit/8
 Source regression checks pass on Linux. Published binary qualification and
 app dependency updates are tracked separately; source integration alone is
 not a claim that an updated app has shipped.
+
+Headless macOS qualification also exposed an ordered-PCM teardown deadlock:
+Cocoa destroys a temporary client during initialization while the core is
+locked. Patch 0170 skips the disable call for clients that never owned a tap,
+preserving producer retirement for actual tap owners. New Apple binaries must
+include this fix before the shader-enabled app pin is promoted.

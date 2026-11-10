@@ -1,0 +1,25 @@
+Subject: [PATCH] client: do not lock the core to tear down an unowned PCM tap
+
+The Cocoa AppHub rejects its temporary mac client when embedded outside mpv's
+own Application. This happens inside mp_initialize while the caller already
+holds the core dispatch lock. The ordered PCM hook's unconditional enable(0)
+tries to acquire that same lock and deadlocks initialization, even though this
+fresh internal client has never allocated a tap. Only disable a tap actually
+owned by the handle being destroyed. Client destruction requires exclusive
+ownership of the handle, so no concurrent enable operation may mutate this
+field during teardown. Retain normal producer retirement for owning clients.
+
+Scoped to Apple, where the Cocoa initialization path exercises this case.
+
+--- a/player/client.c
++++ b/player/client.c
+@@ -476,7 +476,8 @@ static void mp_destroy_client(mpv_handle *ctx, bool terminate)
+     if (!ctx)
+         return;
+ 
+-    mpv_plezy_audio_tap_enable(ctx, 0);
++    if (ctx->audio_tap)
++        mpv_plezy_audio_tap_enable(ctx, 0);
+ 
+     struct MPContext *mpctx = ctx->mpctx;
+     struct mp_client_api *clients = ctx->clients;
