@@ -1301,6 +1301,17 @@ def _wanted_assets(section: dict) -> list[tuple[str, str]]:
     return wanted
 
 
+def release_repository(group: Group) -> str:
+    """Bind every release operation to its declared immutable asset namespace."""
+    match = re.fullmatch(
+        r"https://github\.com/([^/\s]+/[^/\s]+)/releases/download/binaries-"
+        + re.escape(group.name), group.asset_base
+    )
+    if not match:
+        raise SystemExit(f"invalid release asset namespace: {group.asset_base}")
+    return match[1]
+
+
 def _published_digests(root: Path, group: Group) -> dict[str, str]:
     """Asset name -> remote sha256 for the group's rolling prerelease."""
     release = f"binaries-{group.name}"
@@ -1308,7 +1319,7 @@ def _published_digests(root: Path, group: Group) -> dict[str, str]:
     listing.parent.mkdir(parents=True, exist_ok=True)
     with listing.open("w", encoding="utf-8") as handle:
         subprocess.run(
-            ["gh", "release", "view", release, "--json", "assets",
+            ["gh", "release", "view", release, "--repo", release_repository(group), "--json", "assets",
              "--jq", '.assets[] | "\\(.name) \\(.digest // "")"'],
             stdout=handle,
             check=True,
@@ -1328,15 +1339,16 @@ def cmd_publish_assets(args, root: Path, group: Group) -> int:
     cannot drift between them.
     """
     release = f"binaries-{group.name}"
+    repository = release_repository(group)
     notes = (
         f"Content-addressed {group.name} build artifacts for the commits on main. "
         "Asset names encode the sources they were built from, so every asset is "
         "immutable and is never replaced. The committed manifest pins these URLs; "
         "deleting an asset breaks every commit and tag that references it."
     )
-    if subprocess.run(["gh", "release", "view", release], capture_output=True).returncode != 0:
+    if subprocess.run(["gh", "release", "view", release, "--repo", repository], capture_output=True).returncode != 0:
         subprocess.run(
-            ["gh", "release", "create", release,
+            ["gh", "release", "create", release, "--repo", repository,
              "--prerelease", "--title", f"Rolling binaries ({group.name})", "--notes", notes],
             check=True,
         )
@@ -1387,7 +1399,7 @@ def cmd_publish_assets(args, root: Path, group: Group) -> int:
         print(f"upload    {path.name}")
     # No --clobber: an existing name is the same bytes by construction.
     subprocess.run(
-        ["gh", "release", "upload", release, *(str(path) for path in uploads)], check=True
+        ["gh", "release", "upload", release, "--repo", repository, *(str(path) for path in uploads)], check=True
     )
     return 0
 
