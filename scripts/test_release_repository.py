@@ -39,14 +39,15 @@ class ReleaseRepositoryTests(unittest.TestCase):
 
     def test_invalid_asset_namespace_stops_before_any_release_operation(self):
         group = replace(keys.GROUPS["android"], asset_base="https://example.org/binaries-android")
-        with patch.object(keys.subprocess, "run") as run:
+        with patch.dict(keys.GROUPS, {"android": group}), patch.object(keys.subprocess, "run") as run:
             with self.assertRaises(SystemExit):
                 keys.cmd_publish_assets(SimpleNamespace(release_dir="dist/release"), Path("."), group)
             run.assert_not_called()
 
     def test_fork_namespace_is_explicit_and_not_hardcoded(self):
         group = replace(keys.GROUPS["apple"], asset_base="https://github.com/example/engine/releases/download/binaries-apple")
-        self.assertEqual(keys.release_repository(group), "example/engine")
+        with patch.dict(keys.GROUPS, {"apple": group}):
+            self.assertEqual(keys.release_repository(group), "example/engine")
 
 
 if __name__ == "__main__":
