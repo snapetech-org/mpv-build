@@ -1104,3 +1104,10 @@ Cocoa destroys a temporary client during initialization while the core is
 locked. Patch 0170 skips the disable call for clients that never owned a tap,
 preserving producer retirement for actual tap owners. New Apple binaries must
 include this fix before the shader-enabled app pin is promoted.
+
+Apple assembly verifies every architecture in the packaged framework with
+`python3 scripts/verify_avf_shaders.py dist/release/Libmpv.xcframework.zip`.
+The check requires the stage's exported functions and Vulkan/Metal imports
+from its own object, rejecting fallback implementations that export the same
+function names. It reads archive entries directly without flattening macOS
+framework symlinks.

@@ -840,6 +840,9 @@ jobs:
       - name: Merge platform XCFrameworks
         run: python3 scripts/merge_xcframeworks.py dist/partials dist/release
 
+      - name: Verify the real AVFoundation shader implementation in every slice
+        run: python3 scripts/verify_avf_shaders.py dist/release/Libmpv.xcframework.zip
+
       - name: Check the merged XCFrameworks for a build date
         run: bash scripts/test_build_date.sh dist/release/*.zip
 
