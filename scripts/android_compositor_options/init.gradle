@@ -1,0 +1,5 @@
+allprojects {
+    plugins.withId('com.android.library') {
+        android.sourceSets.androidTest.kotlin.srcDir(System.getenv('PLEAZYNG_COMPOSITOR_QA_SOURCE'))
+    }
+}
