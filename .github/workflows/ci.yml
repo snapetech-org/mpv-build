@@ -78,6 +78,7 @@ jobs:
           python3 scripts/test_prepare_android_qairt.py
           python3 scripts/test_inspect_pcm_package.py
           python3 scripts/test_dependency_retry.py
+          python3 scripts/test_release_repository.py
           python3 scripts/test_linux_arm64_runtime_workflow.py
 
       # test_audiotrack_truehd.sh encodes its TrueHD fixtures with the host
@@ -839,6 +840,9 @@ jobs:
 
       - name: Merge platform XCFrameworks
         run: python3 scripts/merge_xcframeworks.py dist/partials dist/release
+
+      - name: Test explicit release repository routing
+        run: python3 scripts/test_release_repository.py
 
       - name: Verify the real AVFoundation shader implementation in every slice
         run: python3 scripts/verify_avf_shaders.py dist/release/Libmpv.xcframework.zip

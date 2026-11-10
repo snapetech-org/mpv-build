@@ -239,6 +239,7 @@ jobs:
           python3 scripts/test_prepare_android_qairt.py
           python3 scripts/test_inspect_pcm_package.py
           python3 scripts/test_dependency_retry.py
+          python3 scripts/test_release_repository.py
 
       - name: Test shared extractor
         run: ./scripts/test_extract.sh

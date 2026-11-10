@@ -1111,3 +1111,9 @@ The check requires the stage's exported functions and Vulkan/Metal imports
 from its own object, rejecting fallback implementations that export the same
 function names. It reads archive entries directly without flattening macOS
 framework symlinks.
+
+For real headless GPU playback qualification, run
+`bash scripts/qa_avf_shader_playback.sh <Libmpv.xcframework.zip> <task-output-directory>`
+on a Metal-capable Mac. See [the retained-input playback probe](scripts/avf_shader_playback/README.md).
+The probe covers initialization, hardware decoding, actual shader rendering,
+ambient-style stretching and shutdown.
