@@ -22,7 +22,7 @@ on:
         description: Select the native validation to run
         type: choice
         default: checks
-        options: [checks, windows, windows-diagnostics, android-release, apple-libmpv, apple-assemble]
+        options: [checks, linux, windows, windows-diagnostics, android-release, apple-libmpv, apple-assemble]
       windows_arch:
         description: Windows architecture to validate without repeating another active build
         type: choice
@@ -733,7 +733,11 @@ jobs:
 
       - name: Build GPL version (${{ matrix.name }})
         run: |
-          make build use-prebuilt libs=libmpv platform=${{ matrix.platforms }}
+          # DSP configuration can change a dependency as well as libmpv.
+          # Restore only inputs whose recorded content keys still match.
+          stale_libraries="$(python3 scripts/keys.py stale --platform-group apple | paste -sd, -)"
+          test -n "$stale_libraries" || stale_libraries=libmpv
+          make build use-prebuilt libs="$stale_libraries" platform=${{ matrix.platforms }}
 
       - name: Require Plezy ordered PCM ABI (${{ matrix.platform_type }})
         shell: bash
@@ -884,3 +888,36 @@ jobs:
             ./dist/release/*.checksum.txt
           if-no-files-found: error
 
+
+  linux-music-dsp:
+    name: Validate music DSP linux ${{ matrix.arch }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public' && inputs.target == 'linux'
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build pinned engine and execute generated music DSP
+        env:
+          JOBS: '2'
+          ARCH: ${{ matrix.arch }}
+        run: |
+          KEY="$(python3 scripts/keys.py keys --platform-group linux | python3 -c 'import json,sys; print(json.load(sys.stdin)["libmpv-linux"])')"
+          export KEY
+          bash platforms/linux/container-build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/release/*
+          if-no-files-found: error
