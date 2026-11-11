@@ -4,6 +4,12 @@
 [![ffmpeg](https://img.shields.io/badge/ffmpeg-n9.0.2-blue.svg)](https://github.com/FFmpeg/FFmpeg)
 [![license](https://img.shields.io/github/license/snapetech-org/mpv-build)](https://github.com/snapetech-org/mpv-build/blob/main/LICENSE)
 
+Linux and Android's pruned FFmpeg builds explicitly retain music EQ, shelf,
+gain, stereo-width, echo and spectrum filters. Apple retains the same DSP
+set. Linux publication executes generated tones through the actual linked
+decoder and verifies peak, shelf and gain response before packaging; the smoke
+checker is part of the content key.
+
 One repository for every mpv supply chain Plezy ships: the upstream pins, the
 patch series, and the build drivers that turn them into `libmpv` binaries for
 Apple (XCFrameworks), Android (per-ABI native trees and the mpv-android AAR), Linux (prefix bundles)

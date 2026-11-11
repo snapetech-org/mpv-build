@@ -73,6 +73,10 @@ if [ -n "${KEY:-}" ] && [ -z "${PREFIX:-}" ]; then
 fi
 SRCDIR=/tmp/libmpv-src bash platforms/linux/build.sh
 if [ -n "${KEY:-}" ]; then
+  dsp_prefix="${PREFIX:-$PWD/libmpv-prefix}"
+  dsp_library="$(find "$dsp_prefix" -type f -name "libmpv.so*" -print -quit)"
+  test -n "$dsp_library"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/check_music_dsp_filters.py "$dsp_library"
   bash platforms/linux/package.sh
 fi
 '

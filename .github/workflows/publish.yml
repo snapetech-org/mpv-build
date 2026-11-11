@@ -230,7 +230,9 @@ jobs:
         run: ./scripts/test_patches.sh
 
       - name: Test Linux ARM64 container runtime bootstrap
-        run: python3 scripts/test_linux_arm64_runtime_workflow.py
+        run: |
+          python3 scripts/test_linux_arm64_runtime_workflow.py
+          python3 scripts/test_music_dsp_filters.py
 
       - name: Test private platform toolchain contracts
         run: |

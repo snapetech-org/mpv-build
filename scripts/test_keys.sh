@@ -1207,7 +1207,10 @@ def publish_assets(repo, bin_dir, published, expect=0):
         check(args[:2] in (["release", "view"], ["release", "upload"]), f"unexpected gh call: {args}")
         if args[:2] == ["release", "upload"]:
             check(args[2] == "binaries-android", f"uploads go to the group's release: {args}")
-            uploaded += [Path(path).name for path in args[3:]]
+            check('--repo' in args, f'uploads need an explicit repository: {args}')
+            repository_at = args.index('--repo')
+            uploaded += [Path(path).name for index, path in enumerate(args)
+                         if index >= 3 and index not in (repository_at, repository_at + 1)]
     return result, sorted(uploaded)
 
 

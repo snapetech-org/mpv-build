@@ -586,6 +586,12 @@ private class BuildFFMPEG: BaseBuild {
         // ./configure --list-filters
         "--disable-filters",
         "--enable-filter=crop",
+        "--enable-filter=aecho",
+        "--enable-filter=aspectralstats",
+        "--enable-filter=bass",
+        "--enable-filter=stereowiden",
+        "--enable-filter=treble",
+
         "--enable-filter=aformat", "--enable-filter=amix", "--enable-filter=anull",
         "--enable-filter=aresample",
         "--enable-filter=areverse", "--enable-filter=asetrate", "--enable-filter=atempo",

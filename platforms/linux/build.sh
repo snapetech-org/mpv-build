@@ -359,7 +359,7 @@ main() {
     --disable-bsfs \
     --enable-bsf=aac_adtstoasc,av1_metadata,dovi_split,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
     --disable-filters \
-    --enable-filter=aformat,aresample,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
+    --enable-filter=aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
     --enable-gnutls \
     --enable-vaapi \
     --enable-ffnvcodec \
