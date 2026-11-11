@@ -2,11 +2,22 @@
 set -euo pipefail
 
 readonly rustup_bootstrap_version='1.29.2'
-readonly rustup_bootstrap_sha256='f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9'
-readonly rustup_target='aarch64-apple-darwin'
-
 [[ "$(uname -s)" == 'Darwin' ]] || { echo 'rustup bootstrap requires macOS' >&2; exit 1; }
-[[ "$(uname -m)" == 'arm64' ]] || { echo 'rustup bootstrap requires Apple Silicon' >&2; exit 1; }
+case "$(uname -m)" in
+  arm64)
+    readonly rustup_target='aarch64-apple-darwin'
+    readonly rustup_bootstrap_sha256='f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9'
+    ;;
+  x86_64)
+    readonly rustup_target='x86_64-apple-darwin'
+    # Official archive checksum, independently verified against the Mach-O.
+    readonly rustup_bootstrap_sha256='b9610730ddeef52765723847866fd1e3540b2bf7d5ab0c324aa143a5edf25ba0'
+    ;;
+  *)
+    echo 'rustup bootstrap requires supported 64-bit macOS' >&2
+    exit 1
+    ;;
+esac
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_ENV:?GITHUB_ENV is required}"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"

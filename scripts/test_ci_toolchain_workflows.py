@@ -275,3 +275,26 @@ tap_section = tap_patch.split("diff --git a/include/mpv/plezy_audio_tap.h", 1)[1
 tap_header = "\n".join(line[1:] for line in tap_section.splitlines() if line.startswith("+") and not line.startswith("+++")) + "\n"
 assert (ROOT / "platforms/android/lib/src/main/headers/mpv/plezy_audio_tap.h").read_text() == tap_header
 assert 'from("src/main/headers") { into("$abi/include") }' in (ROOT / "platforms/android/lib/build.gradle.kts").read_text()
+
+# Exercise host selection without downloading or executing an installer.
+host_prefix = RUSTUP_BOOTSTRAP.split('cargo_home_path=', 1)[0]
+with tempfile.TemporaryDirectory(prefix='mpv-rustup-host-') as temporary:
+    temp = Path(temporary)
+    uname = temp / 'uname'
+    uname.write_text('#!/bin/sh\nif [ "$1" = "-s" ]; then echo "$TEST_KERNEL"; else echo "$TEST_MACHINE"; fi\n')
+    uname.chmod(0o755)
+    for kernel, machine, target, digest in (
+        ('Darwin', 'arm64', 'aarch64-apple-darwin', 'f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9'),
+        ('Darwin', 'x86_64', 'x86_64-apple-darwin', 'b9610730ddeef52765723847866fd1e3540b2bf7d5ab0c324aa143a5edf25ba0'),
+        ('Darwin', 'i386', None, None),
+        ('Linux', 'x86_64', None, None),
+    ):
+        env = dict(os.environ, PATH=str(temp) + os.pathsep + os.environ['PATH'],
+                   TEST_KERNEL=kernel, TEST_MACHINE=machine,
+                   RUNNER_TEMP=temporary, GITHUB_ENV=str(temp / 'env'), GITHUB_PATH=str(temp / 'path'))
+        result = subprocess.run(['bash', '-c', host_prefix + '\nprintf "%s %s" "$rustup_target" "$rustup_bootstrap_sha256"'],
+                                env=env, capture_output=True, text=True)
+        if target is None:
+            assert result.returncode != 0, (kernel, machine)
+        else:
+            assert result.returncode == 0 and result.stdout == target + ' ' + digest, result
