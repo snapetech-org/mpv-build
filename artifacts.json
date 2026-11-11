@@ -4,13 +4,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "6168c50b5c17",
+          "key": "c287a1a6c4eb",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-6168c50b5c17-arm64-v8a.tar.gz",
+              "asset": "libmpv-android-c287a1a6c4eb-arm64-v8a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "b6530268208bfc18780085c5b7f3d8d50994c07f091fdcd39cad02de6647030b",
+                "artifactSha256": "c44228903b2a88fd56dc0fd112d627a0ff6c5f9eec4c1569affc1771828915b4",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -42,13 +42,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "b6530268208bfc18780085c5b7f3d8d50994c07f091fdcd39cad02de6647030b"
+              "checksum": "c44228903b2a88fd56dc0fd112d627a0ff6c5f9eec4c1569affc1771828915b4"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-6168c50b5c17-armeabi-v7a.tar.gz",
+              "asset": "libmpv-android-c287a1a6c4eb-armeabi-v7a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "9d9080d387bf2a5f15addc1d744e5d7aaf3044d22d82ab246d487abe1ddd95b0",
+                "artifactSha256": "84e9d1a6d4073a983ffa32d778edc8ed4dccce9e320a2d06cd9a2e90c41e2666",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -77,13 +77,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "9d9080d387bf2a5f15addc1d744e5d7aaf3044d22d82ab246d487abe1ddd95b0"
+              "checksum": "84e9d1a6d4073a983ffa32d778edc8ed4dccce9e320a2d06cd9a2e90c41e2666"
             },
             "x86": {
-              "asset": "libmpv-android-6168c50b5c17-x86.tar.gz",
+              "asset": "libmpv-android-c287a1a6c4eb-x86.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "d6bf76b6b4ddbdb409749f2b7c7bb0fc6cc3d3e38423a12c1d4771afd589eec5",
+                "artifactSha256": "2dd8fbe35b562363d6e435a8ca61cd11da134ec042bb2a57908aa8613df2d9d9",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -112,13 +112,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "d6bf76b6b4ddbdb409749f2b7c7bb0fc6cc3d3e38423a12c1d4771afd589eec5"
+              "checksum": "2dd8fbe35b562363d6e435a8ca61cd11da134ec042bb2a57908aa8613df2d9d9"
             },
             "x86_64": {
-              "asset": "libmpv-android-6168c50b5c17-x86_64.tar.gz",
+              "asset": "libmpv-android-c287a1a6c4eb-x86_64.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "62d63a489c3e197da373402e11d9eceb3e1dc6d8217c1834ab295c1e8439b99c",
+                "artifactSha256": "9694e203dea80e49f9d4a69ac5fa0ad69f6e89d097fdb33768be87541bd1bbda",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -147,15 +147,15 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "62d63a489c3e197da373402e11d9eceb3e1dc6d8217c1834ab295c1e8439b99c"
+              "checksum": "9694e203dea80e49f9d4a69ac5fa0ad69f6e89d097fdb33768be87541bd1bbda"
             }
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-82ace919fd97.aar",
+          "asset": "mpv-android-70153a744bb6.aar",
           "capabilities": {
             "appleSlices": [],
-            "artifactSha256": "da24824647eebb55a5b1413a0a89b746209a8cd5d965f82d7cc8e69007b6aa3e",
+            "artifactSha256": "ef5dff66aea3b14491a432944985d745c1ca30c5eb0d128861c65f02b3a442af",
             "binaries": [
               "jni/arm64-v8a/libmpv.so",
               "jni/armeabi-v7a/libmpv.so",
@@ -211,24 +211,24 @@
             ],
             "symbol": "mpv_plezy_audio_tap_read_next"
           },
-          "checksum": "da24824647eebb55a5b1413a0a89b746209a8cd5d965f82d7cc8e69007b6aa3e",
-          "key": "82ace919fd97",
+          "checksum": "ef5dff66aea3b14491a432944985d745c1ca30c5eb0d128861c65f02b3a442af",
+          "key": "70153a744bb6",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-82ace919fd97-arm64-v8a-symbols.zip",
-              "checksum": "dc07b46e72c005eb4a40297f45c6003bcc5c60764a18485231bcd4b2c587bc58"
+              "asset": "mpv-android-70153a744bb6-arm64-v8a-symbols.zip",
+              "checksum": "241c765e1b9b1aaa52e857fad0a5da08f7cb94a60d947be0398b9c57f4e1d8c1"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-82ace919fd97-armeabi-v7a-symbols.zip",
-              "checksum": "9e9a9f2ba90a93e2dff05254c7e420da984e54adf1714d1d4bc8201abac8883b"
+              "asset": "mpv-android-70153a744bb6-armeabi-v7a-symbols.zip",
+              "checksum": "0dc8deec81ddca144b1c0534fe092f49d5f4af64dcd2d828943be395934df773"
             },
             "x86": {
-              "asset": "mpv-android-82ace919fd97-x86-symbols.zip",
-              "checksum": "d63e7fabbaf30b265c6087cc1452691d21ed7c0d7c9322c04748dfa7b26df21d"
+              "asset": "mpv-android-70153a744bb6-x86-symbols.zip",
+              "checksum": "9953420fe5cf80fe60abf8c77828784f7498481837991cb58eb8985826c1248f"
             },
             "x86_64": {
-              "asset": "mpv-android-82ace919fd97-x86_64-symbols.zip",
-              "checksum": "4e9eb481c8fd2e1ca1fe0f33d9f133cd361d2c8972034e9dc7a8d0cdacb309ea"
+              "asset": "mpv-android-70153a744bb6-x86_64-symbols.zip",
+              "checksum": "146779f0eabd42165d1a2660c47d6ae7c78abcbd389a65912e6f14a0665455ec"
             }
           }
         }
