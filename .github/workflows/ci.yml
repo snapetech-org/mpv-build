@@ -692,7 +692,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang python@3.12
+          brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang
+          # Hosted Intel images also contain python.org symlinks in /usr/local.
+          # Use the pinned Homebrew keg on PATH without replacing those files.
+          brew install --skip-link python@3.12
           brew_prefix="$(brew --prefix)"
           for formula in autoconf automake libtool ninja python@3.12; do
             test -d "$brew_prefix/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
