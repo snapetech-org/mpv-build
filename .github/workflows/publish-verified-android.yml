@@ -1,0 +1,86 @@
+name: Publish verified Android binaries
+
+run-name: ${{ format('action:{0}:pool:{1}:source:{2}', inputs.action_tag, inputs.runner_pool_tag, inputs.source_run) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_tag:
+        description: Publish the existing verified outputs without rebuilding
+        required: true
+        type: choice
+        options: [publish]
+      runner_pool_tag:
+        description: Compatible hosted publisher
+        required: true
+        type: choice
+        options: [public]
+      source_run:
+        description: Successful trusted main Android CI run with matching content keys
+        required: true
+        type: string
+
+concurrency:
+  group: native-binaries-publication-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'snapetech-org/mpv-build' && github.ref == 'refs/heads/main' && inputs.action_tag == 'publish' && inputs.runner_pool_tag == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify source trust, completed jobs and current content keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          python3 scripts/test_verify_native_reuse.py
+          python3 scripts/verify_native_reuse.py --repository "$GITHUB_REPOSITORY" --run "$SOURCE_RUN"
+
+      - name: Retrieve the verified native outputs
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run }}
+          pattern: android-*
+          merge-multiple: true
+          path: dist/release
+
+      - name: Record and inspect every ABI and the assembled AAR
+        run: |
+          set -euo pipefail
+          variants="$(python3 scripts/keys.py variants --platform-group android)"
+          test -n "$variants"
+          for variant in $variants; do
+            python3 scripts/keys.py record-platform --platform-group android --platform "$variant" --release-dir dist/release
+          done
+          python3 scripts/keys.py record-packages --platform-group android --release-dir dist/release
+          python3 scripts/keys.py verify --platform-group android
+          git diff --check
+
+      - name: Publish immutable assets and their manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/keys.py publish-assets --platform-group android --release-dir dist/release
+          git add artifacts.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Publish verified Android native music DSP'
+          gh auth setup-git
+          git push origin HEAD:main
