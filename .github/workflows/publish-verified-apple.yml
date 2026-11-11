@@ -1,0 +1,96 @@
+name: Publish verified Apple binaries
+
+run-name: ${{ format('action:{0}:pool:{1}:source:{2}', inputs.action_tag, inputs.runner_pool_tag, inputs.source_run) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_tag:
+        description: Publish the existing verified outputs without rebuilding
+        required: true
+        type: choice
+        options: [publish]
+      runner_pool_tag:
+        description: Compatible hosted publisher
+        required: true
+        type: choice
+        options: [public]
+      source_run:
+        description: Successful trusted main Apple assembly run with matching content keys
+        required: true
+        type: string
+
+concurrency:
+  group: native-binaries-publication-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'snapetech-org/mpv-build' && github.ref == 'refs/heads/main' && inputs.action_tag == 'publish' && inputs.runner_pool_tag == 'public'
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify source trust, completed assembly and current content keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          python3 scripts/test_verify_native_reuse.py
+          python3 scripts/verify_native_reuse.py --platform-group apple --repository "$GITHUB_REPOSITORY" --run "$SOURCE_RUN"
+
+      - name: Retrieve the verified assembled frameworks
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run }}
+          name: apple-assembled
+          path: verified-apple
+
+      - name: Record the verified frameworks against the current manifest
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import shutil
+          # Keep unrelated platform manifests from the current main checkout.
+          # Only immutable framework outputs, never the source manifest, move.
+          release = Path('dist/release')
+          release.mkdir(parents=True, exist_ok=True)
+          files = sorted(Path('verified-apple').rglob('*.zip'))
+          if not files or len({p.name for p in files}) != len(files):
+              raise SystemExit('Missing or ambiguous Apple framework outputs')
+          for path in files:
+              shutil.copyfile(path, release / path.name)
+          PYCODE
+          python3 scripts/keys.py record-frameworks --platform-group apple --release-dir dist/release
+          libmpv_key="$(python3 scripts/keys.py keys --platform-group apple | python3 -c 'import json,sys; print(json.load(sys.stdin)["libmpv"])')"
+          python3 scripts/verify_avf_shaders.py "dist/release/Libmpv-${libmpv_key}.xcframework.zip"
+          python3 scripts/keys.py render --platform-group apple
+          python3 scripts/keys.py verify --platform-group apple
+          git diff --check
+
+      - name: Publish immutable frameworks and their manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/keys.py publish-assets --platform-group apple --release-dir dist/release
+          git add artifacts.json Package.swift
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Publish verified Apple native music DSP'
+          gh auth setup-git
+          git push origin HEAD:main

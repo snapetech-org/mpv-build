@@ -15,7 +15,14 @@ ANDROID_JOBS = {
 } | {"bundled-android-release / Build mpv-android AAR"}
 
 
-def validate_run(run: dict, jobs: list[dict], repository: str) -> str:
+APPLE_JOBS = {"Assemble verified Apple libmpv"}
+SOURCE_JOBS = {"android": ANDROID_JOBS, "apple": APPLE_JOBS}
+
+
+def validate_run(run: dict, jobs: list[dict], repository: str,
+                 platform_group: str = "android") -> str:
+    if platform_group not in SOURCE_JOBS:
+        raise ValueError("Unsupported native reuse platform group")
     if (run.get("head_repository", {}).get("full_name") != repository
             or run.get("repository", {}).get("full_name") != repository
             or run.get("head_branch") != "main"
@@ -27,19 +34,19 @@ def validate_run(run: dict, jobs: list[dict], repository: str) -> str:
     sha = run.get("head_sha", "")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Invalid native source commit")
-    for name in ANDROID_JOBS:
+    for name in SOURCE_JOBS[platform_group]:
         matches = [job for job in jobs if job.get("name") == name]
         if len(matches) != 1 or matches[0].get("conclusion") != "success":
             raise ValueError("Native source job is not successful: " + name)
     return sha
 
 
-def content_keys(root: Path) -> dict:
+def content_keys(root: Path, platform_group: str = "android") -> dict:
     return json.loads(subprocess.check_output(
-        ["python3", "scripts/keys.py", "keys", "--platform-group", "android"], cwd=root))
+        ["python3", "scripts/keys.py", "keys", "--platform-group", platform_group], cwd=root))
 
 
-def verify(repository: str, run_id: str, root: Path) -> None:
+def verify(repository: str, run_id: str, root: Path, platform_group: str = "android") -> None:
     if repository != "snapetech-org/mpv-build" or not re.fullmatch(r"[1-9][0-9]{0,19}", run_id):
         raise ValueError("Invalid native source repository or run")
 
@@ -47,24 +54,25 @@ def verify(repository: str, run_id: str, root: Path) -> None:
         return json.loads(subprocess.check_output(
             ["gh", "api", f"repos/{repository}/actions/runs/{run_id}{suffix}"]))
 
-    sha = validate_run(api(""), api("/jobs?per_page=100")["jobs"], repository)
-    expected = content_keys(root)
+    sha = validate_run(api(""), api("/jobs?per_page=100")["jobs"], repository, platform_group)
+    expected = content_keys(root, platform_group)
     subprocess.run(["git", "fetch", "--no-tags", "origin", sha], cwd=root, check=True)
     with tempfile.TemporaryDirectory(prefix="mpv-native-reuse-") as temporary:
         source = Path(temporary) / "source"
         subprocess.run(["git", "worktree", "add", "--detach", str(source), sha], cwd=root, check=True)
         try:
-            actual = content_keys(source)
+            actual = content_keys(source, platform_group)
         finally:
             subprocess.run(["git", "worktree", "remove", str(source)], cwd=root, check=True)
     if actual != expected:
         raise ValueError("Native source/build content keys differ")
-    print(f"Verified trusted Android source run {run_id} at {sha}; content keys match")
+    print(f"Verified trusted {platform_group} source run {run_id} at {sha}; content keys match")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--run", required=True)
+    parser.add_argument("--platform-group", choices=sorted(SOURCE_JOBS), default="android")
     args = parser.parse_args()
-    verify(args.repository, args.run, Path(__file__).resolve().parents[1])
+    verify(args.repository, args.run, Path(__file__).resolve().parents[1], args.platform_group)

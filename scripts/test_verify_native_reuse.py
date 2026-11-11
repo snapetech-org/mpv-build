@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import unittest
-from verify_native_reuse import ANDROID_JOBS, validate_run
+from verify_native_reuse import ANDROID_JOBS, APPLE_JOBS, validate_run
 
 
 class NativeReuseTests(unittest.TestCase):
@@ -12,6 +12,24 @@ class NativeReuseTests(unittest.TestCase):
             head_branch="main", event="workflow_dispatch", path=".github/workflows/ci.yml",
             status="completed", conclusion="success", head_sha="a" * 40)
         self.jobs = [{"name": name, "conclusion": "success"} for name in ANDROID_JOBS]
+
+    def test_verified_apple_assembly_can_be_reused(self):
+        jobs = [{"name": name, "conclusion": "success"} for name in APPLE_JOBS]
+        self.assertEqual(validate_run(self.run, jobs, "snapetech-org/mpv-build", "apple"), "a" * 40)
+        for conclusion in ("failure", "cancelled", "skipped", None):
+            with self.subTest(conclusion=conclusion):
+                with self.assertRaises(ValueError):
+                    validate_run(self.run, [{"name": next(iter(APPLE_JOBS)), "conclusion": conclusion}],
+                                 "snapetech-org/mpv-build", "apple")
+        with self.assertRaises(ValueError):
+            validate_run(self.run, jobs + jobs, "snapetech-org/mpv-build", "apple")
+
+    def test_platform_sources_cannot_substitute_for_each_other(self):
+        apple = [{"name": name, "conclusion": "success"} for name in APPLE_JOBS]
+        for jobs, platform in ((self.jobs, "apple"), (apple, "android"), (apple, "unknown")):
+            with self.subTest(platform=platform):
+                with self.assertRaises(ValueError):
+                    validate_run(self.run, jobs, "snapetech-org/mpv-build", platform)
 
     def test_success(self):
         self.assertEqual(validate_run(self.run, self.jobs, "snapetech-org/mpv-build"), "a" * 40)
