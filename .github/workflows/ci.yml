@@ -28,6 +28,11 @@ on:
         type: choice
         default: all
         options: [all, x86_64, aarch64]
+      apple_runner:
+        description: Compatible hosted Apple SDK builder (Intel can avoid ARM capacity queues)
+        type: choice
+        default: macos-26
+        options: [macos-26, macos-26-intel]
       reuse_apple_run:
         description: Successful six-slice Apple build to assemble without recompiling
         type: string
@@ -648,12 +653,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'apple-libmpv' && inputs.action_tag == 'ci' && inputs.runner_pool_tag == 'public'
     permissions:
       contents: read
-    runs-on: macos-26
+    runs-on: ${{ inputs.apple_runner || 'macos-26' }}
     timeout-minutes: 90
     env:
       # Public native Apple builds leave the private app runner available.
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
-      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PATH: /usr/local/opt/python@3.12/libexec/bin:/usr/local/opt/python@3.12/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       RUSTUP_AUTO_INSTALL: '0'
     strategy:
       fail-fast: false
@@ -688,8 +693,9 @@ jobs:
         run: |
           set -euo pipefail
           brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang python@3.12
+          brew_prefix="$(brew --prefix)"
           for formula in autoconf automake libtool ninja python@3.12; do
-            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
+            test -d "$brew_prefix/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
           done
           for tool in autoconf automake glibtool ninja cmake pkg-config wget nasm sdl2-config glslang python3 xcodebuild xcrun; do
             command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
@@ -794,10 +800,10 @@ jobs:
     permissions:
       contents: read
       actions: read
-    runs-on: macos-26
+    runs-on: ${{ inputs.apple_runner || 'macos-26' }}
     timeout-minutes: 45
     env:
-      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PATH: /usr/local/opt/python@3.12/libexec/bin:/usr/local/opt/python@3.12/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - uses: actions/checkout@v4
         with:
