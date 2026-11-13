@@ -36,6 +36,29 @@ def named_step(job: str, name: str) -> str:
     return job[start:] if next_step < 0 else job[start:next_step]
 
 
+def assert_job_timeout(workflow: str, name: str, minutes: int) -> None:
+    section = job_section(workflow, name)
+    assert re.search(rf"(?m)^    timeout-minutes: {minutes}$", section), (
+        f"{name} must have a {minutes}-minute job timeout"
+    )
+
+
+for workflow, name, minutes in (
+    (PUBLISH, "tests", 30),
+    (PUBLISH, "plan", 15),
+    (PUBLISH, "build-apple", 90),
+    (PUBLISH, "publish-apple", 30),
+    (PUBLISH, "build-linux-x64", 120),
+    (PUBLISH, "build-linux-arm64", 120),
+    (PUBLISH, "build-windows", 120),
+    (PUBLISH, "publish", 30),
+    (PUBLISH, "manifest", 15),
+    (ANDROID, "natives", 120),
+    (ANDROID, "aar", 60),
+):
+    assert_job_timeout(workflow, name, minutes)
+
+
 def assert_private_linux_x64(job: str, label: str) -> None:
     runs_on = re.search(r"(?m)^    runs-on: (.+)$", job)
     assert runs_on, f"{label} has no explicit runner route"

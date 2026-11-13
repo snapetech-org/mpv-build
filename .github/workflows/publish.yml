@@ -70,6 +70,7 @@ jobs:
         true
       )
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
+    timeout-minutes: 30
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -276,6 +277,7 @@ jobs:
         true
       )
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-plan"]}}', github.run_id)) }}
+    timeout-minutes: 15
     outputs:
       # The stale libraries of the apple group, comma-separated: the `libs=`
       # argument the apple build legs need.
@@ -360,6 +362,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
+    timeout-minutes: 90
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -509,6 +512,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
+    timeout-minutes: 30
     env:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
@@ -599,6 +603,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-x64"]}}', github.run_id)) }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -650,6 +655,7 @@ jobs:
     # Its run-scoped source workspace and Colima data live on the task-specific
     # gamespool0 share so the 200 GiB VM disk does not compete for APFS space.
     runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
+    timeout-minutes: 120
     env:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       RUN_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
@@ -811,6 +817,7 @@ jobs:
     # key does not name the host, so moving this runner means a new cache epoch
     # (windows-ep3) and a cold, hours-long toolchain bootstrap.
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-windows"]}}', github.run_id, strategy.job-index)) }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -986,6 +993,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-publish"]}}', github.run_id, strategy.job-index)) }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -1112,6 +1120,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-manifest"]}}', github.run_id)) }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 

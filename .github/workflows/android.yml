@@ -53,6 +53,7 @@ jobs:
     # The Android NDK is pinned. nasm, meson and autotools come from the
     # private JIT image, and the release artifacts must reproduce those inputs.
     runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-natives"]}}', github.run_id, strategy.job-index)) }}
+    timeout-minutes: 120
     # One job per ABI: the driver builds one architecture per --arch invocation
     # (platforms/android/build.sh), the ABIs share nothing but sources, and the
     # dependency graph is expensive enough that four runners beat one.
@@ -216,6 +217,7 @@ jobs:
     # a failed tarball leg leaves nothing to pack.
     if: always() && !cancelled() && needs.natives.result != 'failure'
     runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-aar"]}}', github.run_id)) }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
