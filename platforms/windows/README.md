@@ -175,9 +175,10 @@ bootstrap retry does re-run.
 GitHub limits this repository's cache retention to seven days. The scheduled
 `windows-cache-keepalive` jobs restore each architecture's cache on Monday and
 Thursday without compiling or publishing, keeping the build state warm between
-releases. Cache keys are stable per architecture and pinned inputs, preventing
-every release from storing another copy; the prior run-scoped `windows-ep2`
-keys remain restore fallbacks during migration. If a cache expires or is
+releases. Cache keys are stable per architecture, build-driver revision and
+pinned inputs, preventing every release from storing another copy; compatible
+prior driver states and the run-scoped `windows-ep2` keys remain restore
+fallbacks during migration. If a cache expires or is
 evicted, the next build still bootstraps from source and writes the new
 `windows-ep3` state.
 

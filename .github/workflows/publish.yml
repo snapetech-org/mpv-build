@@ -894,10 +894,10 @@ jobs:
       # and libmpv must relink against whatever changed underneath it anyway)
       # and always runs the toolchain targets -- no-ops when clean -- which
       # makes the last, pin-free restore tier safe across winbuild bumps.
-      # Keep one immutable cache per arch and input set instead of adding a
-      # duplicate multi-gigabyte entry for every run. Bump the cache epoch when
-      # the runner or build-state layout becomes incompatible. The ep2 fallback
-      # adopts a still-live cache from the old run-scoped keys.
+      # Keep one immutable cache per arch, driver revision and input set
+      # instead of adding a duplicate multi-gigabyte entry for every run.
+      # Restore tiers can reuse a compatible tree across driver/pin changes.
+      # The ep2 fallback adopts a still-live cache from the old run-scoped keys.
       - name: Restore build state cache
         uses: actions/cache/restore@v4
         with:
@@ -905,8 +905,11 @@ jobs:
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
           restore-keys: |
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
@@ -973,7 +976,7 @@ jobs:
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
 
       - name: Upload platform build (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
@@ -1022,8 +1025,11 @@ jobs:
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
           restore-keys: |
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
             windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
