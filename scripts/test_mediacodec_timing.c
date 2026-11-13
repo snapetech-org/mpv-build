@@ -657,9 +657,11 @@ static void wakeup_core(struct vo *vo) { (void)vo; core_wakeups++; }
 #define MPMIN(a, b) ((a) < (b) ? (a) : (b))
 static double vo_get_vsync_interval(struct vo *vo) { return vo->period; }
 static void vo_increment_drop_count(struct vo *vo, int64_t n) { (void)vo; drops += n; }
-static void vo_set_queue_params(struct vo *vo, int64_t offset, int count)
+static void vo_set_queue_params(struct vo *vo, int64_t offset, int num_req_frames,
+                               int num_frame_refs)
 {
-    (void)count;
+    (void)num_req_frames;
+    (void)num_frame_refs;
     vo->admission_offset = offset;
 }
 
