@@ -200,6 +200,7 @@ typedef struct MediaCodecDecContext {
     atomic_int hw_buffer_count;
     FFAMediaCodec *codec;
     FFAMediaFormat *format;
+    bool has_output_format;
     void *surface;
     int draining;
     int flushing;
@@ -266,6 +267,7 @@ typedef struct MediaCodecH264DecContext {
     MediaCodecShedContext shed;
     int shed_inited;
 } MediaCodecH264DecContext;
+typedef MediaCodecH264DecContext MediaCodecContext;
 
 static int ff_mediacodec_shed_packet(MediaCodecShedContext *s, AVCodecContext *avctx, AVPacket *pkt)
 {

@@ -1,6 +1,7 @@
 // Exercise the production format parser with the configured and decoded
 // MediaFormats emitted by MediaTek. No Android runtime is needed.
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,7 @@ typedef struct {
 } Format;
 typedef struct {
     Format *format;
+    bool has_output_format;
     const char *codec_name;
     int use_ndk_codec, width, height, stride, slice_height, color_format;
     int crop_left, crop_top, crop_right, crop_bottom, display_width, display_height;
@@ -93,6 +95,8 @@ static Format format(int width, int height)
 static int dimensions(const char *name, AVCodecContext *avctx, MediaCodecDecContext *s,
                       int changed, int width, int height)
 {
+    // The codec's output-format callback sets this before the parser runs.
+    s->has_output_format = changed;
     if (mediacodec_dec_parse_video_format(avctx, s, changed) < 0 ||
         avctx->width != width || avctx->height != height) {
         fprintf(stderr, "FAIL: %s: expected %dx%d, got %dx%d\n",

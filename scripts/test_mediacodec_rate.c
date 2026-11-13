@@ -44,6 +44,7 @@ typedef struct MediaCodecH264DecContext {
     int media3_rate;
     int media3_rate_pending;
 } MediaCodecH264DecContext;
+typedef MediaCodecH264DecContext MediaCodecContext;
 
 static int infos;
 static void av_log(void *avctx, int level, const char *fmt, ...)

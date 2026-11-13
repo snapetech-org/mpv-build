@@ -114,6 +114,7 @@ typedef struct MediaCodecDecContext {
     atomic_int hw_buffer_count;
     FFAMediaCodec *codec;
     FFAMediaFormat *format;
+    bool has_output_format;
     void *surface;
     int draining;
     int flushing;
