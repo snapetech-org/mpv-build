@@ -90,11 +90,26 @@ SRC="$WORK/mpv-winbuild-cmake"
 BUILD="$WORK/$ARCH"
 mkdir -p "$WORK"
 
-# Upstream passes `--jobs=1` to Ninja, but supported Ninja releases accept
-# `-j 1` instead. Normalize all job options and drop load-average limits so
-# I/O or system load never stalls a build; keep one compiler for the 8 GiB
-# guest's peak memory use. This lives in the build driver so its content key
-# moves and Windows artifacts rebuild when the wrapper contract changes.
+# shaderc/glslang's doc.cpp compile used about 7 GiB by itself. Derive a safe
+# worker limit from the runner's CPU and memory-plus-swap budget, reserving
+# 1 GiB for the guest OS and capping at two workers. The JIT runner has 8 GiB
+# RAM plus 8 GiB swap, so it can use two compiler workers without turning a
+# cold toolchain build into a single-core multi-hour job.
+read -r memory_kib swap_kib < <(
+  awk '/^MemTotal:/ { memory = $2 } /^SwapTotal:/ { swap = $2 } END { print memory + 0, swap + 0 }' /proc/meminfo
+)
+cpu_count="$(getconf _NPROCESSORS_ONLN)"
+ninja_jobs="$(((memory_kib + swap_kib - 1024 * 1024) / (7 * 1024 * 1024)))"
+(( ninja_jobs < 1 )) && ninja_jobs=1
+(( ninja_jobs > 2 )) && ninja_jobs=2
+(( ninja_jobs > cpu_count )) && ninja_jobs="$cpu_count"
+export PLEZY_WINDOWS_NINJA_JOBS="$ninja_jobs"
+echo "==> Ninja worker limit: $PLEZY_WINDOWS_NINJA_JOBS ($cpu_count CPUs; $((memory_kib / 1024)) MiB RAM + $((swap_kib / 1024)) MiB swap)"
+
+# Upstream passes job options Ninja versions do not consistently accept.
+# Normalize all job options and drop load-average limits, then apply the
+# resource-derived worker limit above. Keeping this wrapper in the driver
+# applies the same policy to top-level and nested toolchain builds.
 NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"
 mkdir -p "$NINJA_WRAPPER_DIR"
 cat > "$NINJA_WRAPPER_DIR/ninja" <<'SH'
@@ -118,7 +133,7 @@ for arg in "$@"; do
       ;;
   esac
 done
-exec /usr/bin/ninja -j 1 "${args[@]}"
+exec /usr/bin/ninja "-j${PLEZY_WINDOWS_NINJA_JOBS}" "${args[@]}"
 SH
 chmod 0755 "$NINJA_WRAPPER_DIR/ninja"
 export PATH="$NINJA_WRAPPER_DIR:$PATH"

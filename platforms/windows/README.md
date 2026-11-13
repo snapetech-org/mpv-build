@@ -172,6 +172,23 @@ ccache (`-DENABLE_CCACHE=ON`, cache inside the cached install prefix) backs
 all of this up: it absorbs the compile cost of whatever a pin bump or a
 bootstrap retry does re-run.
 
+GitHub limits this repository's cache retention to seven days. The scheduled
+`windows-cache-keepalive` jobs restore each architecture's cache on Monday and
+Thursday without compiling or publishing, keeping the build state warm between
+releases. Cache keys are stable per architecture and pinned inputs, preventing
+every release from storing another copy; the prior run-scoped `windows-ep2`
+keys remain restore fallbacks during migration. If a cache expires or is
+evicted, the next build still bootstraps from source and writes the new
+`windows-ep3` state.
+
+The build driver derives Ninja concurrency from the runner's CPU and
+memory-plus-swap budget. It reserves 1 GiB for the OS, budgets 7 GiB per
+compiler worker based on the largest observed single translation unit, and
+caps the result at two workers. This uses two workers on the 8 GiB JIT guest
+with its 8 GiB swap file while keeping smaller environments at one. Windows
+build jobs allow six hours for a genuinely cold toolchain bootstrap; warm
+cache runs have completed in 17 minutes (x86_64) and 42 minutes (aarch64).
+
 Residual: the installed prefix accumulates; a pin bump that *removes* a
 library leaves its old artifacts in `install/<target>` until the cache is
 cold again. Linking is name-driven via pkgconf, so a lingering library is
