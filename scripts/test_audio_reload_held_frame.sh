@@ -23,5 +23,6 @@ python3 "$E" symbol "$audio" "$workdir/reload_held_frame.inc" --fn ao_process --
 python3 "$E" symbol "$audio" "$workdir/reload_held_frame.inc" --append --fn reload_audio_output --return void
 # mpv builds its own sources without -Wsign-compare.
 cc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function \
-    -I"$workdir" "$root/scripts/test_audio_reload_held_frame.c" -o "$workdir/test" -lm
+    -I"$workdir" -I"$source_dir/player" -I"$source_dir/include" \
+    "$root/scripts/test_audio_reload_held_frame.c" -o "$workdir/test" -lm
 "$workdir/test"

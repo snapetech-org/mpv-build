@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "plezy_audio_tap.h"
 
 #define MP_NOPTS_VALUE (-0x1p+63)
 #define MP_ERR(...) ((void)0)
@@ -55,6 +56,7 @@ struct MPContext {
     struct MPOpts *opts;
     struct ao *ao;
     struct ao_chain *ao_chain;
+    struct mp_plezy_audio_tap *visualizer_audio_tap;
     enum playback_status audio_status, video_status;
     double play_dir, audio_speed, delay;
     int64_t shown_aframes;
@@ -62,6 +64,18 @@ struct MPContext {
 
 static int unrefs;
 static int queue_writes;
+
+// The extracted production ao_process() calls this patched mpv helper. The
+// reload test does not exercise the tap itself, but its compile contract must
+// include the real header and MPContext field so upstream patch drift fails
+// here instead of on the release runner.
+void mp_plezy_audio_tap_submit(struct mp_plezy_audio_tap *tap,
+                               struct mp_aframe *frame, double speed)
+{
+    (void)tap;
+    (void)frame;
+    (void)speed;
+}
 
 // --- fakes: filters/filter.c and friends, as far as the extracted code reaches.
 
