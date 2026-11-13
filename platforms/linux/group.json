@@ -6,7 +6,8 @@
     "platforms/linux/package.sh",
     "platforms/linux/container-build.sh",
     "scripts/symbols.py",
-    "scripts/check_music_dsp_filters.py"
+    "scripts/check_music_dsp_filters.py",
+    "scripts/inspect_pcm_package.py"
   ],
   "artifacts": {
     "libmpv-linux": {

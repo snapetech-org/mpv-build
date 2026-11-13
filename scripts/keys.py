@@ -650,8 +650,9 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None, motion_platform
     binaries = receipt.get("binaries")
     hashes = receipt.get("binarySha256")
     architectures = receipt.get("binaryArchitectures")
+    expected_schema = 5 if motion_platform in ("android", "linux", "windows") else 4
     if (receipt.get("orderedSubtitlePcmAbi") != 1 or
-            receipt.get("inspectionSchema") != 4 or
+            receipt.get("inspectionSchema") != expected_schema or
             receipt.get("requiredSymbols") != ["mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
                 "mpv_plezy_audio_tap_read", "mpv_plezy_audio_tap_read_next"] or
             receipt.get("symbol") != "mpv_plezy_audio_tap_read_next" or
@@ -667,6 +668,9 @@ def pcm_receipt_problems(entry: dict, label: str, expected=None, motion_platform
                 for arch in value) or len(value) != len(set(value)) for value in architectures.values())):
         return [f"{label}: mismatched packaged ordered-PCM receipt"]
     if motion_platform:
+        if (motion_platform in ("android", "linux", "windows") and
+                receipt.get("felEngineId") != "plezyng-dv-fel-v1"):
+            return [f"{label}: no packaged FEL engine identity receipt"]
         if motion_platform in ('linux', 'windows') and receipt.get('pmeVulkan') is not True:
             return [f"{label}: no compiled PME Vulkan reconstruction receipt"]
         neural = receipt.get("neuralFilters")

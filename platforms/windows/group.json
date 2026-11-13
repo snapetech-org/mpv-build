@@ -8,7 +8,8 @@
     "platforms/windows/host_llvm_cache.py",
     "scripts/symbols.py",
     "scripts/patches.py",
-    "platforms/windows/check_patches.py"
+    "platforms/windows/check_patches.py",
+    "scripts/inspect_pcm_package.py"
   ],
   "artifacts": {
     "libmpv-windows": {

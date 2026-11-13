@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect packaged MPV bytes and bind an ordered-PCM ABI receipt to their hash.
+"""Inspect MPV package bytes and bind compiled capability evidence to their hash.
 
 This does not load native code. Run on a packaging host with a matching symbol
 inspector (LLVM binutils or Xcode), after the archive is final. No source or
@@ -7,6 +7,7 @@ hardware name is accepted as evidence of a packaged symbol.
 """
 from __future__ import annotations
 import hashlib
+import json
 import plistlib
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -20,6 +21,10 @@ MAX_ENTRY = 1024 * 1024 * 1024
 MAX_TOTAL = 4 * MAX_ENTRY
 MAX_ENTRIES = 50000
 SYMBOL = 'mpv_plezy_audio_tap_read_next'
+FEL_ENGINE_ID = 'plezyng-dv-fel-v1'
+FEL_ENGINE_MARKER = FEL_ENGINE_ID.encode('ascii')
+FEL_PLATFORMS = {'android', 'linux', 'windows'}
+ANDROID_ABIS = ('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
 REQUIRED_SYMBOLS = ['mpv_plezy_audio_tap_version', 'mpv_plezy_audio_tap_enable',
                     'mpv_plezy_audio_tap_read', SYMBOL]
 PME_VULKAN_MARKER = b"Vulkan: requested device '%s' was not found; compute will bypass\n\0"
@@ -63,6 +68,22 @@ def inspect_motion_features(binary, platform, architectures):
                     raise ValueError(f'MPV {architecture} binary omits the implemented {feature} neural path')
             found[architecture] = features
     return found
+
+
+def validate_android_fel_metadata(metadata, binaries):
+    """Bind the AAR engine declaration to its complete set of packaged ABIs."""
+    expected = {f'jni/{abi}/libmpv.so' for abi in ANDROID_ABIS}
+    if (not isinstance(metadata, dict) or metadata.get('schema_version') not in (1, 2) or
+            metadata.get('engine_id') != FEL_ENGINE_ID):
+        raise ValueError('Android AAR lacks the required FEL engine metadata')
+    abis = metadata.get('abis')
+    if (not isinstance(abis, list) or any(not isinstance(abi, str) for abi in abis) or
+            len(abis) != len(set(abis)) or set(abis) != set(ANDROID_ABIS)):
+        raise ValueError('Android AAR FEL metadata has incomplete ABI coverage')
+    if set(binaries) != expected:
+        raise ValueError('Android AAR FEL metadata does not match its packaged MPV binaries')
+
+
 APPLE_REQUIRED = {
     ('ios', '', 'arm64'), ('ios', 'simulator', 'arm64'), ('ios', 'simulator', 'x86_64'),
     ('ios', 'maccatalyst', 'arm64'), ('ios', 'maccatalyst', 'x86_64'),
@@ -113,9 +134,10 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
             digest.update(block)
     found, names, hashes, total = [], set(), {}, 0
     architectures, plists, neural_filters = {}, {}, {}
+    fel_engine_binaries, android_fel_metadata = {}, None
     with tempfile.TemporaryDirectory(prefix='mpv-abi-') as temporary:
         def member(name, size, regular, source):
-            nonlocal total
+            nonlocal total, android_fel_metadata
             normalized = name.removeprefix('./')
             if normalized in names or len(names) >= MAX_ENTRIES:
                 raise ValueError('Duplicate/excess package members')
@@ -123,6 +145,18 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
             path = PurePosixPath(normalized)
             if path.is_absolute() or '..' in path.parts or '\\' in name:
                 raise ValueError('Unsafe package member')
+            if regular and normalized == 'META-INF/plezyng-dv-engine.json':
+                if size < 1 or size > 256 * 1024:
+                    raise ValueError('Android FEL engine metadata size limit')
+                with source() as reader:
+                    content = reader.read(size + 1)
+                if len(content) != size:
+                    raise ValueError('Truncated Android FEL engine metadata')
+                try:
+                    android_fel_metadata = json.loads(content)
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise ValueError('Invalid Android FEL engine metadata') from error
+                return
             if regular and path.name == 'Info.plist' and path.parent.name.lower().endswith('.xcframework'):
                 if size < 1 or size > 256 * 1024: raise ValueError('XCFramework metadata size limit')
                 with source() as reader:
@@ -150,6 +184,10 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
                     remaining -= len(block)
             subprocess.run([sys.executable, str(Path(__file__).with_name('check_plezy_audio_tap_export.py')),
                             str(target)], check=True, timeout=120)
+            if motion_platform in FEL_PLATFORMS:
+                if FEL_ENGINE_MARKER not in target.read_bytes():
+                    raise ValueError(f'MPV {normalized} binary omits the required FEL engine identity')
+                fel_engine_binaries[normalized] = FEL_ENGINE_ID
             found.append(normalized)
             hashes[normalized] = binary_digest.hexdigest()
             architectures[normalized] = binary_architectures(target)
@@ -184,6 +222,8 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
                     member(info.name, info.size, info.isfile(), lambda info=info: archive.extractfile(info))
     if not found or expected is not None and len(found) != expected:
         raise ValueError(f'Expected {expected or "at least one"} MPV binaries, found {len(found)}')
+    if motion_platform == 'android' and expected == 4:
+        validate_android_fel_metadata(android_fel_metadata, found)
     slices = []
     if any('.xcframework/' in name.lower() for name in found):
         if len(plists) != 1: raise ValueError('Expected one XCFramework metadata document')
@@ -221,10 +261,17 @@ def inspect(package: Path, expected: int | None = None, motion_platform=None) ->
             slices.append({'binary': binary, 'platform': platform, 'variant': variant, 'architectures': sorted(declared)})
         if used != set(found) or not APPLE_REQUIRED <= coverage:
             raise ValueError('MPV XCFramework does not cover every required Apple platform and architecture')
-    receipt = {'orderedSubtitlePcmAbi': 1, 'inspectionSchema': 4, 'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
+    receipt = {'orderedSubtitlePcmAbi': 1,
+            'inspectionSchema': 5 if motion_platform in FEL_PLATFORMS else 4,
+            'requiredSymbols': REQUIRED_SYMBOLS, 'artifactSha256': digest.hexdigest(),
             'symbol': SYMBOL, 'binaries': sorted(found), 'binarySha256': hashes,
             'binaryArchitectures': architectures, 'appleSlices': slices, 'neuralFilters': neural_filters,
             'motionPlatform': motion_platform, 'executionQualified': False}
+    if motion_platform in FEL_PLATFORMS:
+        if set(fel_engine_binaries) != set(found) or any(
+                identity != FEL_ENGINE_ID for identity in fel_engine_binaries.values()):
+            raise ValueError('MPV package FEL engine identity coverage is incomplete')
+        receipt['felEngineId'] = FEL_ENGINE_ID
     if motion_platform in ('linux', 'windows'):
         receipt['pmeVulkan'] = True
     return receipt
