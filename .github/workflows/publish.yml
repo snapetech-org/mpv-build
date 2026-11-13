@@ -664,7 +664,8 @@ jobs:
       # directory so workspace/cache folders cannot prevent network teardown.
       LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/l
       NFS_STORAGE_ROOT: /Volumes/plezyng-native-build-kspld0
-      NFS_STORAGE_SOURCE: kspld0.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
+      # The Mac reaches the build share over Tailscale from home or away.
+      NFS_STORAGE_SOURCE: kspld0.tail.snape.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
     steps:
       - name: Prepare shared temporary directory
         shell: bash

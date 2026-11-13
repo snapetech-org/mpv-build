@@ -11,9 +11,12 @@ job_end = workflow.index("\n  build-windows:", job_start)
 job = workflow[job_start:job_end]
 
 storage_root = "/Volumes/plezyng-native-build-kspld0"
-storage_source = "kspld0.local:/mnt/disks/gamespool0/plezyng-native-build-20261027"
+storage_source = "kspld0.tail.snape.local:/mnt/disks/gamespool0/plezyng-native-build-20261027"
 assert f"NFS_STORAGE_ROOT: {storage_root}" in job
 assert f"NFS_STORAGE_SOURCE: {storage_source}" in job
+assert "kspld0.local:/mnt/disks/" not in job, (
+    "the Mac ARM64 job must reach kspld0 through Tailscale, not the LAN name"
+)
 assert f"RUN_ROOT: {storage_root}/runs/${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}" in job
 assert f"BUILD_ROOT: {storage_root}/runs/${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}/workspace" in job
 assert "/Volumes/plezyng-native-build/runs/" not in job, (
