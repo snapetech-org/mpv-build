@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import tarfile
 import unittest
@@ -29,6 +30,13 @@ class NativePackageTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
+    def compile_shared(self, source, output, architecture=None):
+        command = ['cc']
+        if architecture and sys.platform == 'darwin':
+            command.extend(['-arch', architecture])
+        command.extend(['-shared', '-fPIC', '-o', str(output), str(source)])
+        subprocess.run(command, check=True)
+
     def package(self, neural=False, metadata=False, complete_pcm=True, vulkan=True, fel=True):
         exports = ['version', 'enable', 'read', 'read_next']
         if not complete_pcm:
@@ -43,7 +51,7 @@ class NativePackageTest(unittest.TestCase):
             source += f'\nconst char plezyng_dv_engine[] = "{FEL_ENGINE_ID}";'
         (self.root / 'fixture.c').write_text(source)
         binary = self.root / 'libmpv.so'
-        subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(self.root / 'fixture.c')], check=True)
+        self.compile_shared(self.root / 'fixture.c', binary, architecture='x86_64')
         package = self.root / 'libmpv.zip'
         with zipfile.ZipFile(package, 'w') as archive:
             archive.write(binary, 'lib/libmpv.so')
@@ -208,13 +216,13 @@ class NativePackageTest(unittest.TestCase):
                           'const char motion_option[] = "motion-interpolation";\n'
                           'const char preset_option[] = "motion-preset";\n')
         binary = self.root / 'apple-options.so'
-        subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(source)], check=True)
+        self.compile_shared(source, binary)
         with self.assertRaisesRegex(ValueError, 'omits.*videotoolbox'):
             inspect_motion_features(binary, 'apple', ['arm64'])
         source.write_text(source.read_text() + '\n'
                           'const char motion_class[] = "MPVAVFMotionSession";\n'
                           'int avf_motion_process(void) { return 0; }\n')
-        subprocess.run(['cc', '-shared', '-fPIC', '-o', str(binary), str(source)], check=True)
+        self.compile_shared(source, binary)
         self.assertEqual(inspect_motion_features(binary, 'apple', ['arm64']),
                          {'arm64': ['videotoolbox']})
 
