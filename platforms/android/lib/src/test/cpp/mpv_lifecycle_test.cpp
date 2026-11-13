@@ -51,6 +51,7 @@ struct mpv_handle {
   bool termination_entered = false;
   int initialize_result = 0;
   int hook_continuations = 0;
+  int time_pos_observations = 0;
   int commands = 0;
   jlong callback_session = 0;
   jobject video = nullptr;
@@ -217,6 +218,9 @@ jlong command(jlong session, const char* name = "play") {
 
 void initialize_player(jlong session) {
   require(jni_func_name(nativeInit)(&jni, nullptr, session) == 0, "nativeInit failed");
+  const auto current = session_find(session);
+  require(current && current->handle->time_pos_observations == 1,
+          "nativeInit did not register exactly one time-pos observation");
 }
 
 void destroy_player(jlong session) { jni_func_name(nativeDestroy)(&jni, nullptr, session); }
@@ -756,6 +760,17 @@ extern "C" mpv_event* mpv_wait_event(mpv_handle* handle, double) {
 extern "C" int mpv_hook_add(mpv_handle* handle, uint64_t, const char*, int) {
   std::lock_guard<std::mutex> lock(gate);
   require_live(handle);
+  return 0;
+}
+
+extern "C" int mpv_observe_property(
+    mpv_handle* handle, uint64_t reply_userdata, const char* name, mpv_format format) {
+  std::lock_guard<std::mutex> lock(gate);
+  require_live(handle);
+  require(reply_userdata == UINT64_MAX - 2, "unexpected property observation reply id");
+  require(name && std::strcmp(name, "time-pos") == 0, "unexpected property observation");
+  require(format == MPV_FORMAT_DOUBLE, "time-pos observation used the wrong format");
+  ++handle->time_pos_observations;
   return 0;
 }
 
