@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise real CMake/Ninja reuse through a moved workspace alias."""
+"""Exercise real CMake reuse through a moved workspace alias."""
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -20,12 +20,12 @@ class CacheWorkspaceTests(unittest.TestCase):
             source.mkdir(parents=True)
             (source / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(cache NONE)\nadd_custom_target(check ALL COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_BINARY_DIR}/reused")\n')
             build = old / 'build/windows/x86_64'
-            subprocess.run(['cmake', '-S', str(source), '-B', str(build), '-G', 'Ninja'], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(['cmake', '-S', str(source), '-B', str(build)], check=True, stdout=subprocess.DEVNULL)
             self.assertEqual(module.cached_root(build / 'CMakeCache.txt'), old)
             old.rename(new)
             old.symlink_to(new, target_is_directory=True)
-            subprocess.run(['cmake', '-S', str(source), '-B', str(build), '-G', 'Ninja'], check=True, stdout=subprocess.DEVNULL)
-            subprocess.run(['ninja', '-C', str(build)], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(['cmake', '-S', str(source), '-B', str(build)], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(['cmake', '--build', str(build)], check=True, stdout=subprocess.DEVNULL)
             self.assertTrue((new / 'build/windows/x86_64/reused').exists())
 
     def test_refuses_cache_from_another_source(self):

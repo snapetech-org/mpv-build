@@ -250,6 +250,7 @@ jobs:
       - name: Test platform toolchain contracts
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
+          python3 scripts/test_windows_cache_workspace.py
           python3 scripts/test_prepare_android_java.py
           python3 scripts/test_prepare_android_qairt.py
           python3 scripts/test_inspect_pcm_package.py
@@ -830,10 +831,12 @@ jobs:
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
 
+      - name: Repair restored Windows workspace path
+        run: python3 scripts/windows_cache_workspace.py "${{ matrix.arch }}"
+
       # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
-      # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
-      # process can exceed physical RAM, while retaining free space for the
-      # build and package outputs.
+      # Ubuntu 24.04 hosted runner. Add disk-backed swap for compiler memory
+      # spikes while retaining free space for build and package outputs.
       - name: Add temporary swap for compiler memory spikes
         shell: bash
         run: |

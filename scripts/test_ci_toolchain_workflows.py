@@ -70,6 +70,11 @@ def assert_public_hosted_ubuntu(job: str, label: str) -> None:
 windows = job_section(PUBLISH, "build-windows")
 assert_public_hosted_ubuntu(windows, "Windows cross-build")
 assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
+windows_cache_restore = named_step(windows, "Restore build state cache")
+windows_cache_repair = named_step(windows, "Repair restored Windows workspace path")
+assert "python3 scripts/windows_cache_workspace.py" in windows_cache_repair, (
+    "the Windows build must restore the original workspace path for cached CMake state"
+)
 windows_swap = named_step(windows, "Add temporary swap for compiler memory spikes")
 for token in (
     "swap_size_gib=8",
@@ -83,6 +88,9 @@ for token in (
 assert windows.index(windows_swap) < windows.index(
     named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
 ), "compiler swap must be enabled before the Windows build starts"
+assert windows.index(windows_cache_restore) < windows.index(windows_cache_repair) < windows.index(
+    named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
+), "the cached workspace path must be repaired before CMake reuses the build tree"
 for token in (
     'NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"',
     'cat > "$NINJA_WRAPPER_DIR/ninja" <<\'SH\'',
