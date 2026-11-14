@@ -460,6 +460,7 @@ jobs:
           rustup which --toolchain "$rust_version" cargo
 
       - name: Build GPL version (${{ matrix.name }})
+        timeout-minutes: 60
         run: |
           make build use-prebuilt libs=${{ needs.plan.outputs.stale_apple }} platform=${{ matrix.platforms }}
 

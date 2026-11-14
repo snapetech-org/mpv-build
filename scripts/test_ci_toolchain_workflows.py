@@ -231,6 +231,9 @@ assert 'runs-on: macos-26' in apple
 assert "max-parallel: 6" in apple, "independent Apple platform builds must run in parallel"
 assert '"group":"private-apple-builds"' not in apple
 assert "Install Apple build tools on the hosted runner" in apple
+assert "        timeout-minutes: 60\n" in named_step(
+    apple, "Build GPL version (${{ matrix.name }})"
+), "each Apple source build must have a one-hour timeout"
 apple_preflight = named_step(apple, "Verify Apple toolchain and install pinned Meson")
 assert "rustup" not in apple_preflight, "Apple preflight must not depend on Homebrew rustup"
 for tool in ("wget", "nasm", "sdl2-config", "pkg-config", "glslang", "cmake"):
