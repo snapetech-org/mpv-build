@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -16,6 +17,35 @@ SYMBOLS = ("mpv_plezy_audio_tap_version", "mpv_plezy_audio_tap_enable",
            "mpv_plezy_audio_tap_read", SYMBOL)
 
 
+def _llvm_tools(name: str) -> list[str]:
+    """Find unversioned and Ubuntu's version-suffixed LLVM tool names."""
+    tools: list[str] = []
+    unversioned = shutil.which(name)
+    if unversioned:
+        tools.append(unversioned)
+
+    versioned: set[Path] = set()
+    for directory in os.get_exec_path():
+        try:
+            candidates = Path(directory).glob(f"{name}-[0-9]*")
+            versioned.update(
+                candidate
+                for candidate in candidates
+                if candidate.is_file() and os.access(candidate, os.X_OK)
+            )
+        except OSError:
+            continue
+    tools.extend(
+        str(candidate)
+        for candidate in sorted(
+            versioned,
+            key=lambda item: tuple(int(part) for part in re.findall(r"\d+", item.name)),
+            reverse=True,
+        )
+    )
+    return list(dict.fromkeys(tools))
+
+
 def commands(path: Path) -> list[list[str]]:
     if sys.platform == "darwin":
         xcrun = shutil.which("xcrun")
@@ -24,7 +54,11 @@ def commands(path: Path) -> list[list[str]]:
 
     candidates = [shutil.which("llvm-nm"), shutil.which("nm")]
     if path.suffix.lower() == ".dll":
-        inspectors = [shutil.which("llvm-readobj"), shutil.which("llvm-objdump"), shutil.which("objdump")]
+        inspectors = [
+            *_llvm_tools("llvm-readobj"),
+            *_llvm_tools("llvm-objdump"),
+            shutil.which("objdump"),
+        ]
         return [[tool, "--coff-exports" if Path(tool).name.startswith("llvm-readobj") else "-p", str(path)]
                 for tool in inspectors if tool]
     flags = ["-D", "--defined-only"] if ".so" in path.name or path.suffix.lower() == ".dylib" else ["-g", "--defined-only"]

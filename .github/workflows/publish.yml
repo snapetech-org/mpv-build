@@ -250,6 +250,7 @@ jobs:
       - name: Test platform toolchain contracts
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
+          python3 scripts/test_check_plezy_audio_tap_export.py
           python3 scripts/test_windows_cache_workspace.py
           python3 scripts/test_prepare_android_java.py
           python3 scripts/test_prepare_android_qairt.py
