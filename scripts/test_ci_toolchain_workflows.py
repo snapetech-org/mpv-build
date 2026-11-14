@@ -273,12 +273,18 @@ assert 'echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"' in RUSTUP_BOOTSTRAP
 
 linux_x64 = job_section(PUBLISH, "build-linux-x64")
 assert_public_hosted_ubuntu(linux_x64, "Linux x86_64 build")
+linux_package = (ROOT / "platforms/linux/package.sh").read_text(encoding="utf-8")
+assert 'python3 "$REPO_ROOT/scripts/inspect_pcm_package.py" "$artifact" --expected 1 --motion-platform linux' in linux_package, (
+    "Linux packaging must inspect the final archive's ordered PCM ABI inside the pinned container"
+)
 for linux_job in ("build-linux-x64", "build-linux-arm64"):
-    pcm_contract = named_step(job_section(PUBLISH, linux_job), "Require Plezy ordered PCM ABI")
-    assert 'find libmpv-prefix/lib -name libmpv.so -print -quit' in pcm_contract, (
-        f"{linux_job} must locate libmpv under its native multiarch library directory"
+    linux_section = job_section(PUBLISH, linux_job)
+    assert "Require Plezy ordered PCM ABI" not in linux_section, (
+        f"{linux_job} must not inspect the in-container install prefix on the host runner"
     )
-    assert 'python3 scripts/check_plezy_audio_tap_export.py "$libmpv"' in pcm_contract
+    assert "platforms/linux/container-build.sh" in named_step(
+        linux_section, "Build and package in the pinned container"
+    )
 build_start = linux_x64.index("Build and package in the pinned container")
 date_check = linux_x64.index("Check the tarball and symbols for a build date")
 upload = named_step(linux_x64, "Upload platform build")

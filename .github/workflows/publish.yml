@@ -642,14 +642,6 @@ jobs:
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=x86_64 bash platforms/linux/container-build.sh
 
-      - name: Require Plezy ordered PCM ABI
-        shell: bash
-        run: |
-          set -euo pipefail
-          libmpv="$(find libmpv-prefix/lib -name libmpv.so -print -quit)"
-          test -n "$libmpv" || { echo "libmpv shared library was not installed under the build prefix" >&2; exit 1; }
-          python3 scripts/check_plezy_audio_tap_export.py "$libmpv"
-
       - name: Check the tarball and symbols for a build date
         run: |
           bash scripts/test_build_date.sh dist/release/*.tar.zst \
@@ -700,14 +692,6 @@ jobs:
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=aarch64 bash platforms/linux/container-build.sh
-
-      - name: Require Plezy ordered PCM ABI
-        shell: bash
-        run: |
-          set -euo pipefail
-          libmpv="$(find libmpv-prefix/lib -name libmpv.so -print -quit)"
-          test -n "$libmpv" || { echo "libmpv shared library was not installed under the build prefix" >&2; exit 1; }
-          python3 scripts/check_plezy_audio_tap_export.py "$libmpv"
 
       - name: Check the tarball and symbols for a build date
         run: |
