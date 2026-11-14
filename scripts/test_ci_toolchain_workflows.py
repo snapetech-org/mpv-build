@@ -75,6 +75,9 @@ windows_cache_repair = named_step(windows, "Repair restored Windows workspace pa
 assert "python3 scripts/windows_cache_workspace.py" in windows_cache_repair, (
     "the Windows build must restore the original workspace path for cached CMake state"
 )
+assert 'ROOT="${MPV_WINDOWS_WORKSPACE:-$DEFAULT_ROOT}"' in WINDOWS_BUILD, (
+    "the Windows build driver must run under the workspace path selected by the cache repair"
+)
 windows_swap = named_step(windows, "Add temporary swap for compiler memory spikes")
 for token in (
     "swap_size_gib=8",

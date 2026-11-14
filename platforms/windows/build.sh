@@ -79,7 +79,12 @@ export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
 export SOURCE_DATE_EPOCH=1577836800
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+DEFAULT_ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="${MPV_WINDOWS_WORKSPACE:-$DEFAULT_ROOT}"
+if [[ ! -d "$ROOT" || ! "$ROOT" -ef "$DEFAULT_ROOT" ]]; then
+  echo "error: cached Windows workspace path must resolve to $DEFAULT_ROOT: $ROOT" >&2
+  exit 1
+fi
 
 # The winbuild pin, resolved by the one place that folds overrides.windows in.
 winbuild_pin="$(python3 "$HERE/pin_packages.py" --print-winbuild-pin)"
