@@ -247,7 +247,7 @@ jobs:
           python3 scripts/test_linux_arm64_runtime_workflow.py
           python3 scripts/test_music_dsp_filters.py
 
-      - name: Test private platform toolchain contracts
+      - name: Test platform toolchain contracts
         run: |
           python3 scripts/test_ci_toolchain_workflows.py
           python3 scripts/test_prepare_android_java.py

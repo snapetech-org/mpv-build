@@ -89,7 +89,7 @@ for token in (
     "--jobs|--load-average|-j|-l)",
     "--jobs=*|--load-average=*|-j*|-l*)",
     'args+=("$arg")',
-    'exec /usr/bin/ninja -j 1 "${args[@]}"',
+    'exec /usr/bin/ninja "-j${PLEZY_WINDOWS_NINJA_JOBS}" "${args[@]}"',
     'export PATH="$NINJA_WRAPPER_DIR:$PATH"',
 ):
     assert token in WINDOWS_BUILD, (
@@ -124,6 +124,7 @@ with tempfile.TemporaryDirectory(prefix="mpv-ninja-wrapper-") as temporary:
     env = os.environ.copy()
     env["NINJA_TEST_BIN"] = str(fake_ninja)
     env["NINJA_TEST_ARGS"] = str(captured_args)
+    env["PLEZY_WINDOWS_NINJA_JOBS"] = "2"
     subprocess.run(
         [
             str(wrapper),
@@ -148,8 +149,7 @@ with tempfile.TemporaryDirectory(prefix="mpv-ninja-wrapper-") as temporary:
         text=True,
     )
     assert captured_args.read_text(encoding="utf-8").split("\0") == [
-        "-j",
-        "1",
+        "-j2",
         "-C",
         "build",
     ], (
@@ -273,7 +273,7 @@ assert "python3 scripts/test_ci_toolchain_workflows.py" in CI
 assert "python3 scripts/test_linux_arm64_runtime_workflow.py" in CI
 assert "python3 scripts/test_ci_toolchain_workflows.py" in PUBLISH
 
-print("Private Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")
+print("Hosted Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")
 
 # GitHub validates reusable workflow permissions before evaluating job ifs.
 # A skipped legacy caller must still allow the callee's artifact read scope.

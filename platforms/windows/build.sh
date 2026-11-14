@@ -91,10 +91,9 @@ BUILD="$WORK/$ARCH"
 mkdir -p "$WORK"
 
 # shaderc/glslang's doc.cpp compile used about 7 GiB by itself. Derive a safe
-# worker limit from the runner's CPU and memory-plus-swap budget, reserving
-# 1 GiB for the guest OS and capping at two workers. The JIT runner has 8 GiB
-# RAM plus 8 GiB swap, so it can use two compiler workers without turning a
-# cold toolchain build into a single-core multi-hour job.
+# worker limit from the current runner's CPU and memory-plus-swap budget,
+# reserving 1 GiB for the OS and capping at two workers. This keeps cold
+# toolchain builds within memory without forcing one worker on larger hosts.
 read -r memory_kib swap_kib < <(
   awk '/^MemTotal:/ { memory = $2 } /^SwapTotal:/ { swap = $2 } END { print memory + 0, swap + 0 }' /proc/meminfo
 )
