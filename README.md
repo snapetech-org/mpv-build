@@ -934,13 +934,13 @@ tarball's `include/`, which carries mpv's headers and the patched FFmpeg's
 Building it locally needs JDK 17+ and an Android SDK (`ANDROID_HOME`); Gradle
 installs the NDK `toolchain/android.txt` pins:
 
-Private JIT builds provision their prerequisites explicitly: the native legs
+CI builds use compatible public GitHub-hosted runners. The Android native legs
 install checksum-pinned rustup and the Rust version in `toolchain/android.txt`;
-the AAR leg installs JDK 21, configures Java's proxy from the runner's
-`HTTPS_PROXY`, then installs and verifies its SDK, Build Tools, NDK, CMake and
-symbol tools. `scripts/prepare_android_java.py` reads the SDK and CMake versions
-from the AAR build file. The official Lua archive host `www.lua.org` must also
-be reachable through the private source-download proxy.
+the AAR leg installs JDK 21 and calls `scripts/prepare_android_java.py sdk
+--public` to install and verify its SDK, Build Tools, NDK, CMake and symbol
+tools. The script reads the SDK and CMake versions from the AAR build file.
+Pinned source archives, including the official Lua archive from `www.lua.org`,
+must be reachable from the hosted runner.
 
 ```bash
 # the tarballs this checkout's artifacts.json pins (fetched, sha256-checked)

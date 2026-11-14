@@ -185,10 +185,13 @@ evicted, the next build still bootstraps from source and writes the new
 The build driver derives Ninja concurrency from the runner's CPU and
 memory-plus-swap budget. It reserves 1 GiB for the OS, budgets 7 GiB per
 compiler worker based on the largest observed single translation unit, and
-caps the result at two workers. This uses two workers on the 8 GiB JIT guest
-with its 8 GiB swap file while keeping smaller environments at one. Windows
-build jobs allow six hours for a genuinely cold toolchain bootstrap; warm
-cache runs have completed in 17 minutes (x86_64) and 42 minutes (aarch64).
+caps the result at two workers. The public Ubuntu workflow adds 8 GiB of
+temporary swap before building; smaller resource budgets select one worker.
+Each Windows job has a 120-minute hard timeout. Restored CMake caches contain
+absolute workspace paths, so the workflow runs
+`scripts/windows_cache_workspace.py` after cache restore to recreate only the
+known legacy path on its disposable hosted runner. The regression suite tests
+the path repair and its placement before CMake reuses the cached tree.
 
 Residual: the installed prefix accumulates; a pin bump that *removes* a
 library leaves its old artifacts in `install/<target>` until the cache is
@@ -309,5 +312,5 @@ libplacebo sources; libplacebo is pinned and included in the Windows content key
 Before compiler bootstrapping, `check_patches.py` checks every selected payload
 series on a pristine checkout of its exact source commit. It reuses cached Git
 objects without changing cached source trees. This catches source/patch drift
-before a long Windows toolchain build. Compatible public CI and private runners
-use the same driver and checks.
+before a long Windows toolchain build. Both Windows architectures use the same
+public hosted workflow driver and checks.

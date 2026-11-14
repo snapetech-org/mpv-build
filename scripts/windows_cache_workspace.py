@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Keep a trusted Windows compiler cache at its original workspace path.
 
-Hosted workers can reuse the private Ubuntu toolchain without regenerating its
-absolute-path build graph. This creates only the known legacy workspace alias
-on a disposable hosted worker; it never rewrites cache contents or a JIT host.
+Hosted workers can reuse the existing Ubuntu toolchain without regenerating
+its absolute-path build graph. This creates only the known legacy workspace
+alias on a disposable hosted worker; it never rewrites cache contents or the
+host.
 """
 from pathlib import Path
 import argparse

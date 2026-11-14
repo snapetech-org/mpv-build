@@ -6,9 +6,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$root/platforms/android/include/fetch-git.sh"
 
 # Keep the Android-only freetype pin on the upstream GitHub mirror while
-# preserving a full commit check. The private runner proxy rejects its primary
-# GitLab host, so the generic fallback test below must not drift away from the
-# real pinned dependency that exposed the outage.
+# preserving a full commit check. A runner proxy previously rejected its
+# primary GitLab host, so the generic fallback test below must not drift away
+# from the real pinned dependency that exposed the outage.
 python3 - "$root" <<'PY'
 import re
 import sys

@@ -534,9 +534,8 @@ jobs:
             windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
 
       # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
-      # 8 GiB Linux JIT guest. Add disk-backed guest swap so a single compiler
-      # process can exceed physical RAM, while retaining free space for the
-      # build and package outputs.
+      # Ubuntu 24.04 hosted runner. Add disk-backed swap for compiler memory
+      # spikes while retaining free space for build and package outputs.
       - name: Restore the compiler cache workspace alias
         run: python3 scripts/windows_cache_workspace.py ${{ matrix.arch }}
 

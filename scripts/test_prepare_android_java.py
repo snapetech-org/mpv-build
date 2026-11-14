@@ -20,7 +20,7 @@ class AndroidJavaTests(unittest.TestCase):
             self.assertIn(f"-D{protocol}.proxyPort=3128", options)
 
     def test_missing_proxy_is_not_an_uncontrolled_direct_download(self):
-        with self.assertRaisesRegex(ValueError, "require HTTPS_PROXY"):
+        with self.assertRaisesRegex(ValueError, "proxy setup requires HTTPS_PROXY"):
             toolchain.proxy_options({})
 
     def test_credentials_and_environment_injection_are_rejected(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision the Android AAR's Java downloads and exact SDK on a fresh JIT."""
+"""Provision the Android AAR's Java downloads and exact SDK on a fresh runner."""
 
 import os
 from pathlib import Path
@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def proxy_options(environ):
     raw = environ.get("HTTPS_PROXY") or environ.get("https_proxy")
     if not raw:
-        raise ValueError("private Android builds require HTTPS_PROXY")
+        raise ValueError("Android Java proxy setup requires HTTPS_PROXY")
     proxy = urlsplit(raw if "://" in raw else "http://" + raw)
     if (proxy.scheme != "http" or not proxy.hostname or not proxy.port
             or proxy.username or proxy.password or proxy.query or proxy.fragment
@@ -85,7 +85,7 @@ def main():
         options = proxy_options(os.environ)
         with Path(os.environ["GITHUB_ENV"]).open("a") as output:
             output.write(f"JAVA_TOOL_OPTIONS={options}\n")
-        print("Configured the private proxy for sdkmanager and Gradle JVMs")
+        print("Configured the HTTPS proxy for sdkmanager and Gradle JVMs")
     elif sys.argv[1:] in (["sdk"], ["sdk", "--public"]):
         install_sdk(os.environ, public="--public" in sys.argv[1:])
     else:
