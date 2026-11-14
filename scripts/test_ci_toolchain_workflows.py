@@ -228,6 +228,7 @@ assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
 
 apple = job_section(PUBLISH, "build-apple")
 assert 'runs-on: macos-26' in apple
+assert "max-parallel: 6" in apple, "independent Apple platform builds must run in parallel"
 assert '"group":"private-apple-builds"' not in apple
 assert "Install Apple build tools on the hosted runner" in apple
 apple_preflight = named_step(apple, "Verify Apple toolchain and install pinned Meson")
