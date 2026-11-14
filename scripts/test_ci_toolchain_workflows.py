@@ -269,6 +269,12 @@ assert 'echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"' in RUSTUP_BOOTSTRAP
 
 linux_x64 = job_section(PUBLISH, "build-linux-x64")
 assert_public_hosted_ubuntu(linux_x64, "Linux x86_64 build")
+for linux_job in ("build-linux-x64", "build-linux-arm64"):
+    pcm_contract = named_step(job_section(PUBLISH, linux_job), "Require Plezy ordered PCM ABI")
+    assert 'find libmpv-prefix/lib -name libmpv.so -print -quit' in pcm_contract, (
+        f"{linux_job} must locate libmpv under its native multiarch library directory"
+    )
+    assert 'python3 scripts/check_plezy_audio_tap_export.py "$libmpv"' in pcm_contract
 build_start = linux_x64.index("Build and package in the pinned container")
 date_check = linux_x64.index("Check the tarball and symbols for a build date")
 upload = named_step(linux_x64, "Upload platform build")
