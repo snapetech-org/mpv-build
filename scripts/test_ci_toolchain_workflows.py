@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep private native build workflows aligned with their toolchain contracts."""
+"""Keep hosted native build workflows aligned with their toolchain contracts."""
 
 import os
 import re
@@ -59,18 +59,16 @@ for workflow, name, minutes in (
     assert_job_timeout(workflow, name, minutes)
 
 
-def assert_private_linux_x64(job: str, label: str) -> None:
+def assert_public_hosted_ubuntu(job: str, label: str) -> None:
     runs_on = re.search(r"(?m)^    runs-on: (.+)$", job)
     assert runs_on, f"{label} has no explicit runner route"
-    assert '"group":"ng-shared-main-jit"' in runs_on.group(1), (
-        f"{label} must use the private Linux JIT group"
-    )
-    assert '"linux","x64"' in runs_on.group(1), f"{label} must run on Linux x64"
-    assert "private-apple" not in runs_on.group(1), f"{label} must not route to a Mac"
+    assert runs_on.group(1) == "ubuntu-24.04", f"{label} must use public hosted Ubuntu"
+    assert "self-hosted" not in job, f"{label} must not route to a private runner"
+    assert "private-overflow" not in job, f"{label} must not expose private overflow routing"
 
 
 windows = job_section(PUBLISH, "build-windows")
-assert_private_linux_x64(windows, "Windows cross-build")
+assert_public_hosted_ubuntu(windows, "Windows cross-build")
 assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
 windows_swap = named_step(windows, "Add temporary swap for compiler memory spikes")
 for token in (
@@ -196,12 +194,12 @@ aar_java = android_aar.index("      - uses: actions/setup-java@v4")
 aar_build = android_aar.index("Build the AAR and run its JVM tests")
 assert "distribution: temurin" in android_aar[aar_java:aar_build]
 assert "java-version: '21'" in android_aar[aar_java:aar_build]
-aar_proxy = android_aar.index("python3 scripts/prepare_android_java.py proxy")
 aar_sdk = android_aar.index("uses: android-actions/setup-android@")
-aar_verify = android_aar.index("python3 scripts/prepare_android_java.py sdk")
-assert aar_java < aar_proxy < aar_sdk < aar_verify < aar_build, (
-    "a fresh private JIT needs Java proxy routing and a verified SDK before Gradle"
+aar_verify = android_aar.index("python3 scripts/prepare_android_java.py sdk --public")
+assert aar_java < aar_sdk < aar_verify < aar_build, (
+    "the hosted runner must install and verify its SDK before Gradle"
 )
+assert "Configure Java for private runner downloads" not in android_aar
 
 # Packaging/publication happens in fresh guests, not the ABI compiler guest.
 artifact_setup = "bash scripts/prepare_linux_artifacts.sh"
@@ -221,8 +219,9 @@ aar_script = (ROOT / "platforms/android/lib/build-aar.sh").read_text()
 assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
 
 apple = job_section(PUBLISH, "build-apple")
-assert '"group":"private-apple-builds"' in apple
-assert '"macOS","ARM64"' in apple
+assert 'runs-on: macos-26' in apple
+assert '"group":"private-apple-builds"' not in apple
+assert "Install Apple build tools on the hosted runner" in apple
 apple_preflight = named_step(apple, "Verify Apple toolchain and install pinned Meson")
 assert "rustup" not in apple_preflight, "Apple preflight must not depend on Homebrew rustup"
 for tool in ("wget", "nasm", "sdl2-config", "pkg-config", "glslang", "cmake"):
@@ -261,7 +260,7 @@ assert "--no-modify-path --default-toolchain none" in RUSTUP_BOOTSTRAP
 assert 'echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"' in RUSTUP_BOOTSTRAP
 
 linux_x64 = job_section(PUBLISH, "build-linux-x64")
-assert_private_linux_x64(linux_x64, "Linux x86_64 build")
+assert_public_hosted_ubuntu(linux_x64, "Linux x86_64 build")
 build_start = linux_x64.index("Build and package in the pinned container")
 date_check = linux_x64.index("Check the tarball and symbols for a build date")
 upload = named_step(linux_x64, "Upload platform build")

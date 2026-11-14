@@ -21,10 +21,6 @@ on:
           tarballs artifacts.json pins.
         type: boolean
         required: true
-      runner-pool:
-        description: Compatible runner pool; existing private callers remain supported
-        type: string
-        default: private
       reuse-arm64-run:
         description: Trusted successful starter run with the same native Android content key
         type: string
@@ -50,9 +46,9 @@ jobs:
   natives:
     name: Build android ${{ matrix.abi }}
     if: inputs.natives
-    # The Android NDK is pinned. nasm, meson and autotools come from the
-    # private JIT image, and the release artifacts must reproduce those inputs.
-    runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-natives"]}}', github.run_id, strategy.job-index)) }}
+    # The pinned NDK and host build dependencies are installed on the disposable
+    # hosted Linux runner; no private image or proxy is required.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     # One job per ABI: the driver builds one architecture per --arch invocation
     # (platforms/android/build.sh), the ABIs share nothing but sources, and the
@@ -144,10 +140,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure Java for private runner downloads
-        if: steps.reuse.outputs.sha == '' && inputs.runner-pool != 'public'
-        run: python3 scripts/prepare_android_java.py proxy
-
       # Host build tools from apt plus the exact NDK pinned in
       # toolchain/android.txt (part of every android content key).
       - uses: actions/cache/restore@v4
@@ -172,9 +164,7 @@ jobs:
       - name: Fetch and patch pinned sources
         if: steps.reuse.outputs.sha == ''
         run: |
-          if [[ '${{ inputs.runner-pool }}' == public ]]; then
-            python3 scripts/prepare_android_lua.py
-          fi
+          python3 scripts/prepare_android_lua.py
           bash platforms/android/download.sh
 
       - name: Build libmpv-android (${{ matrix.abi }})
@@ -216,7 +206,7 @@ jobs:
     # always(): natives is skipped when the tarballs are published already;
     # a failed tarball leg leaves nothing to pack.
     if: always() && !cancelled() && needs.natives.result != 'failure'
-    runs-on: ${{ inputs.runner-pool == 'public' && 'ubuntu-24.04' || fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-aar"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -225,18 +215,12 @@ jobs:
 
       - name: Provision and verify artifact tools
         shell: bash
-        run: bash scripts/prepare_linux_artifacts.sh ${{ inputs.runner-pool == 'public' && '--public' || '' }}
+        run: bash scripts/prepare_linux_artifacts.sh --public
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
-      # Java does not consume HTTPS_PROXY. Configure it before setup-android
-      # invokes sdkmanager, and retain the same settings for Gradle and its JVMs.
-      - name: Configure Java for private runner downloads
-        if: inputs.runner-pool != 'public'
-        run: python3 scripts/prepare_android_java.py proxy
 
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
@@ -245,7 +229,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install and verify the AAR SDK toolchain
-        run: python3 scripts/prepare_android_java.py sdk ${{ inputs.runner-pool == 'public' && '--public' || '' }}
+        run: python3 scripts/prepare_android_java.py sdk --public
 
       - name: Download the tarballs this run built
         if: needs.natives.result == 'success'

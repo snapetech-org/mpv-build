@@ -1,4 +1,4 @@
-# ng-runner-policy: private-jit-only-v1
+# ng-runner-policy: public-hosted-v1
 # Manual debugging for the windows build-state cache.
 #
 # winbuild runs its ExternalProject steps with LOG 1, so a failing step's
@@ -21,10 +21,11 @@ on:
         type: choice
         options: [ci]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Public GitHub-hosted runners
         required: true
         type: choice
-        options: [private]
+        options: [public]
+        default: public
       arch:
         description: target arch
         type: choice
@@ -47,13 +48,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-dump"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore newest build state cache
         uses: actions/cache/restore@v4

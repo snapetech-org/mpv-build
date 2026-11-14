@@ -1,5 +1,4 @@
-# Public pull requests stay off trusted runners until a disposable,
-# secret-free JIT route is available.
+# Manual trusted-main checks use GitHub-hosted runners; fork code receives no secrets.
 name: CI
 
 run-name: >-
@@ -17,7 +16,8 @@ on:
         description: Compatible runner pool
         required: true
         type: choice
-        options: [private, public]
+        options: [public]
+        default: public
       target:
         description: Select the native validation to run
         type: choice
@@ -61,13 +61,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-patches"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -243,13 +243,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-android-plan"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     outputs:
       natives: ${{ steps.stale.outputs.natives }}
     steps:
@@ -295,13 +295,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-spatial"]}}', github.run_id)) }}
+    runs-on: macos-26
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -309,6 +309,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Install the pinned Homebrew Python
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install --skip-link python@3.12
 
       - name: Verify Apple spatial-test toolchain
         shell: bash
@@ -352,13 +355,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
+    runs-on: macos-26
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -366,6 +369,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Install the pinned Homebrew Python
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install --skip-link python@3.12
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -643,7 +649,6 @@ jobs:
     uses: ./.github/workflows/android.yml
     with:
       natives: true
-      runner-pool: public
       reuse-arm64-run: ${{ inputs.reuse_arm64_run }}
       reuse-x86-run: ${{ inputs.reuse_x86_run }}
       reuse-native-run: ${{ inputs.reuse_native_run }}
@@ -656,7 +661,6 @@ jobs:
     runs-on: ${{ inputs.apple_runner || 'macos-26' }}
     timeout-minutes: 90
     env:
-      # Public native Apple builds leave the private app runner available.
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /usr/local/opt/python@3.12/libexec/bin:/usr/local/opt/python@3.12/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       RUSTUP_AUTO_INSTALL: '0'

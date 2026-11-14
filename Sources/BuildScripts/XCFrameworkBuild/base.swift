@@ -6,7 +6,7 @@ enum Build {
         // complete toolchain before downloading or compiling any dependencies.
         for tool in ["pkg-config", "wget", "nasm", "sdl2-config", "glslang", "meson", "ninja", "cmake"] {
             guard Utility.shell("command -v \(tool)") != nil else {
-                throw NSError(domain: "Missing Apple build tool: \(tool). Provision the toolchain described in docs/runbooks/private-jit-toolchains.md", code: 1)
+                throw NSError(domain: "Missing Apple build tool: \(tool). Provision the toolchain described in docs/runbooks/hosted-toolchains.md", code: 1)
             }
         }
         let path = URL.currentDirectory + "dist"

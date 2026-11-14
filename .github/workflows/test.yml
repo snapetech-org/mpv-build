@@ -1,4 +1,4 @@
-# ng-runner-policy: private-jit-only-v1
+# ng-runner-policy: public-hosted-v1
 name: Test Build
 
 run-name: >-
@@ -13,10 +13,11 @@ on:
         type: choice
         options: [ci]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Public GitHub-hosted runners
         required: true
         type: choice
-        options: [private]
+        options: [public]
+        default: public
 
 jobs:
   build:
@@ -28,13 +29,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build"]}}', github.run_id)) }}
+    runs-on: macos-26
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -42,6 +43,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Install Apple build tools on the hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install --skip-link python@3.12
 
       - name: Verify and install pinned Apple build tools
         shell: bash

@@ -1,12 +1,12 @@
-# ng-runner-policy: private-jit-only-v1
+# ng-runner-policy: public-hosted-v1
 name: Publish binaries
 
 run-name: >-
-  ${{ github.event_name == 'schedule' && 'action:keep-windows-cache:pool:private' || format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
+  ${{ github.event_name == 'schedule' && 'action:keep-windows-cache:pool:public' || format('action:{0}:pool:{1}', inputs.action_tag, inputs.runner_pool_tag) }}
 
-# Publish binaries only after an explicit private build dispatch. Asset names
-# are content-addressed, so an existing artifact is skipped instead of
-# clobbered.
+# Publish binaries after a trusted-main build dispatch. Every compatible
+# build, test, scan, package and publish job uses public GitHub-hosted runners.
+# `private` remains a hosted-only alias for old callers.
 #
 # Binaries are sharded per platform group. Each group builds independently,
 # uploads to its own `binaries-<group>` rolling prerelease and contributes only
@@ -35,10 +35,11 @@ on:
         type: choice
         options: [build, keep-windows-cache]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Public GitHub-hosted runners for all build and release jobs
         required: true
         type: choice
-        options: [private]
+        options: [public, private]
+        default: public
 
 # Two runs must never interleave asset uploads or commits to main, and a
 # cancelled run could leave the manifest committed without its assets.
@@ -67,13 +68,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-tests"]}}', github.run_id)) }}
+    runs-on: macos-26
     timeout-minutes: 30
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
@@ -83,13 +84,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install native regression dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for formula in cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak python@3.12; do
+            brew list --versions "$formula" >/dev/null 2>&1 || missing+=("$formula")
+          done
+          if (( ${#missing[@]} )); then HOMEBREW_NO_AUTO_UPDATE=1 brew install "${missing[@]}"; fi
+
       - name: Verify Apple SDK and native regression toolchain
         shell: bash
         run: |
           set -euo pipefail
-          for formula in cmake autoconf automake libtool pkgconf freetype fribidi harfbuzz libunibreak python@3.12; do
-            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
-          done
           for tool in cmake autoconf automake glibtool pkg-config clang clang++ xcodebuild xcrun; do
             command -v "$tool" >/dev/null || { echo "missing native regression tool: $tool" >&2; exit 1; }
           done
@@ -275,13 +283,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-plan"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       # The stale libraries of the apple group, comma-separated: the `libs=`
@@ -304,7 +312,7 @@ jobs:
 
       - name: Provision and verify artifact tools
         shell: bash
-        run: bash scripts/prepare_linux_artifacts.sh
+        run: bash scripts/prepare_linux_artifacts.sh --public
 
       - name: Validate patch series
         run: python3 scripts/patches.py check
@@ -359,7 +367,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -367,7 +375,7 @@ jobs:
       )
     permissions:
       contents: read
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-apple"]}}', github.run_id, strategy.job-index)) }}
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
@@ -401,13 +409,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Apple build tools on the hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool ninja cmake pkgconf wget nasm sdl2 glslang
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install --skip-link python@3.12
+
       - name: Verify Apple toolchain and install pinned Meson
         shell: bash
         run: |
           set -euo pipefail
-          for formula in autoconf automake libtool ninja python@3.12; do
-            test -d "/opt/homebrew/Cellar/$formula" || { echo "missing Homebrew formula: $formula" >&2; exit 1; }
-          done
           for tool in autoconf automake glibtool ninja cmake pkg-config wget nasm sdl2-config glslang python3 xcodebuild xcrun; do
             command -v "$tool" >/dev/null || { echo "missing Apple toolchain command: $tool" >&2; exit 1; }
           done
@@ -510,7 +522,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -518,7 +530,7 @@ jobs:
       )
     permissions:
       contents: write
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-publish-apple"]}}', github.run_id)) }}
+    runs-on: macos-26
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -602,7 +614,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -610,15 +622,18 @@ jobs:
       )
     permissions:
       contents: read
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-x64"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
+      - name: Reclaim unused hosted runner image space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
+
       # The image digest pins the same container toolchain used for the
-      # published x86_64 artifacts. This leg runs on the private Linux x64 JIT.
+      # published x86_64 artifacts. This build always uses hosted Ubuntu.
       - name: Build and package in the pinned container
         run: |
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
@@ -644,7 +659,7 @@ jobs:
 
   build-linux-arm64:
     name: Build linux aarch64
-    needs: [plan, build-apple]
+    needs: [plan]
     if: >-
       github.event_name != 'schedule' &&
       (
@@ -652,125 +667,37 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
-        always() && !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.stale_groups, ',linux,')
+        contains(needs.plan.outputs.stale_groups, ',linux,')
       )
     permissions:
       contents: read
-    # This job runs an actual Linux ARM64 VM on the private Apple Silicon JIT.
-    # Its run-scoped source workspace and Colima data live on the task-specific
-    # gamespool0 share so the 200 GiB VM disk does not compete for APFS space.
-    runs-on: ${{ fromJSON(format('{{"group":"private-apple-builds","labels":["self-hosted","macOS","ARM64","private-apple","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-build-linux-arm64"]}}', github.run_id)) }}
+    # Native public Linux ARM64 removes the former Mac, Colima, Tailnet and NFS dependency.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
-    env:
-      PATH: /opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/python@3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      RUN_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}
-      BUILD_ROOT: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/workspace
-      COLIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/c
-      COLIMA_CACHE_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/colima-cache
-      # The run directory supplies isolation. Short names keep Lima's SSH
-      # control socket below Darwin's 104-byte Unix socket path limit.
-      COLIMA_PROFILE: default
-      DOCKER_CONFIG: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/docker
-      # Lima treats non-hidden children as instances. Give it a dedicated
-      # directory so workspace/cache folders cannot prevent network teardown.
-      LIMA_HOME: /Volumes/plezyng-native-build-kspld0/runs/${{ github.run_id }}-${{ github.run_attempt }}/l
-      NFS_STORAGE_ROOT: /Volumes/plezyng-native-build-kspld0
-      # The Mac reaches the build share over Tailscale from home or away.
-      NFS_STORAGE_SOURCE: kspld0.tail.snape.local:/mnt/disks/gamespool0/plezyng-native-build-20261027
     steps:
-      - name: Prepare shared temporary directory
-        shell: bash
-        run: |
-          set -euo pipefail
-          storage_root="${NFS_STORAGE_ROOT:?missing NFS storage root}"
-          expected_source="${NFS_STORAGE_SOURCE:?missing NFS storage source}"
-          test -d "$storage_root" || { echo "missing NFS mountpoint: $storage_root" >&2; exit 1; }
-          expected_mount="${expected_source} on ${storage_root} (nfs,"
-          if ! /sbin/mount | /usr/bin/grep -Fq "$expected_mount"; then
-            echo "expected NFS source '$expected_source' at '$storage_root' is not mounted" >&2
-            /sbin/mount | /usr/bin/grep -F 'plezyng-native-build' || true
-            exit 1
-          fi
-          runs_root="${storage_root}/runs"
-          test -d "$runs_root" || { echo "missing pre-provisioned NFS run directory: $runs_root" >&2; exit 1; }
-          test -w "$runs_root" || { echo "NFS run directory is not writable as $(id -u):$(id -g): $runs_root" >&2; exit 1; }
-          probe_dir="$(/usr/bin/mktemp -d "${runs_root}/.gha-mount-probe.XXXXXX")"
-          cleanup_probe() { /bin/rm -rf "$probe_dir"; }
-          trap cleanup_probe EXIT
-          /bin/dd if=/dev/urandom of="$probe_dir/probe" bs=1048576 count=1 2>/dev/null
-          probe_size="$(/usr/bin/stat -f %z "$probe_dir/probe")"
-          write_sha="$(/usr/bin/shasum -a 256 "$probe_dir/probe" | /usr/bin/awk '{print $1}')"
-          read_sha="$(/bin/cat "$probe_dir/probe" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
-          test "$probe_size" = 1048576 || { echo "NFS write probe size mismatch: $probe_size" >&2; exit 1; }
-          test "$read_sha" = "$write_sha" || { echo "NFS write probe hash mismatch" >&2; exit 1; }
-          command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
-          command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
-          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
-          colima --version
-          docker --version
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Prepare the NFS-backed workspace
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$RUN_ROOT" in
-            /Volumes/plezyng-native-build-kspld0/runs/*) ;;
-            *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
-          esac
-          umask 077
-          rm -rf "$RUN_ROOT"
-          mkdir -p "$BUILD_ROOT/src" "$COLIMA_HOME" "$COLIMA_CACHE_HOME" "$DOCKER_CONFIG" "$LIMA_HOME"
-          rsync -a --delete "$GITHUB_WORKSPACE/" "$BUILD_ROOT/src/"
-
-      - name: Start private Linux ARM64 container runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          command -v colima >/dev/null || { echo "missing preinstalled Colima on the private Apple runner" >&2; exit 1; }
-          command -v docker >/dev/null || { echo "missing Docker CLI on the private Apple runner" >&2; exit 1; }
-          colima --version
-          docker --version
-          # Colima's default profile uses the short Lima instance name colima.
-          for socket_path in "$LIMA_HOME/colima/ssh.sock.1234567890123456" "$COLIMA_HOME/$COLIMA_PROFILE/docker.sock"; do
-            test "${#socket_path}" -lt 104 || { echo "Colima socket path exceeds Darwin limit: $socket_path" >&2; exit 1; }
-          done
-          colima start "$COLIMA_PROFILE" --vm-type vz --arch aarch64 --cpus 4 --memory 8 --disk 200 \
-            --mount "$BUILD_ROOT":w
-          for attempt in $(seq 1 36); do
-            if docker info >/dev/null 2>&1; then
-              docker info --format '{{.OSType}}/{{.Architecture}}'
-              exit 0
-            fi
-            sleep 5
-          done
-          colima status "$COLIMA_PROFILE"
-          docker info
+      - name: Reclaim unused hosted runner image space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
 
       - name: Build and package in the pinned container
-        shell: bash
-        working-directory: ${{ env.BUILD_ROOT }}/src
         env:
           JOBS: '4'
         run: |
-          set -euo pipefail
           KEY="$(python3 scripts/keys.py keys --platform-group linux \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["libmpv-linux"])')"
           KEY="${KEY}" ARCH=aarch64 bash platforms/linux/container-build.sh
 
       - name: Require Plezy ordered PCM ABI
-        working-directory: ${{ env.BUILD_ROOT }}/src
         run: python3 scripts/check_plezy_audio_tap_export.py libmpv-prefix/lib/libmpv.so
 
       - name: Check the tarball and symbols for a build date
-        shell: bash
-        working-directory: ${{ env.BUILD_ROOT }}/src
         run: |
           bash scripts/test_build_date.sh dist/release/*.tar.zst \
             dist/release/libmpv-linux-aarch64-symbols.zip
@@ -780,22 +707,9 @@ jobs:
         with:
           name: linux-aarch64
           path: |
-            ${{ env.BUILD_ROOT }}/src/dist/release/*.tar.zst
-            ${{ env.BUILD_ROOT }}/src/dist/release/libmpv-linux-aarch64-symbols.zip
+            ./dist/release/*.tar.zst
+            ./dist/release/libmpv-linux-aarch64-symbols.zip
           if-no-files-found: error
-
-      - name: Stop the container runtime and remove task workspace
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$RUN_ROOT" in
-            /Volumes/plezyng-native-build-kspld0/runs/*) ;;
-            *) echo "unexpected task workspace path: $RUN_ROOT" >&2; exit 1 ;;
-          esac
-          colima stop "$COLIMA_PROFILE"
-          colima delete --force --data "$COLIMA_PROFILE"
-          rm -rf "$RUN_ROOT"
 
   build-windows:
     name: Build windows ${{ matrix.arch }}
@@ -807,7 +721,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -820,15 +734,11 @@ jobs:
     # arm64 hosts, and aarch64-w64-mingw32 only needs the clang toolchain,
     # which build.sh hardcodes.
     # Pinned to the host environment the cached toolchain was built on: the
-    # LLVM bootstrap links host clang against libc++, so the cached clang
-    # needs the matching libc++/libunwind (LLVM 18) at run time. A different
-    # system library generation fails with "libunwind.so.1: cannot open
-    # shared object file" and meson reports "Unknown compiler(s)". This build
-    # also requires 8 GiB swap plus 4 GiB free for outputs; standard public
-    # Linux runners provide only 14 GiB total disk, so keep this storage-heavy
-    # cross-build on the private JIT host.
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-build-windows"]}}', github.run_id, strategy.job-index)) }}
-    timeout-minutes: 360
+    # LLVM bootstrap links host clang against libc++, so the pinned apt and
+    # pip toolchain below supplies the matching compiler libraries. Both
+    # Windows targets cross-compile on public x64 Ubuntu.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -837,6 +747,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Reclaim unused hosted runner image space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
 
       # Core set validated through the pinned configure (git..libtool;
       # unzip+patch are hard configure requirements, zip is for package.sh),
@@ -994,12 +907,12 @@ jobs:
         (
           github.event_name == 'workflow_dispatch' &&
           inputs.action_tag == 'keep-windows-cache' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       )
     permissions:
       contents: read
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-windows-cache-keepalive"]}}', github.run_id, strategy.job-index)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1055,7 +968,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -1063,7 +976,7 @@ jobs:
       )
     permissions:
       contents: write
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-publish"]}}', github.run_id, strategy.job-index)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1082,7 +995,7 @@ jobs:
 
       - name: Provision and verify artifact tools
         shell: bash
-        run: bash scripts/prepare_linux_artifacts.sh
+        run: bash scripts/prepare_linux_artifacts.sh --public
 
       # A group with nothing stale keeps its committed section and is skipped
       # rather than published; the manifest job's gate below is what proves
@@ -1183,7 +1096,7 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'build' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag != ''
         )
       ) &&
       (
@@ -1191,7 +1104,7 @@ jobs:
       )
     permissions:
       contents: write
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-manifest"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

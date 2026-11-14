@@ -1,4 +1,4 @@
-# ng-runner-policy: private-jit-only-v1
+# ng-runner-policy: public-hosted-v1
 name: Check new version
 
 run-name: >-
@@ -18,10 +18,11 @@ on:
         type: choice
         options: [ci]
       runner_pool_tag:
-        description: Explicit private runner pool
+        description: Public GitHub-hosted runners
         required: true
         type: choice
-        options: [private]
+        options: [public]
+        default: public
 
 jobs:
   check:
@@ -34,13 +35,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-check"]}}', github.run_id)) }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -244,13 +245,13 @@ jobs:
         (
           github.ref == 'refs/heads/main' &&
           inputs.action_tag == 'ci' &&
-          inputs.runner_pool_tag == 'private'
+          inputs.runner_pool_tag == 'public'
         )
       ) &&
       (
         true
       )
-    runs-on: ${{ fromJSON(format('{{"group":"ng-shared-main-jit","labels":["self-hosted","linux","x64","ng-shared-main-mpv-build","ng-main-run-{0}","gha-{0}-{1}-check-deps"]}}', github.run_id, strategy.job-index)) }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
