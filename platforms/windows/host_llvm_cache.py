@@ -37,7 +37,10 @@ def run(args):
 
 
 def normalized_config(text):
-    return re.sub(r'/work/build/windows/(aarch64|x86_64)/', '/work/build/windows/ARCH/', text)
+    # CMake records the absolute build workspace. Normalize only the target
+    # architecture segment so Linux-host LLVM settings compare across the two
+    # Windows targets and across hosted/legacy workspace roots.
+    return re.sub(r'(/build/windows/)(aarch64|x86_64)(/)', r'\1ARCH\3', text)
 
 
 def compiler_identity(binary):

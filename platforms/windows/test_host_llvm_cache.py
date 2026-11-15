@@ -54,6 +54,10 @@ class HostCacheTest(unittest.TestCase):
     def test_only_architecture_named_paths_are_normalized(self):
         self.assertEqual(normalized_config('/work/build/windows/aarch64/install'),
                          normalized_config('/work/build/windows/x86_64/install'))
+        self.assertEqual(
+            normalized_config('/opt/actions-runner/_work/mpv-build/mpv-build/build/windows/aarch64/install'),
+            normalized_config('/opt/actions-runner/_work/mpv-build/mpv-build/build/windows/x86_64/install'),
+        )
         self.assertNotEqual(normalized_config('-march=armv8'), normalized_config('-march=x86-64'))
 
     def test_export_keeps_the_legacy_workspace_path_from_install_logs(self):
