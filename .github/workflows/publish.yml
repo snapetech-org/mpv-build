@@ -811,6 +811,19 @@ jobs:
               python3 scripts/patches.py fetch-pinned llvm windows "$llvm_source"
             fi
 
+            # The donor cache contains build/windows/aarch64 and build/windows/src,
+            # but not the sibling winbuild checkout. Re-fetch that pinned source
+            # before exporting the compiler receipt against its pristine recipe.
+            if [[ ! -d "$winbuild_source/.git" ]]; then
+              if [[ -e "$winbuild_source" ]]; then
+                rmdir "$winbuild_source" || {
+                  echo "Windows source path exists without a Git checkout: $winbuild_source" >&2
+                  exit 1
+                }
+              fi
+              python3 scripts/patches.py fetch-pinned mpv-winbuild-cmake windows "$winbuild_source"
+            fi
+
             test -d "$winbuild_source/.git"
             test -s "$stamps/llvm-install-out.log"
             python3 platforms/windows/host_llvm_cache.py export \

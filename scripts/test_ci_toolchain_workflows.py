@@ -124,6 +124,9 @@ assert 'stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"' in host_llvm
 assert 'winbuild_source="$windows_root/build/windows/mpv-winbuild-cmake"' in host_llvm
 assert 'SRC="$WORK/mpv-winbuild-cmake"' in WINDOWS_BUILD
 assert 'test -d "$winbuild_source/.git"' in host_llvm
+assert 'python3 scripts/patches.py fetch-pinned mpv-winbuild-cmake windows "$winbuild_source"' in host_llvm, (
+    "the host compiler producer must restore the pinned winbuild checkout omitted from the build-state cache"
+)
 assert '--winbuild "$winbuild_source"' in host_llvm
 assert "scripts/patches.py fetch-pinned llvm windows" in host_llvm
 assert "host_llvm_cache.py export" in host_llvm
