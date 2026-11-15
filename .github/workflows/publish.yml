@@ -742,7 +742,8 @@ jobs:
       - name: Resolve Windows and LLVM source pins
         id: pins
         run: |
-          read -r _ winbuild_commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
+          read -r winbuild_url winbuild_commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
+          echo "winbuild_url=${winbuild_url}" >> "$GITHUB_OUTPUT"
           echo "winbuild_commit=${winbuild_commit}" >> "$GITHUB_OUTPUT"
           llvm_commit="$(python3 -c 'import json; d=json.load(open("versions.json"))["components"]["llvm"]; print(d.get("overrides", {}).get("windows", {}).get("commit", d["commit"]))')"
           echo "llvm_commit=${llvm_commit}" >> "$GITHUB_OUTPUT"
@@ -781,6 +782,8 @@ jobs:
         id: host-llvm
         env:
           HOST_LLVM_CACHE_HIT: ${{ steps.host-llvm-archive.outputs.cache-hit }}
+          WINBUILD_URL: ${{ steps.pins.outputs.winbuild_url }}
+          WINBUILD_COMMIT: ${{ steps.pins.outputs.winbuild_commit }}
         run: |
           set -euo pipefail
           if [[ "$HOST_LLVM_CACHE_HIT" != true ]]; then
@@ -812,8 +815,8 @@ jobs:
             fi
 
             # The donor cache contains build/windows/aarch64 and build/windows/src,
-            # but not the sibling winbuild checkout. Re-fetch that pinned source
-            # before exporting the compiler receipt against its pristine recipe.
+            # but not the sibling winbuild checkout. Fetch its pinned commit
+            # directly: upstream master moved past the frozen commit in versions.json.
             if [[ ! -d "$winbuild_source/.git" ]]; then
               if [[ -e "$winbuild_source" ]]; then
                 rmdir "$winbuild_source" || {
@@ -821,10 +824,14 @@ jobs:
                   exit 1
                 }
               fi
-              python3 scripts/patches.py fetch-pinned mpv-winbuild-cmake windows "$winbuild_source"
+              git init --quiet "$winbuild_source"
+              git -C "$winbuild_source" remote add origin "$WINBUILD_URL"
+              git -C "$winbuild_source" fetch --quiet --depth 1 origin "$WINBUILD_COMMIT"
+              git -C "$winbuild_source" checkout --quiet --detach FETCH_HEAD
             fi
 
             test -d "$winbuild_source/.git"
+            test "$(git -C "$winbuild_source" rev-parse HEAD)" = "$WINBUILD_COMMIT"
             test -s "$stamps/llvm-install-out.log"
             python3 platforms/windows/host_llvm_cache.py export \
               --archive .cache/windows/host-llvm.tar.gz \
