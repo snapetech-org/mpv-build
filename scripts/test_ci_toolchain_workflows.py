@@ -121,7 +121,9 @@ assert host_llvm.index('if [[ ! -x "$prefix/bin/llvm" ]]') < host_llvm.index(
     "bash platforms/windows/build.sh aarch64 --host-llvm-only"
 ), "only a donor without a compiler may take the cold bootstrap path"
 assert 'stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"' in host_llvm
-assert 'config="$build_root/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt"' in host_llvm
+assert 'winbuild_source="$windows_root/build/windows/src/mpv-winbuild-cmake"' in host_llvm
+assert 'test -d "$winbuild_source/.git"' in host_llvm
+assert '--winbuild "$winbuild_source"' in host_llvm
 assert "scripts/patches.py fetch-pinned llvm windows" in host_llvm
 assert "host_llvm_cache.py export" in host_llvm
 assert "retention-days: 1" in host_llvm

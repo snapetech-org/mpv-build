@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = 1
+SCHEMA = 2
 MAX_BYTES = 512 * 1024 * 1024
 REQUIRED = ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj')
 
@@ -36,11 +36,21 @@ def run(args):
     return subprocess.check_output(list(map(str, args)), text=True).strip()
 
 
-def normalized_config(text):
-    # CMake records the absolute build workspace. Normalize only the target
-    # architecture segment so Linux-host LLVM settings compare across the two
-    # Windows targets and across hosted/legacy workspace roots.
-    return re.sub(r'(/build/windows/)(aarch64|x86_64)(/)', r'\1ARCH\3', text)
+def winbuild_pin():
+    data = json.loads((ROOT / 'versions.json').read_text())['components']['mpv-winbuild-cmake']
+    data = {**data, **data.get('overrides', {}).get('windows', {})}
+    return data['commit']
+
+
+def llvm_recipe_sha256(winbuild):
+    """Hash the pristine pinned LLVM recipe, not CMake's mutable step stamp."""
+    commit = winbuild_pin()
+    actual = run(['git', '-C', winbuild, 'rev-parse', 'HEAD'])
+    if actual != commit:
+        raise ValueError('Windows build recipe checkout differs from versions.json')
+    recipe = subprocess.check_output(
+        ['git', '-C', str(winbuild), 'show', f'{commit}:toolchain/llvm/llvm.cmake'])
+    return hashlib.sha256(recipe).hexdigest()
 
 
 def compiler_identity(binary):
@@ -108,7 +118,6 @@ def export(args):
     prefix = Path(os.path.abspath(args.prefix))
     stamps = Path(os.path.abspath(args.stamps))
     validate_source(args.source)
-    config = (stamps.parent.parent / 'tmp/llvm-cfgcmd.txt').read_text()
     installed = (stamps / 'llvm-install-out.log').read_text()
     names = {'bin/llvm'}
     names.update(installed_tool_names(installed, prefix))
@@ -134,8 +143,9 @@ def export(args):
     for name in REQUIRED:
         if 'bin/' + name not in files:
             raise ValueError(f'Missing host LLVM tool: {name}')
-    metadata = {'schema': SCHEMA, 'llvmCommit': llvm_pin(), 'configure': config,
-                'normalizedConfigure': normalized_config(config),
+    metadata = {'schema': SCHEMA, 'llvmCommit': llvm_pin(),
+                'winbuildCommit': winbuild_pin(),
+                'llvmRecipeSha256': llvm_recipe_sha256(args.winbuild),
                 'image': args.image, 'files': files,
                 'hostVersion': compiler_identity(prefix / 'bin/clang'),
                 'dynamicLibraries': dynamic_libraries(prefix / 'bin/llvm'),
@@ -194,8 +204,9 @@ def validate(args, prefix, receipt):
     validate_source(args.source)
     if receipt['llvmCommit'] != llvm_pin() or receipt['image'] != args.image:
         raise ValueError('Host LLVM pin or container image differs')
-    if receipt['normalizedConfigure'] != normalized_config(args.config.read_text()):
-        raise ValueError('Host LLVM configure inputs differ')
+    if (receipt['winbuildCommit'] != winbuild_pin()
+            or receipt['llvmRecipeSha256'] != llvm_recipe_sha256(args.winbuild)):
+        raise ValueError('Host LLVM build recipe differs')
     if receipt['dynamicLibraries'] != dynamic_libraries(prefix / 'bin/llvm'):
         raise ValueError('Host LLVM runtime library bytes differ')
     if compiler_identity(prefix / 'bin/clang') != receipt['hostVersion']:
@@ -252,8 +263,9 @@ def consume(args):
             # discovery too; staging success alone is not installation proof.
             validate(args, args.prefix.resolve(), receipt)
             result = {'kind': 'imported-host-llvm', 'llvmCommit': llvm_pin(),
+                      'winbuildCommit': receipt['winbuildCommit'],
+                      'llvmRecipeSha256': receipt['llvmRecipeSha256'],
                       'archiveSha256': args.sha256, 'image': args.image,
-                      'normalizedConfigure': receipt['normalizedConfigure'],
                       'hostCompilerSha256': receipt['files']['bin/llvm']['sha256'],
                       'coffTargetsVerified': ['x86_64', 'aarch64']}
             (args.prefix / 'host-llvm-cache-receipt.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -268,11 +280,9 @@ def prepare(args):
         raise ValueError('Pinned LLVM recipe does not declare its runtime resource version')
     evidence = args.build / 'host-llvm-cache'
     evidence.mkdir(parents=True, exist_ok=True)
-    snapshot = evidence / 'expected-config.txt'
-    shutil.copy2(args.config, snapshot)
     common = [str(Path(__file__).resolve()), '--archive', str(args.archive.resolve()),
               '--source', str(args.source.resolve()), '--image', args.image,
-              '--config', str(snapshot.resolve()), '--sha256', args.sha256]
+              '--winbuild', str(args.winbuild.resolve()), '--sha256', args.sha256]
     def quote(value):
         if any(char in value for char in ('$',';','\n','\r')):
             raise ValueError('Unsafe character in host LLVM CMake argument')
@@ -301,18 +311,17 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--prefix', type=Path)
     parser.add_argument('--stamps', type=Path)
-    parser.add_argument('--config', type=Path)
     parser.add_argument('--sha256')
     parser.add_argument('--build', type=Path)
     parser.add_argument('--winbuild', type=Path)
     args = parser.parse_args()
     if args.command == 'export':
-        if not args.prefix or not args.stamps:
-            parser.error('export requires --prefix and --stamps')
+        if not args.prefix or not args.stamps or not args.winbuild:
+            parser.error('export requires --prefix, --stamps and --winbuild')
         export(args)
     else:
-        if not args.config or not re.fullmatch('[0-9a-f]{64}', args.sha256 or '') or (args.command == 'install' and not args.prefix):
-            parser.error('consume requires --config, --sha256 and an install --prefix')
+        if not args.winbuild or not re.fullmatch('[0-9a-f]{64}', args.sha256 or '') or (args.command == 'install' and not args.prefix):
+            parser.error('consume requires --winbuild and --sha256, plus an install --prefix')
         if args.command == 'prepare':
             if not args.build or not args.winbuild or not args.prefix:
                 parser.error('prepare requires --build, --winbuild and --prefix')

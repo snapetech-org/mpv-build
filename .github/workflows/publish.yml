@@ -790,7 +790,7 @@ jobs:
             llvm_source="$windows_root/build/windows/src/llvm"
             prefix="$build_root/install"
             stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"
-            config="$build_root/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt"
+            winbuild_source="$windows_root/build/windows/src/mpv-winbuild-cmake"
 
             # A completed Windows build already contains the host compiler.
             # Export it before running build.sh: winbuild drops LLVM stamps
@@ -811,12 +811,13 @@ jobs:
               python3 scripts/patches.py fetch-pinned llvm windows "$llvm_source"
             fi
 
-            test -s "$config"
+            test -d "$winbuild_source/.git"
             test -s "$stamps/llvm-install-out.log"
             python3 platforms/windows/host_llvm_cache.py export \
               --archive .cache/windows/host-llvm.tar.gz \
               --prefix "$prefix" \
               --stamps "$stamps" \
+              --winbuild "$winbuild_source" \
               --source "$llvm_source" \
               --image ubuntu-24.04
           fi

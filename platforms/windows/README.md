@@ -83,6 +83,7 @@ export only its host tools and Clang resource headers after installation:
 python3 platforms/windows/host_llvm_cache.py export \
   --prefix build/windows/aarch64/install \
   --stamps build/windows/aarch64/toolchain/llvm-prefix/src/llvm-stamp \
+  --winbuild build/windows/src/mpv-winbuild-cmake \
   --source build/windows/src/llvm --image "$container_image_digest" \
   --archive "$task_scratch/host-llvm.tar.gz"
 ```
@@ -91,10 +92,13 @@ Keep the printed SHA-256 and archive together. On a compatible host with the
 same pinned LLVM source and configuration, set `PLEZY_WINDOWS_HOST_LLVM_CACHE`,
 `PLEZY_WINDOWS_HOST_LLVM_SHA256` and `PLEZY_WINDOWS_HOST_LLVM_IMAGE` before
 running `build.sh`. The driver acquires the pinned LLVM source checkout if it
-is absent, since target runtimes still compile from that source. It compares
-the original CMake arguments, source
-commit, container image, runtime-library hashes, relocated resource headers,
-and real C++ COFF compilation for both targets. Its LLVM ExternalProject then
+is absent, since target runtimes still compile from that source. It checks the
+pinned winbuild commit and pristine LLVM recipe hash, LLVM source commit,
+container image, runtime-library hashes, relocated resource headers, and real
+C++ COFF compilation for both targets. It does not compare CMake's generated
+configure stamp: importing the host compiler intentionally changes that stamp
+to an empty configure command, so it differs between a warm donor and a fresh
+target build. Its LLVM ExternalProject then
 runs explicit cache validation and installation steps. The installed receipt
 records the imported compiler's archive and binary hashes.
 

@@ -205,7 +205,6 @@ if [[ -n "${PLEZY_WINDOWS_HOST_LLVM_CACHE:-}" ]]; then
     --sha256 "${PLEZY_WINDOWS_HOST_LLVM_SHA256:?host LLVM cache checksum required}" \
     --image "${PLEZY_WINDOWS_HOST_LLVM_IMAGE:?host LLVM container image required}" \
     --source "$WORK/src/llvm" --prefix "$BUILD/install" \
-    --config "$BUILD/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt" \
     --build "$BUILD" --winbuild "$SRC"
   cmake "${cmake_args[@]}"
 fi
