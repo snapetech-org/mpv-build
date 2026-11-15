@@ -114,7 +114,15 @@ assert "contains(needs.plan.outputs.stale_groups, ',windows,')" in host_llvm
 assert "windows-ep3-aarch64-" in host_llvm and "windows-ep2-aarch64-" in host_llvm, (
     "the compiler producer must resume from the preserved Windows toolchain cache"
 )
-assert "bash platforms/windows/build.sh aarch64 --host-llvm-only" in host_llvm
+assert 'if [[ ! -x "$prefix/bin/llvm" ]]' in host_llvm, (
+    "a completed donor compiler must be reused without rebuilding LLVM"
+)
+assert host_llvm.index('if [[ ! -x "$prefix/bin/llvm" ]]') < host_llvm.index(
+    "bash platforms/windows/build.sh aarch64 --host-llvm-only"
+), "only a donor without a compiler may take the cold bootstrap path"
+assert 'stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"' in host_llvm
+assert 'config="$build_root/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt"' in host_llvm
+assert "scripts/patches.py fetch-pinned llvm windows" in host_llvm
 assert "host_llvm_cache.py export" in host_llvm
 assert "retention-days: 1" in host_llvm
 assert "PLEZY_WINDOWS_HOST_LLVM_CACHE" in windows

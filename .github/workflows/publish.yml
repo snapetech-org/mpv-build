@@ -777,21 +777,47 @@ jobs:
         timeout-minutes: 20
         run: bash platforms/windows/install-build-dependencies.sh
 
-      - name: Build or resume the host compiler and export it
+      - name: Export the restored host compiler
         id: host-llvm
         env:
           HOST_LLVM_CACHE_HIT: ${{ steps.host-llvm-archive.outputs.cache-hit }}
         run: |
           set -euo pipefail
           if [[ "$HOST_LLVM_CACHE_HIT" != true ]]; then
-            bash platforms/windows/build.sh aarch64 --host-llvm-only
             mkdir -p .cache/windows
             windows_root="${MPV_WINDOWS_WORKSPACE:-$GITHUB_WORKSPACE}"
+            build_root="$windows_root/build/windows/aarch64"
+            llvm_source="$windows_root/build/windows/src/llvm"
+            prefix="$build_root/install"
+            stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"
+            config="$build_root/toolchain/llvm-prefix/tmp/llvm-cfgcmd.txt"
+
+            # A completed Windows build already contains the host compiler.
+            # Export it before running build.sh: winbuild drops LLVM stamps
+            # when its checkout is missing and would otherwise rebuild LLVM
+            # from scratch for hours just to recreate the same compiler.
+            if [[ ! -x "$prefix/bin/llvm" ]]; then
+              echo "No completed LLVM compiler in the restored donor; bootstrapping it once."
+              bash platforms/windows/build.sh aarch64 --host-llvm-only
+            fi
+
+            if [[ ! -d "$llvm_source/.git" ]]; then
+              if [[ -e "$llvm_source" ]]; then
+                rmdir "$llvm_source" || {
+                  echo "LLVM source path exists without a Git checkout: $llvm_source" >&2
+                  exit 1
+                }
+              fi
+              python3 scripts/patches.py fetch-pinned llvm windows "$llvm_source"
+            fi
+
+            test -s "$config"
+            test -s "$stamps/llvm-install-out.log"
             python3 platforms/windows/host_llvm_cache.py export \
               --archive .cache/windows/host-llvm.tar.gz \
-              --prefix "$windows_root/build/windows/aarch64/install" \
-              --stamps "$windows_root/build/windows/aarch64/llvm-stamp" \
-              --source "$windows_root/build/windows/src/llvm" \
+              --prefix "$prefix" \
+              --stamps "$stamps" \
+              --source "$llvm_source" \
               --image ubuntu-24.04
           fi
           test -s .cache/windows/host-llvm.tar.gz

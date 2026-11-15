@@ -98,6 +98,15 @@ and real C++ COFF compilation for both targets. Its LLVM ExternalProject then
 runs explicit cache validation and installation steps. The installed receipt
 records the imported compiler's archive and binary hashes.
 
+In CI, the producer exports the compiler already present in the restored
+Windows build tree before it runs any build command. The donor may have
+completed LLVM installation stamps but no source checkout; the workflow fetches
+the exact pinned source separately, then validates the existing compiler and
+exports it. It bootstraps LLVM only when the restored donor has no executable
+compiler. Keep the stamp path at
+`build/windows/aarch64/toolchain/llvm-prefix/src/llvm-stamp`; using a different
+path makes the exporter read the wrong CMake configuration.
+
 Target wrappers, CRT/sysroot, runtime libraries and build stamps remain specific
 to the receiving architecture. Stop only your own build before changing its
 compiler route; preserve its partial build directory. Never replace a running
