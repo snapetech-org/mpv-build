@@ -708,9 +708,105 @@ jobs:
             ./dist/release/libmpv-linux-aarch64-symbols.zip
           if-no-files-found: error
 
+  prepare-windows-host-llvm:
+    name: Prepare shared Windows host LLVM
+    needs: [plan]
+    if: >-
+      github.event_name != 'schedule' &&
+      (
+        github.event_name != 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          inputs.action_tag == 'build' &&
+          inputs.runner_pool_tag != ''
+        )
+      ) &&
+      contains(needs.plan.outputs.stale_groups, ',windows,')
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    outputs:
+      sha256: ${{ steps.host-llvm.outputs.sha256 }}
+      llvm_commit: ${{ steps.pins.outputs.llvm_commit }}
+      winbuild_commit: ${{ steps.pins.outputs.winbuild_commit }}
+      cache_hit: ${{ steps.host-llvm-archive.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Reclaim unused hosted runner image space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
+
+      - name: Resolve Windows and LLVM source pins
+        id: pins
+        run: |
+          read -r _ winbuild_commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
+          echo "winbuild_commit=${winbuild_commit}" >> "$GITHUB_OUTPUT"
+          llvm_commit="$(python3 -c 'import json; d=json.load(open("versions.json"))["components"]["llvm"]; print(d.get("overrides", {}).get("windows", {}).get("commit", d["commit"]))')"
+          echo "llvm_commit=${llvm_commit}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore shared host LLVM archive
+        id: host-llvm-archive
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/windows/host-llvm.tar.gz
+          key: windows-host-llvm-v1-${{ steps.pins.outputs.llvm_commit }}-${{ steps.pins.outputs.winbuild_commit }}-${{ hashFiles('toolchain/windows.txt', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
+
+      - name: Restore a completed Windows toolchain as an LLVM donor
+        if: steps.host-llvm-archive.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/windows/aarch64
+            build/windows/src
+            build/windows/rustup
+          key: windows-host-llvm-donor-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            windows-ep4-aarch64-
+            windows-ep3-aarch64-
+            windows-ep2-aarch64-
+
+      - name: Repair restored Windows workspace path
+        if: steps.host-llvm-archive.outputs.cache-hit != 'true'
+        run: python3 scripts/windows_cache_workspace.py aarch64
+
+      - name: Install Windows build dependencies
+        if: steps.host-llvm-archive.outputs.cache-hit != 'true'
+        run: bash platforms/windows/install-build-dependencies.sh
+
+      - name: Build or resume the host compiler and export it
+        id: host-llvm
+        env:
+          HOST_LLVM_CACHE_HIT: ${{ steps.host-llvm-archive.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [[ "$HOST_LLVM_CACHE_HIT" != true ]]; then
+            bash platforms/windows/build.sh aarch64 --host-llvm-only
+            mkdir -p .cache/windows
+            windows_root="${MPV_WINDOWS_WORKSPACE:-$GITHUB_WORKSPACE}"
+            python3 platforms/windows/host_llvm_cache.py export \
+              --archive .cache/windows/host-llvm.tar.gz \
+              --prefix "$windows_root/build/windows/aarch64/install" \
+              --stamps "$windows_root/build/windows/aarch64/llvm-stamp" \
+              --source "$windows_root/build/windows/src/llvm" \
+              --image ubuntu-24.04
+          fi
+          test -s .cache/windows/host-llvm.tar.gz
+          echo "sha256=$(sha256sum .cache/windows/host-llvm.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload shared host LLVM archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-host-llvm
+          path: .cache/windows/host-llvm.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   build-windows:
     name: Build windows ${{ matrix.arch }}
-    needs: plan
+    needs: [plan, prepare-windows-host-llvm]
     if: >-
       github.event_name != 'schedule' &&
       (
@@ -748,33 +844,8 @@ jobs:
       - name: Reclaim unused hosted runner image space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
 
-      # Core set validated through the pinned configure (git..libtool;
-      # unzip+patch are hard configure requirements, zip is for package.sh),
-      # plus the winbuild README ubuntu set the full ~60-package graph needs.
-      # libc++-dev and lld: the llvm bootstrap compiles with the host clang
-      # against libc++. meson comes from pip, exactly as the winbuild README
-      # instructs: apt meson (1.3.2 on noble) passes winbuild's >=1.3.0
-      # configure gate but the branch-tip packages want current meson --
-      # fontconfig main already requires >= 1.11.0.
       - name: Install dependencies
-        run: |
-          # The runner image ships Google's Chrome apt source, which has
-          # served a mismatching index more than once; nothing here uses it.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
-          sudo apt-get update
-          sudo apt-get install -y \
-            git cmake ninja-build build-essential pkg-config curl wget unzip \
-            zip patch ca-certificates python3 python3-pip autoconf automake libtool \
-            libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \
-            gcc-multilib g++-multilib clang lld libc++-dev libc++abi-dev \
-            libgmp-dev libmpfr-dev libmpc-dev libgcrypt-dev gperf ragel \
-            texinfo autopoint re2c asciidoc rst2pdf python3-docutils \
-            python3-mako python3-jsonschema p7zip-full ccache
-          python3 -m pip install --break-system-packages --user meson
-          meson_bin="$(python3 -m site --user-base)/bin"
-          echo "$meson_bin" >> "$GITHUB_PATH"
-          export PATH="$meson_bin:$PATH"
-          meson --version
+        run: bash platforms/windows/install-build-dependencies.sh
 
       # pin_packages.py is the one place that resolves the windows pin, so the
       # cache key below cannot describe a different commit than build.sh
@@ -785,10 +856,11 @@ jobs:
           read -r _ commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
-      # The llvm/rust bootstrap takes hours and the dependency graph builds
-      # ~60 packages, so the whole build state is cached, mirroring upstream
-      # winbuild's own CI (mpv_clang.yml caches src_packages, clang_root and
-      # the entire per-arch build tree). Skipping is stamp-driven ninja:
+      # Each per-arch dependency graph builds ~60 packages, so preserve its
+      # sources, stamps, installed prefix and ccache as one build-state cache.
+      # prepare-windows-host-llvm supplies the separately validated host
+      # compiler; this cache retains target runtimes, sysroots and package
+      # state. Skipping is stamp-driven ninja:
       # an ExternalProject step re-runs only when its stamp is missing/older
       # or its command line changed, and ninja treats an edge absent from
       # .ninja_log as changed -- so the per-arch tree (stamps + .ninja_log +
@@ -803,11 +875,10 @@ jobs:
       # run (upstream's BUILDDATE naming dirties its packaging steps daily,
       # and libmpv must relink against whatever changed underneath it anyway)
       # and always runs the toolchain targets -- no-ops when clean -- which
-      # makes the last, pin-free restore tier safe across winbuild bumps.
-      # Keep one immutable cache per arch, driver revision and input set
-      # instead of adding a duplicate multi-gigabyte entry for every run.
-      # Restore tiers can reuse a compatible tree across driver/pin changes.
-      # The ep2 fallback adopts a still-live cache from the old run-scoped keys.
+      # makes the pin-free restore tier safe across winbuild bumps. Keep one
+      # immutable cache per arch and input set. Stable inputs precede the
+      # driver hash so driver-only edits keep restoring compatible trees.
+      # EP3/EP2 fallbacks migrate caches made before this key layout.
       - name: Restore build state cache
         uses: actions/cache/restore@v4
         with:
@@ -815,20 +886,23 @@ jobs:
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
           restore-keys: |
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+            windows-ep4-${{ matrix.arch }}-
+            windows-ep3-${{ matrix.arch }}-
+            windows-ep2-${{ matrix.arch }}-
 
       - name: Repair restored Windows workspace path
         run: python3 scripts/windows_cache_workspace.py "${{ matrix.arch }}"
+
+      - name: Download shared host LLVM archive
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-host-llvm
+          path: .cache/windows
 
       # shaderc/glslang's doc.cpp compile used about 7 GiB by itself on the
       # Ubuntu 24.04 hosted runner. Add disk-backed swap for compiler memory
@@ -856,6 +930,10 @@ jobs:
           df -h /var/tmp
 
       - name: Build libmpv-windows (${{ matrix.arch }})
+        env:
+          PLEZY_WINDOWS_HOST_LLVM_CACHE: .cache/windows/host-llvm.tar.gz
+          PLEZY_WINDOWS_HOST_LLVM_SHA256: ${{ needs.prepare-windows-host-llvm.outputs.sha256 }}
+          PLEZY_WINDOWS_HOST_LLVM_IMAGE: ubuntu-24.04
         run: bash platforms/windows/build.sh ${{ matrix.arch }}
 
       - name: Require Plezy ordered PCM ABI (${{ matrix.arch }})
@@ -881,14 +959,14 @@ jobs:
         run: bash scripts/test_build_date.sh dist/release/*.zip
 
       - name: Save build state cache
-        if: always()
+        if: always() && !cancelled()
         uses: actions/cache/save@v4
         with:
           path: |
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
 
       - name: Upload platform build (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
@@ -896,6 +974,34 @@ jobs:
           name: windows-${{ matrix.arch }}
           path: ./dist/release/*.zip
           if-no-files-found: error
+
+  save-windows-host-llvm-cache:
+    name: Save shared Windows host LLVM cache
+    needs: [plan, prepare-windows-host-llvm, build-windows]
+    if: >-
+      always() &&
+      needs.prepare-windows-host-llvm.result == 'success' &&
+      needs.prepare-windows-host-llvm.outputs.cache_hit != 'true' &&
+      contains(needs.plan.outputs.stale_groups, ',windows,')
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-host-llvm
+          path: .cache/windows
+
+      - name: Save shared host LLVM archive
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/windows/host-llvm.tar.gz
+          key: windows-host-llvm-v1-${{ needs.prepare-windows-host-llvm.outputs.llvm_commit }}-${{ needs.prepare-windows-host-llvm.outputs.winbuild_commit }}-${{ hashFiles('toolchain/windows.txt', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
 
   windows-cache-keepalive:
     name: Keep Windows cache (${{ matrix.arch }})
@@ -928,6 +1034,9 @@ jobs:
           read -r _ commit < <(python3 platforms/windows/pin_packages.py --print-winbuild-pin)
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
+          llvm_commit="$(python3 -c 'import json; d=json.load(open("versions.json"))["components"]["llvm"]; print(d.get("overrides", {}).get("windows", {}).get("commit", d["commit"]))')"
+          echo "llvm_commit=${llvm_commit}" >> "$GITHUB_OUTPUT"
+
       # GitHub caps this repository's cache retention at seven days. Restoring
       # twice a week refreshes last access without running a build.
       - name: Refresh Windows build state cache
@@ -937,17 +1046,21 @@ jobs:
             build/windows/${{ matrix.arch }}
             build/windows/src
             build/windows/rustup
-          key: windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}
+          key: windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
           restore-keys: |
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('platforms/windows/build.sh', 'platforms/windows/pin_packages.py', 'platforms/windows/host_llvm_cache.py') }}-${{ hashFiles('toolchain/windows.txt') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep3-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
-            windows-ep2-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('versions.json', 'patches/**') }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-${{ steps.winbuild.outputs.commit }}-
+            windows-ep4-${{ matrix.arch }}-${{ hashFiles('toolchain/windows.txt') }}-
+            windows-ep4-${{ matrix.arch }}-
+            windows-ep3-${{ matrix.arch }}-
+            windows-ep2-${{ matrix.arch }}-
+
+      - name: Refresh shared host LLVM archive
+        if: matrix.arch == 'x86_64'
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/windows/host-llvm.tar.gz
+          key: windows-host-llvm-v1-${{ steps.winbuild.outputs.llvm_commit }}-${{ steps.winbuild.outputs.commit }}-${{ hashFiles('toolchain/windows.txt', 'platforms/windows/host_llvm_cache.py', 'platforms/windows/install-build-dependencies.sh') }}
 
   publish:
     name: Publish ${{ matrix.group }}

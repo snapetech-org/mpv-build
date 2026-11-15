@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Windows platform driver: build the libmpv dev package with mpv-winbuild-cmake.
 #
-# usage: platforms/windows/build.sh <x86_64|aarch64> [--configure-only]
+# usage: platforms/windows/build.sh <x86_64|aarch64> [--configure-only|--host-llvm-only]
 #
 # Stages:
 #   1. shallow-fetch shinchiro/mpv-winbuild-cmake at the commit pinned by the
@@ -37,7 +37,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: platforms/windows/build.sh <x86_64|aarch64> [--configure-only]" >&2
+  echo "usage: platforms/windows/build.sh <x86_64|aarch64> [--configure-only|--host-llvm-only]" >&2
   exit 2
 }
 
@@ -47,8 +47,11 @@ case "$ARCH" in
   *) usage ;;
 esac
 CONFIGURE_ONLY=0
+HOST_LLVM_ONLY=0
 if [[ "${2:-}" == "--configure-only" ]]; then
   CONFIGURE_ONLY=1
+elif [[ "${2:-}" == "--host-llvm-only" ]]; then
+  HOST_LLVM_ONLY=1
 elif [[ -n "${2:-}" ]]; then
   usage
 fi
@@ -366,6 +369,10 @@ if [[ ! -x "$WORK/rustup/.cargo/bin/cargo" ]]; then
 fi
 echo "==> toolchain targets (llvm, rustup, llvm-clang; no-ops when clean)"
 ninja -C "$BUILD" llvm
+if [[ "$HOST_LLVM_ONLY" == 1 ]]; then
+  echo "==> --host-llvm-only: stopping after the reusable Linux host compiler"
+  exit 0
+fi
 ninja -C "$BUILD" rustup
 ninja -C "$BUILD" llvm-clang
 

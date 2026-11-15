@@ -50,7 +50,9 @@ for workflow, name, minutes in (
     (PUBLISH, "publish-apple", 30),
     (PUBLISH, "build-linux-x64", 120),
     (PUBLISH, "build-linux-arm64", 120),
+    (PUBLISH, "prepare-windows-host-llvm", 150),
     (PUBLISH, "build-windows", 120),
+    (PUBLISH, "save-windows-host-llvm-cache", 10),
     (PUBLISH, "publish", 30),
     (PUBLISH, "manifest", 15),
     (ANDROID, "natives", 120),
@@ -70,8 +72,12 @@ def assert_public_hosted_ubuntu(job: str, label: str) -> None:
 windows = job_section(PUBLISH, "build-windows")
 assert_public_hosted_ubuntu(windows, "Windows cross-build")
 assert "arch: [x86_64, aarch64]" in windows, "Windows ARM64 must remain in the build matrix"
+assert "needs: [plan, prepare-windows-host-llvm]" in windows, (
+    "both Windows architectures must wait for the shared host compiler"
+)
 windows_cache_restore = named_step(windows, "Restore build state cache")
 windows_cache_repair = named_step(windows, "Repair restored Windows workspace path")
+windows_host_archive = named_step(windows, "Download shared host LLVM archive")
 assert "python3 scripts/windows_cache_workspace.py" in windows_cache_repair, (
     "the Windows build must restore the original workspace path for cached CMake state"
 )
@@ -92,8 +98,34 @@ assert windows.index(windows_swap) < windows.index(
     named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
 ), "compiler swap must be enabled before the Windows build starts"
 assert windows.index(windows_cache_restore) < windows.index(windows_cache_repair) < windows.index(
+    windows_host_archive
+) < windows.index(
     named_step(windows, "Build libmpv-windows (${{ matrix.arch }})")
 ), "the cached workspace path must be repaired before CMake reuses the build tree"
+for prefix in ("windows-ep4-${{ matrix.arch }}-", "windows-ep3-${{ matrix.arch }}-",
+               "windows-ep2-${{ matrix.arch }}-"):
+    assert prefix in windows_cache_restore, f"Windows cache restore must support {prefix}"
+assert windows_cache_restore.index("windows-ep4-${{ matrix.arch }}-") < windows_cache_restore.index(
+    "windows-ep3-${{ matrix.arch }}-"
+), "current build state must be preferred before migration caches"
+host_llvm = job_section(PUBLISH, "prepare-windows-host-llvm")
+assert_public_hosted_ubuntu(host_llvm, "shared Windows host LLVM producer")
+assert "contains(needs.plan.outputs.stale_groups, ',windows,')" in host_llvm
+assert "windows-ep3-aarch64-" in host_llvm and "windows-ep2-aarch64-" in host_llvm, (
+    "the compiler producer must resume from the preserved Windows toolchain cache"
+)
+assert "bash platforms/windows/build.sh aarch64 --host-llvm-only" in host_llvm
+assert "host_llvm_cache.py export" in host_llvm
+assert "retention-days: 1" in host_llvm
+assert "PLEZY_WINDOWS_HOST_LLVM_CACHE" in windows
+assert "PLEZY_WINDOWS_HOST_LLVM_SHA256" in windows
+assert 'host_llvm_cache.py" prepare' in WINDOWS_BUILD
+assert WINDOWS_BUILD.index('ninja -C "$BUILD" llvm') < WINDOWS_BUILD.index(
+    'if [[ "$HOST_LLVM_ONLY" == 1 ]]'
+) < WINDOWS_BUILD.index('\nninja -C "$BUILD" rustup\n'), (
+    "the host-only build must stop immediately after compiling reusable LLVM"
+)
+assert 'elif [[ "${2:-}" == "--host-llvm-only" ]]' in WINDOWS_BUILD
 for token in (
     'NINJA_WRAPPER_DIR="$WORK/ninja-wrapper"',
     'cat > "$NINJA_WRAPPER_DIR/ninja" <<\'SH\'',
@@ -174,16 +206,31 @@ assert "Limit Ninja concurrency to the guest memory budget" not in windows, (
     "the serial Ninja wrapper must live in the keyed Windows build driver"
 )
 windows_install = named_step(windows, "Install dependencies")
+assert "platforms/windows/install-build-dependencies.sh" in windows_install
+windows_dependencies = (ROOT / "platforms/windows/install-build-dependencies.sh").read_text()
 windows_meson_tokens = (
     "python3 -m pip install --break-system-packages --user meson",
     'meson_bin="$(python3 -m site --user-base)/bin"',
     'echo "$meson_bin" >> "$GITHUB_PATH"',
     "meson --version",
 )
-windows_meson_positions = [windows_install.index(token) for token in windows_meson_tokens]
+windows_meson_positions = [windows_dependencies.index(token) for token in windows_meson_tokens]
 assert windows_meson_positions == sorted(windows_meson_positions), (
     "Windows x64 and ARM64 cross-builds must put the user Meson bin directory on PATH before use"
 )
+assert "platforms/windows/install-build-dependencies.sh" in named_step(
+    host_llvm, "Install Windows build dependencies"
+), "the host compiler producer and target builds must share their dependencies"
+keepalive = job_section(PUBLISH, "windows-cache-keepalive")
+assert "windows-ep4-${{ matrix.arch }}-" in named_step(
+    keepalive, "Refresh Windows build state cache"
+)
+assert "windows-host-llvm-v1-" in named_step(keepalive, "Refresh shared host LLVM archive")
+assert "if: always() && !cancelled()" in named_step(windows, "Save build state cache")
+save_host_llvm = job_section(PUBLISH, "save-windows-host-llvm-cache")
+assert "needs: [plan, prepare-windows-host-llvm, build-windows]" in save_host_llvm
+assert "needs.prepare-windows-host-llvm.outputs.cache_hit != 'true'" in save_host_llvm
+assert "actions/cache/save@v4" in save_host_llvm
 
 patches = job_section(CI, "patches")
 patch_test_tools = named_step(patches, "Install ffmpeg")

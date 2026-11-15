@@ -68,18 +68,40 @@ def validate_source(source):
         raise ValueError('LLVM source contains unrecorded changes')
 
 
+def safe_host_cache_path(name):
+    path = PurePosixPath(name)
+    return ((len(path.parts) == 2 and path.parts[0] == 'bin' and path.name != 'llvm-config')
+            or name.startswith('lib/clang/22/include/'))
+
+
+def installed_tool_names(installed, prefix):
+    names = set()
+    prefixes = (prefix, prefix.resolve())
+    for absolute in re.findall(r'^-- (?:Installing|Up-to-date): (.+)$', installed, re.MULTILINE):
+        path = Path(absolute)
+        for candidate in prefixes:
+            try:
+                relative = path.relative_to(candidate).as_posix()
+            except ValueError:
+                continue
+            if relative.startswith('bin/') and '/' not in relative[4:]:
+                names.add(relative)
+            break
+    return names
+
+
 def export(args):
-    prefix, stamps = args.prefix.resolve(), args.stamps.resolve()
+    # Keep the lexical workspace path: cached CMake install logs name the
+    # original /opt/actions-runner prefix while the hosted checkout is exposed
+    # through that path as a symlink. Resolving it here would make every log
+    # entry appear outside the install prefix.
+    prefix = Path(os.path.abspath(args.prefix))
+    stamps = Path(os.path.abspath(args.stamps))
     validate_source(args.source)
     config = (stamps.parent.parent / 'tmp/llvm-cfgcmd.txt').read_text()
     installed = (stamps / 'llvm-install-out.log').read_text()
     names = {'bin/llvm'}
-    for absolute in re.findall(r'^-- (?:Installing|Up-to-date): (.+)$', installed, re.MULTILINE):
-        path = Path(absolute)
-        if path.is_relative_to(prefix):
-            relative = path.relative_to(prefix).as_posix()
-            if relative.startswith('bin/') and '/' not in relative[4:]:
-                names.add(relative)
+    names.update(installed_tool_names(installed, prefix))
     for alias in re.findall(r'^-- Creating ([-+.\w]+)$', installed, re.MULTILINE):
         if alias != 'llvm-config':
             names.add('bin/' + alias)
@@ -138,8 +160,7 @@ def unpack(archive, expected_sha, destination):
             raise ValueError('Host LLVM archive inventory differs from receipt')
         for name, info in receipt['files'].items():
             path = PurePosixPath(name)
-            allowed = (len(path.parts) == 2 and path.parts[0] == 'bin' and path.name != 'llvm-config') or name.startswith('lib/clang/22/include/')
-            if not allowed or path.is_absolute() or '..' in path.parts or '\\' in name:
+            if not safe_host_cache_path(name) or path.is_absolute() or '..' in path.parts or '\\' in name:
                 raise ValueError('Unsafe host LLVM cache path')
             member = bundle.getmember(name)
             target = destination / name
@@ -197,12 +218,21 @@ def consume(args):
                 target = args.prefix / name
                 if target.exists() or target.is_symlink():
                     same = (target.is_symlink() and os.readlink(target) == info.get('link')) if 'link' in info else (target.is_file() and not target.is_symlink() and sha(target) == info['sha256'])
-                    if not same:
-                        raise ValueError(f'Refusing to overwrite another compiler file: {target}')
+                    if same:
+                        continue
+                    if not safe_host_cache_path(name):
+                        raise ValueError(f'Refusing to overwrite a non-LLVM path: {target}')
+                    if target.is_symlink() and os.readlink(target) != 'llvm':
+                        raise ValueError(f'Refusing to replace an unexpected compiler alias: {target}')
+                    if not target.is_file() and not target.is_symlink():
+                        raise ValueError(f'Refusing to replace a non-file compiler path: {target}')
             for name, info in receipt['files'].items():
                 target = args.prefix / name
                 if target.exists() or target.is_symlink():
-                    continue
+                    same = (target.is_symlink() and os.readlink(target) == info.get('link')) if 'link' in info else (target.is_file() and not target.is_symlink() and sha(target) == info['sha256'])
+                    if same:
+                        continue
+                    target.unlink()
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if 'link' in info:
                     target.symlink_to(info['link'])

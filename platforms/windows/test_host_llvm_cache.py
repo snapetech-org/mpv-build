@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tarfile
 import tempfile
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from host_llvm_cache import normalized_config, prepare, unpack
+from host_llvm_cache import consume, installed_tool_names, normalized_config, prepare, unpack
 
 
 class HostCacheTest(unittest.TestCase):
@@ -30,9 +31,10 @@ class HostCacheTest(unittest.TestCase):
             self.assertIn('INSTALL_COMMAND', recipe.read_text())
             self.assertEqual((args.build/'host-llvm-cache/expected-config.txt').read_text(), config.read_text())
 
-    def bundle(self, root, files, contents, extra=()):
+    def bundle(self, root, files, contents, extra=(), receipt_fields=None):
         archive = root / 'cache.tar.gz'
         receipt = {'schema': 1, 'files': files}
+        receipt.update(receipt_fields or {})
         with tarfile.open(archive, 'w:gz') as tar:
             payload = json.dumps(receipt).encode()
             member = tarfile.TarInfo('receipt.json'); member.size = len(payload)
@@ -54,6 +56,22 @@ class HostCacheTest(unittest.TestCase):
                          normalized_config('/work/build/windows/x86_64/install'))
         self.assertNotEqual(normalized_config('-march=armv8'), normalized_config('-march=x86-64'))
 
+    def test_export_keeps_the_legacy_workspace_path_from_install_logs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / 'runner' / 'workspace'
+            legacy = root / 'opt/actions-runner/_work/mpv-build/mpv-build'
+            real.mkdir(parents=True)
+            legacy.parent.mkdir(parents=True)
+            legacy.symlink_to(real, target_is_directory=True)
+            prefix = legacy / 'build/windows/aarch64/install'
+            installed = f'-- Installing: {prefix}/bin/llvm-readobj\n'
+            log_prefix = Path(os.path.abspath(prefix))
+            self.assertEqual(installed_tool_names(installed, log_prefix), {'bin/llvm-readobj'})
+            canonical = real / 'build/windows/aarch64/install'
+            canonical_log = f'-- Installing: {canonical}/bin/llvm-ar\n'
+            self.assertEqual(installed_tool_names(canonical_log, log_prefix), {'bin/llvm-ar'})
+
     def test_regular_host_files_and_relative_aliases_extract(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); out = root / 'out'; out.mkdir()
@@ -63,6 +81,34 @@ class HostCacheTest(unittest.TestCase):
             archive, digest = self.bundle(root, files, {'bin/llvm': binary})
             unpack(archive, digest, out)
             self.assertEqual((out / 'bin/clang').read_bytes(), binary)
+
+    def test_import_replaces_an_older_host_compiler_only_inside_its_prefix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / 'install'
+            (prefix / 'bin').mkdir(parents=True)
+            (prefix / 'bin/llvm').write_bytes(b'older host compiler')
+            (prefix / 'bin/clang').symlink_to('llvm')
+            compiler = b'verified shared compiler'
+            files = {
+                'bin/llvm': {'sha256': hashlib.sha256(compiler).hexdigest(), 'mode': 0o755},
+                'bin/clang': {'link': 'llvm'},
+            }
+            archive, digest = self.bundle(
+                root,
+                files,
+                {'bin/llvm': compiler},
+                receipt_fields={'normalizedConfigure': 'same-config'},
+            )
+            args = SimpleNamespace(
+                command='install', archive=archive, sha256=digest, source=root/'llvm',
+                image='ubuntu-24.04', prefix=prefix,
+            )
+            with patch('host_llvm_cache.validate'), patch('host_llvm_cache.llvm_pin', return_value='test-pin'):
+                consume(args)
+            self.assertEqual((prefix / 'bin/llvm').read_bytes(), compiler)
+            self.assertEqual((prefix / 'bin/clang').readlink(), Path('llvm'))
+            self.assertTrue((prefix / 'host-llvm-cache-receipt.json').is_file())
 
     def test_wrong_archive_checksum_writes_nothing(self):
         with tempfile.TemporaryDirectory() as temporary:
