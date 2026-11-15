@@ -774,6 +774,7 @@ jobs:
 
       - name: Install Windows build dependencies
         if: steps.host-llvm-archive.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: bash platforms/windows/install-build-dependencies.sh
 
       - name: Build or resume the host compiler and export it
@@ -845,6 +846,7 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
 
       - name: Install dependencies
+        timeout-minutes: 20
         run: bash platforms/windows/install-build-dependencies.sh
 
       # pin_packages.py is the one place that resolves the windows pin, so the

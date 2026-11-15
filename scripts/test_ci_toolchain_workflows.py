@@ -208,8 +208,23 @@ assert "Limit Ninja concurrency to the guest memory budget" not in windows, (
 windows_install = named_step(windows, "Install dependencies")
 assert "platforms/windows/install-build-dependencies.sh" in windows_install
 windows_dependencies = (ROOT / "platforms/windows/install-build-dependencies.sh").read_text()
+for token in (
+    "azure.archive.ubuntu.com",
+    "https://archive.ubuntu.com/ubuntu",
+    "-o Acquire::Retries=2",
+    "-o Acquire::http::Timeout=15",
+    "-o Acquire::https::Timeout=15",
+    "timeout 180s python3 -m pip install",
+    "--timeout 15 --retries 1 meson",
+):
+    assert token in windows_dependencies, f"Windows dependency bootstrap must bound mirror retries: {token}"
+assert windows_dependencies.index("azure.archive.ubuntu.com") < windows_dependencies.index(
+    "apt-get \"${apt_options[@]}\" update"
+), "the unreliable image mirror must be rewritten before apt update"
+assert "timeout-minutes: 20" in windows_install
 windows_meson_tokens = (
-    "python3 -m pip install --break-system-packages --user meson",
+    "timeout 180s python3 -m pip install --break-system-packages --user",
+    "--timeout 15 --retries 1 meson",
     'meson_bin="$(python3 -m site --user-base)/bin"',
     'echo "$meson_bin" >> "$GITHUB_PATH"',
     "meson --version",
@@ -221,6 +236,7 @@ assert windows_meson_positions == sorted(windows_meson_positions), (
 assert "platforms/windows/install-build-dependencies.sh" in named_step(
     host_llvm, "Install Windows build dependencies"
 ), "the host compiler producer and target builds must share their dependencies"
+assert "timeout-minutes: 20" in named_step(host_llvm, "Install Windows build dependencies")
 keepalive = job_section(PUBLISH, "windows-cache-keepalive")
 assert "windows-ep4-${{ matrix.arch }}-" in named_step(
     keepalive, "Refresh Windows build state cache"
