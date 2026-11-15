@@ -725,7 +725,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 45
     outputs:
       sha256: ${{ steps.host-llvm.outputs.sha256 }}
       llvm_commit: ${{ steps.pins.outputs.llvm_commit }}
@@ -858,7 +858,7 @@ jobs:
     # pip toolchain below supplies the matching compiler libraries. Both
     # Windows targets cross-compile on public x64 Ubuntu.
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
