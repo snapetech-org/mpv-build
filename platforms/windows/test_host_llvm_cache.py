@@ -76,6 +76,18 @@ class HostCacheTest(unittest.TestCase):
             canonical_log = f'-- Installing: {canonical}/bin/llvm-ar\n'
             self.assertEqual(installed_tool_names(canonical_log, log_prefix), {'bin/llvm-ar'})
 
+    def test_export_discovers_required_aliases_missing_from_old_install_logs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary) / 'install'
+            (prefix / 'bin').mkdir(parents=True)
+            (prefix / 'bin/llvm').write_bytes(b'host compiler')
+            for name in ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj'):
+                (prefix / 'bin' / name).symlink_to('llvm')
+            discovered = installed_tool_names('-- Installing: /old/cache/install/bin/llvm\n', prefix)
+            self.assertTrue({f'bin/{name}' for name in
+                             ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj')}
+                            .issubset(discovered))
+
     def test_regular_host_files_and_relative_aliases_extract(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); out = root / 'out'; out.mkdir()

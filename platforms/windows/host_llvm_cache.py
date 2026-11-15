@@ -90,6 +90,13 @@ def installed_tool_names(installed, prefix):
             if relative.startswith('bin/') and '/' not in relative[4:]:
                 names.add(relative)
             break
+    # A restored cache can contain a valid imported LLVM tree whose original
+    # CMake install log predates the compiler-cache exporter and never listed
+    # the aliases. Enumerate the required tools from the installed prefix too;
+    # the export path validates that each alias resolves to the bundled llvm.
+    for name in REQUIRED:
+        if (prefix / 'bin' / name).is_file():
+            names.add('bin/' + name)
     return names
 
 
