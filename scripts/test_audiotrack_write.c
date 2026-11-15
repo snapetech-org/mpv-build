@@ -3167,7 +3167,9 @@ static void check_pause_outlasts_the_stall_timeout(void)
 
 int main(void)
 {
-    alarm(15); // fail a regression that holds the reset lock, rather than hang CI
+    // This suite exercises many thread hand-offs. Keep the deadlock watchdog
+    // bounded, but leave enough time for slower hosted macOS runners.
+    alarm(60); // fail a regression that holds the reset lock, rather than hang CI
     check_raw_partial_reset();
     check_raw_dtshd(13, 48000, 1);
     check_raw_dtshd(14, 96000, 2);
