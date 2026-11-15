@@ -790,7 +790,7 @@ jobs:
             llvm_source="$windows_root/build/windows/src/llvm"
             prefix="$build_root/install"
             stamps="$build_root/toolchain/llvm-prefix/src/llvm-stamp"
-            winbuild_source="$windows_root/build/windows/src/mpv-winbuild-cmake"
+            winbuild_source="$windows_root/build/windows/mpv-winbuild-cmake"
 
             # A completed Windows build already contains the host compiler.
             # Export it before running build.sh: winbuild drops LLVM stamps

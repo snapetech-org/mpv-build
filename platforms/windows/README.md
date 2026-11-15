@@ -83,7 +83,7 @@ export only its host tools and Clang resource headers after installation:
 python3 platforms/windows/host_llvm_cache.py export \
   --prefix build/windows/aarch64/install \
   --stamps build/windows/aarch64/toolchain/llvm-prefix/src/llvm-stamp \
-  --winbuild build/windows/src/mpv-winbuild-cmake \
+  --winbuild build/windows/mpv-winbuild-cmake \
   --source build/windows/src/llvm --image "$container_image_digest" \
   --archive "$task_scratch/host-llvm.tar.gz"
 ```
