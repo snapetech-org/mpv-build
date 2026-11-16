@@ -43,7 +43,7 @@ fi
 #                  (scripts/symbols.py pack writes the zip with it)
 #   libass         libfreetype-dev libfribidi-dev libharfbuzz-dev
 #                  libfontconfig-dev (host text stack; see toolchain/linux.txt)
-#   ffmpeg         libgnutls28-dev libva-dev
+#   ffmpeg         libgnutls28-dev libunistring-dev libva-dev
 #   mpv            libdisplay-info-dev libdrm-dev libwayland-dev
 #                  wayland-protocols libxkbcommon-dev libegl-dev libgl-dev
 #                  libgbm-dev libasound2-dev libpulse-dev libpipewire-0.3-dev
@@ -53,7 +53,7 @@ build-essential git curl ca-certificates python3 pkg-config
 cmake meson ninja-build nasm autoconf automake libtool xz-utils zstd
 binutils zip ffmpeg
 libfreetype-dev libfribidi-dev libharfbuzz-dev libfontconfig-dev
-libgnutls28-dev libva-dev
+libgnutls28-dev libunistring-dev libva-dev
 libdisplay-info-dev libdrm-dev libvulkan-dev libwayland-dev wayland-protocols
 libxkbcommon-dev libegl-dev libgl-dev libgbm-dev
 libasound2-dev libpulse-dev libpipewire-0.3-dev
