@@ -275,9 +275,10 @@ jobs:
       - name: Test apple XCFramework merge reproducibility
         run: ./scripts/test_apple_merge.sh
 
+  # Compile independently of macOS test capacity; publication below still
+  # requires the complete regression suite to pass.
   plan:
     name: Plan
-    needs: tests
     permissions:
       contents: read
     if: >-
@@ -519,7 +520,7 @@ jobs:
 
   publish-apple:
     name: Publish apple
-    needs: [build-apple, build-linux-arm64]
+    needs: [build-apple, build-linux-arm64, tests]
     if: >-
       github.event_name != 'schedule' &&
       (
@@ -531,7 +532,7 @@ jobs:
         )
       ) &&
       (
-        always() && !cancelled() && needs.build-apple.result == 'success'
+        always() && !cancelled() && needs.tests.result == 'success' && needs.build-apple.result == 'success'
       )
     permissions:
       contents: write
@@ -1123,7 +1124,7 @@ jobs:
     # the group name and its artifact glob, both of which come from the group's
     # own group.json (via `keys.py groups`/`variants`) rather than being
     # restated here.
-    needs: [plan, build-android, build-linux-x64, build-linux-arm64, build-windows]
+    needs: [plan, build-android, build-linux-x64, build-linux-arm64, build-windows, tests]
     # always(): a group with nothing stale has a *skipped* build job, and a
     # skipped need would otherwise skip this job -- silently publishing nothing
     # and leaving the commit unpinnable. The per-row gate below decides which
@@ -1139,7 +1140,7 @@ jobs:
         )
       ) &&
       (
-        always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+        always() && !cancelled() && needs.tests.result == 'success' && needs.plan.outputs.stale_groups != ''
       )
     permissions:
       contents: write
@@ -1253,7 +1254,7 @@ jobs:
     # job). The gate reads the plan's stale list and the downloaded manifests
     # rather than restating per-group job names, so a group added to
     # platforms/*/group.json cannot be silently skipped.
-    needs: [plan, publish-apple, publish]
+    needs: [plan, publish-apple, publish, tests]
     # always(): this gate is what proves a group that was stale actually
     # published, so it must run even when one of them failed.
     if: >-
@@ -1267,7 +1268,7 @@ jobs:
         )
       ) &&
       (
-        always() && !cancelled() && needs.plan.outputs.stale_groups != ''
+        always() && !cancelled() && needs.tests.result == 'success' && needs.plan.outputs.stale_groups != ''
       )
     permissions:
       contents: write

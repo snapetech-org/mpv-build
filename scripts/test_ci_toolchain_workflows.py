@@ -382,6 +382,16 @@ assert "python3 scripts/test_ci_toolchain_workflows.py" in PUBLISH
 
 print("Hosted Android, Apple, Linux x64 and Windows toolchain workflow contracts passed.")
 
+# A queued public macOS test runner must not prevent independent compilation.
+# Even with always() conditions, no publication may bypass regression success.
+plan_header = job_section(PUBLISH, "plan").split("    steps:", 1)[0]
+assert "needs:" not in plan_header, "build planning must not wait for macOS tests"
+for name in ("publish-apple", "publish", "manifest"):
+    header = job_section(PUBLISH, name).split("    steps:", 1)[0]
+    dependencies = re.search(r"(?m)^    needs: \[([^\]]+)\]$", header)
+    assert dependencies and "tests" in [part.strip() for part in dependencies[1].split(",")], name
+    assert "needs.tests.result == 'success'" in header, f"{name} must require regression success"
+
 # GitHub validates reusable workflow permissions before evaluating job ifs.
 # A skipped legacy caller must still allow the callee's artifact read scope.
 for workflow, job in ((CI, "android"), (CI, "bundled-android-release"), (PUBLISH, "build-android")):
