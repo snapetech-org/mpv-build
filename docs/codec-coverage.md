@@ -104,3 +104,19 @@ Harness validation on 2026-11-16: all 28 cases passed against Debian's x86_64
 libmpv 0.40.0 (`0.40.0-3+deb13u1`). This validates the harness against a reference
 engine; it is **not** a passing result for a new Pleazyng package. The newly
 built library must pass this gate independently before its release.
+
+## LCEVC reconstruction evidence
+
+On 2026-11-16 the pinned FFmpeg and SDK built together on Linux x86_64.
+Ten frames of the [official FATE H.264/LCEVC sample](https://fate-suite.ffmpeg.org/lcevc/L_H264_640x360p_8bit8bit_2D_dd.ts)
+reconstructed from a 320×180 base layer to 640×360. All ten enhanced frame
+hashes differed from the SDK's forced scale-only output at the same dimensions;
+forced base passthrough remained 320×180. This demonstrates enhancement use,
+not merely successful API initialization or base decoding. It is not packaged
+libmpv, cross-platform, pixel-conformance or physical-device qualification.
+
+Linux publication now additionally executes `scripts/lcevc_playback_smoke.py`
+against the exact library being packaged, on both architectures. The hash-bound
+fixture must decode and seek at 640×360 normally and 320×180 with forced base
+passthrough. Reports explicitly distinguish this dimension check from pixel
+conformance. A missing SDK or ignored enhancement fails publication.

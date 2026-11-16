@@ -62,7 +62,8 @@ class EndFile(c.Structure):
     _fields_ = [('reason', c.c_int), ('error', c.c_int)]
 
 
-def execute(library, source, kind):
+def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
+            seek_position="0.5", extra_options=None):
     lib = c.CDLL(str(Path(library).resolve(strict=True)))
     lib.mpv_create.restype = c.c_void_p
     lib.mpv_set_option_string.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p]
@@ -111,7 +112,7 @@ def execute(library, source, kind):
                 position = prop('time-pos')
                 # Packet-based audio clocks can park before the last decoded
                 # samples. Audio completeness is checked in the PCM output.
-                minimum = 1.8 if kind == 'video' else .5
+                minimum = minimum_position if minimum_position is not None else (1.8 if kind == 'video' else .5)
                 if not isinstance(position, (float, int)) or position < minimum:
                     raise ValueError(f'media ended before the generated signal decoded: {position}')
                 return position
@@ -122,6 +123,7 @@ def execute(library, source, kind):
                            'hwdec': 'no', 'idle': 'yes', 'keep-open': 'yes',
                            'audio-display': 'no', 'ytdl': 'no', 'load-scripts': 'no',
                            'osc': 'no'}
+        options.update(extra_options or {})
         if kind == 'audio':
             options.update({'ao': 'pcm', 'ao-pcm-file': str(pcm), 'audio-format': 's16',
                             'audio-samplerate': '48000', 'audio-channels': 'stereo'})
@@ -135,12 +137,12 @@ def execute(library, source, kind):
         params = prop('video-out-params' if kind == 'video' else 'audio-params')
         if not isinstance(params, dict) or not params:
             raise ValueError('no decoded output parameters')
-        if kind == 'video' and (params.get('w') != 128 or params.get('h') != 96):
+        if kind == 'video' and (params.get('w'), params.get('h')) != expected_dimensions:
             raise ValueError('decoded dimensions differ from fixture')
         # Drain old playback-restart events before testing the seek operation.
         while lib.mpv_wait_event(ctx, 0).contents.event_id:
             pass
-        command('seek', '0.5', 'absolute+exact')
+        command('seek', seek_position, 'absolute+exact')
         command('set', 'pause', 'no')
         second = finish(require_restart=True)
         report = {'decode': 'passed', 'seek': 'passed', 'firstEnd': first,
