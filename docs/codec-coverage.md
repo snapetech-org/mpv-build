@@ -138,3 +138,21 @@ alignment. These final links exposed and fixed the upstream static pkg-config
 file's missing `-landroid` dependency for ANativeWindow symbols. Android uses
 the packaged `libc++_shared.so`, rather than an unbundled C++ runtime. The
 cross-compiled clients have not been executed on Android devices.
+
+### AVS reference reconstruction and Android ABI coverage
+
+The pinned native Linux decoders were built locally and linked into the pinned
+FFmpeg on 2026-11-16. Full decoded YUV matched the upstream reference MD5 for
+AVS2 8-bit BQSquare (`cf9babd3440b696c998179071a608b85`), AVS3 8-bit City
+(`df6fff020f1e3e906237ee278c7db069`) and AVS3 10-bit MarketPlace
+(`ea46707dd7200b23c51878c03e48ff0f`). These are individual reference-vector
+results, not blanket profile, packaged-library or device qualification.
+Sources: [AVS2 reference streams](https://github.com/pkuvcl/avs2stream/tree/96065ae3d3f940ebad5a0b84251b3cf27ecf201c),
+[AVS3 reference streams](https://github.com/uavs3/avs3stream/tree/e9fcc4eac77061213c8fb07c87a8a1106fb66fe8).
+
+All four Android ABIs now cross-build XEVD, davs2, 10-bit uavs3d and LCEVCdec
+with the pinned NDK. XEVD's ARMv7 build uses its existing portable C path:
+its NEON sources contain AArch64-only intrinsics and cannot compile for 32-bit
+Android. ARM64 retains NEON. Android FFmpeg requests static pkg-config
+information even though its own output is shared, so the static decoder
+archives' private link dependencies are included.

@@ -23,14 +23,10 @@ fi
 case "$component" in
 	xevd)
 		options=(-DSET_PROF=MAIN)
-		if [[ "$prefix_name" == arm64-v8a || "$prefix_name" == armeabi-v7a ]]; then
+		if [[ "$prefix_name" == arm64-v8a ]]; then
 			options+=(-DARM=TRUE)
 		fi
-		if [[ "$prefix_name" == armeabi-v7a ]]; then
-			# XEVD's ARM path contains NEON kernels; use the Android ABI's
-			# softfp calling convention while enabling those instructions.
-			options+=(-DCMAKE_C_FLAGS=-mfpu=neon)
-		fi
+
 		;;
 	davs2)
 		# davs2 uses its own configure/Makefile build, not CMake.
