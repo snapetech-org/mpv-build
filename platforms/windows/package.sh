@@ -60,6 +60,11 @@ if [[ ! -f "$PDB" ]]; then
   exit 1
 fi
 
+test -f "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs/lcevc_dec/COPYING"
+test -f "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md"
+mkdir -p "$DEV_DIR/share/licenses"
+cp -R "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs" "$DEV_DIR/share/licenses/"
+
 KEY="$(python3 "$ROOT/scripts/keys.py" keys --platform-group windows |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["libmpv-windows"])')"
 

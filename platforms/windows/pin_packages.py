@@ -113,6 +113,7 @@ EXTRA_COMPONENTS = {
     "openssl": "packages/openssl.cmake",
     "libaribcaption": "packages/libaribcaption.cmake",
     "xevd": "packages/xevd.cmake",
+    "lcevc_dec": "packages/lcevc_dec.cmake",
 }
 GROUP = "windows"
 # The meta-build checkout build.sh fetches: its commit pins the whole
@@ -211,10 +212,10 @@ def stage_patches(repo, component, packages_dir):
     return staged
 
 
-def stage_xevd_package(repo, packages_dir):
+def stage_decoder_package(repo, packages_dir, component):
     """Install Pleazyng's XEVD recipe into the pinned winbuild package graph."""
-    template = repo / "platforms/windows/testdata/xevd.cmake"
-    target = packages_dir / "xevd.cmake"
+    template = repo / f"platforms/windows/testdata/{component}.cmake"
+    target = packages_dir / f"{component}.cmake"
     marker = "Generated and pinned by platforms/windows/pin_packages.py."
     if not template.is_file():
         fail(f"{template}: missing XEVD package recipe")
@@ -226,14 +227,17 @@ def stage_xevd_package(repo, packages_dir):
     if not package_list.is_file():
         fail(f"{package_list}: missing pinned package graph")
     text = package_list.read_text(encoding="utf-8")
-    entries = [line for line in text.splitlines() if line.strip() == "xevd"]
+    entries = [line for line in text.splitlines() if line.strip() == component]
     if len(entries) > 1:
         fail(f"{package_list}: xevd appears more than once in the package graph")
     if not entries:
         anchor = "    davs2\n"
         if text.count(anchor) != 1:
             fail(f"{package_list}: cannot place xevd after the expected davs2 entry")
-        package_list.write_text(text.replace(anchor, anchor + "    xevd\n", 1), encoding="utf-8")
+        package_list.write_text(text.replace(anchor, anchor + f"    {component}\n", 1), encoding="utf-8")
+
+    for helper in ("fix_lcevc_pkgconfig.py", "stage_decoder_notices.py"):
+        shutil.copyfile(repo / "scripts" / helper, packages_dir / helper)
 
 
 FFMPEG_XEVD_DEPENDENCY_ANCHOR = "        ${ffmpeg_davs2}\n"
@@ -256,6 +260,20 @@ def enable_ffmpeg_xevd(text):
         fail("packages/ffmpeg.cmake: cannot place --enable-libxevd beside --enable-libdav1d")
     text = text.replace(FFMPEG_XEVD_DEPENDENCY_ANCHOR, FFMPEG_XEVD_DEPENDENCY, 1)
     return text.replace(FFMPEG_XEVD_ENABLE_ANCHOR, FFMPEG_XEVD_ENABLE, 1)
+
+
+def enable_ffmpeg_lcevc(text):
+    dependency = "        lcevc_dec\n"
+    option = "        --enable-liblcevc-dec\n"
+    if (dependency in text) != (option in text):
+        fail("LCEVC dependency and configure option are out of sync")
+    if dependency in text:
+        return text
+    for anchor, insertion in (("        xevd\n", dependency), ("        --enable-libxevd\n", option)):
+        if text.count(anchor) != 1:
+            fail("Cannot locate checked FFmpeg LCEVC insertion point")
+        text = text.replace(anchor, anchor + insertion, 1)
+    return text
 
 
 def indent_of(line):
@@ -598,7 +616,8 @@ def main(argv):
     if not packages_dir.is_dir():
         fail(f"{winbuild}: not a mpv-winbuild-cmake checkout (no packages/ directory)")
 
-    stage_xevd_package(repo, packages_dir)
+    stage_decoder_package(repo, packages_dir, "xevd")
+    stage_decoder_package(repo, packages_dir, "lcevc_dec")
 
     for component in COMPONENTS:
         pins = resolved_pins(versions, component)
@@ -609,7 +628,7 @@ def main(argv):
         text = package_file.read_text(encoding="utf-8")
         pinned = rewrite(text, component, pins, bool(staged))
         if component == "ffmpeg":
-            pinned = enable_ffmpeg_xevd(remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned)))
+            pinned = enable_ffmpeg_lcevc(enable_ffmpeg_xevd(remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned))))
         if component == "mpv":
             pinned = capture_libmpv_pdb(gate_mpv_options(pinned))
         if pinned != text:
