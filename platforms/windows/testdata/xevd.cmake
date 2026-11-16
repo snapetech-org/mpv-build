@@ -24,6 +24,8 @@ ExternalProject_Add(xevd
         -DSET_PROF=MAIN
     BUILD_COMMAND ${EXEC} cmake --build <BINARY_DIR> --target xevd
     INSTALL_COMMAND ${EXEC} cmake --install <BINARY_DIR> --component Development
+        COMMAND python3 ${CMAKE_CURRENT_LIST_DIR}/stage_decoder_notices.py
+            <SOURCE_DIR> ${MINGW_INSTALL_PREFIX} xevd
     LOG_DOWNLOAD 1 LOG_UPDATE 1 LOG_CONFIGURE 1 LOG_BUILD 1 LOG_INSTALL 1
 )
 

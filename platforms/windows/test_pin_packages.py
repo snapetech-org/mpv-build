@@ -87,6 +87,15 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_lcevc_cannot_be_enabled_without_its_sdk_dependency(self):
+        text = pin_packages.enable_ffmpeg_xevd((TESTDATA / 'ffmpeg.cmake').read_text())
+        enabled = pin_packages.enable_ffmpeg_lcevc(text)
+        self.assertIn('        lcevc_dec\n', enabled)
+        self.assertIn('        --enable-liblcevc-dec\n', enabled)
+        self.assertEqual(pin_packages.enable_ffmpeg_lcevc(enabled), enabled)
+        with self.assertRaises(SystemExit):
+            pin_packages.enable_ffmpeg_lcevc(enabled.replace('        lcevc_dec\n', ''))
+
     def test_ffmpeg_xevd_dependency_and_wrapper_are_added_together(self):
         text = (TESTDATA / "ffmpeg.cmake").read_text(encoding="utf-8")
         enabled = pin_packages.enable_ffmpeg_xevd(text)

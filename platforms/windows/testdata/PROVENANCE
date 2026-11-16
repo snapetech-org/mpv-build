@@ -71,7 +71,7 @@
 # CMakeLists.txt: fetched from the pinned winbuild commit via GitHub Contents API on 2026-11-16.
 #   7b67de59bbd02b15f072e1630d89ded9252ea31dbb3e63b5a3961e4acb58cb0d  CMakeLists.txt
 # xevd.cmake is the repo-authored EVC package recipe staged into that pinned winbuild checkout.
-#   ba1c9e1f80fb0e9ac658efeda7d1493440d9472868de96144dc014c72e6d2589  xevd.cmake
+#   09a0f3344cdb19ed44fd807fb3105a0ece4840d0b512789c64b4b97f79b332c3  xevd.cmake
 
 # lcevc_dec.cmake is Pleazyng's SDK recipe, not an upstream winbuild file.
 #   985932eb079c35cbe2f9d17fc6cfa8d29b3f871c1a4958e929e4b079c1587524  lcevc_dec.cmake
