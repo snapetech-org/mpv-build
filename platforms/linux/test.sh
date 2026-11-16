@@ -84,7 +84,8 @@ assert_absent "$checkout"
 stub_bin="$temporary/stub-bin"
 stub_extra="$temporary/stub-extra"
 records="$temporary/records"
-mkdir -p "$stub_bin" "$stub_extra" "$records" "$temporary/tmp"
+mkdir -p "$stub_bin" "$stub_extra" "$records" "$temporary/tmp" "$temporary/prefix/lib/pkgconfig"
+printf "Version: 1.6.\n" > "$temporary/prefix/lib/pkgconfig/davs2.pc"
 
 # Deliberately unlike the pinned versions: every path below is derived from the
 # manifest, so a stub that matched by accident would prove nothing.
@@ -116,7 +117,7 @@ STUB
 # libass's autogen.sh come out of their stub repositories, exactly where the
 # real build finds them.
 make_stub "$stub_extra" configure
-for tool in make cmake meson ninja; do
+for tool in make cmake meson ninja install; do
   make_stub "$stub_bin" "$tool"
 done
 
@@ -196,6 +197,20 @@ git -C "$libass_repository" commit --quiet -m libass
 git -C "$libass_repository" -c tag.gpgsign=false tag release
 libass_commit="$(git -C "$libass_repository" rev-parse HEAD)"
 
+# The external decoder recipes execute against a source-shaped stub. Real
+# library compilation is covered separately; this harness checks acquisition,
+# build ordering and FFmpeg's dependency flags.
+video_decoder_repository="$temporary/video-decoder-source"
+init_repository "$video_decoder_repository"
+mkdir -p "$video_decoder_repository/build/linux" "$video_decoder_repository/source"
+cp -- "$stub_extra/configure" "$video_decoder_repository/build/linux/configure"
+printf '#define XBUILD_TIME "unfixed"\n' > "$video_decoder_repository/source/version.h"
+git -C "$video_decoder_repository" add .
+git -C "$video_decoder_repository" update-index --chmod=+x build/linux/configure
+git -C "$video_decoder_repository" commit --quiet -m video-decoder
+git -C "$video_decoder_repository" -c tag.gpgsign=false tag release
+video_decoder_commit="$(git -C "$video_decoder_repository" rev-parse HEAD)"
+
 # The stub manifest mirrors versions.json: linux pins live in overrides.linux
 # wherever the real file keeps them there (libplacebo, whose base pin is the
 # apple prebuilt), and those base fields carry broken values on purpose - a
@@ -205,6 +220,9 @@ manifest="$temporary/versions.json"
 cat >"$manifest" <<JSON
 {
   "components": {
+    "xevd": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
+    "davs2": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
+    "uavs3d": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "vulkan-headers": {
       "kind": "git", "version": "1.4.309", "url": "file://$libplacebo_repository",
       "ref": "release", "commit": "$libplacebo_commit"
@@ -384,6 +402,10 @@ ffmpeg_configure="$(recorded_call configure "ffmpeg-$ffmpeg_version")" ||
   fail "the build plan never configured ffmpeg"
 assert_argument "$ffmpeg_configure" "--enable-vaapi" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-libdav1d" "ffmpeg's configure"
+for decoder in xevd davs2 uavs3d; do
+  assert_argument "$ffmpeg_configure" "--enable-lib$decoder" "ffmpeg's configure"
+done
+assert_argument "$ffmpeg_configure" "--pkg-config-flags=--static" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-ffnvcodec" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-nvdec" "ffmpeg's configure"
 

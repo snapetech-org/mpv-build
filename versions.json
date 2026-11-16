@@ -535,6 +535,39 @@
         "linux"
       ],
       "overrides": {}
+    },
+    "xevd": {
+      "kind": "git",
+      "version": "0.8.0",
+      "url": "https://github.com/mpeg5/xevd",
+      "ref": "v0.8.0",
+      "commit": "8fa744e865e9bdb94a5d5da6a4ab18268cdc4bb4",
+      "platforms": [
+        "linux"
+      ],
+      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; device decode and ARM64 qualification remain separate."
+    },
+    "davs2": {
+      "kind": "git",
+      "version": "1.7",
+      "url": "https://github.com/pkuvcl/davs2",
+      "ref": "1.7",
+      "commit": "b06d7585620f4e90a6d19a2926bb4e59793b8942",
+      "platforms": [
+        "linux"
+      ],
+      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; device decode and ARM64 qualification remain separate."
+    },
+    "uavs3d": {
+      "kind": "git",
+      "version": "1.2",
+      "url": "https://github.com/uavs3/uavs3d",
+      "ref": "1.2",
+      "commit": "0e20d2c291853f196c68922a264bcd8471d75b68",
+      "platforms": [
+        "linux"
+      ],
+      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; device decode and ARM64 qualification remain separate."
     }
   }
 }

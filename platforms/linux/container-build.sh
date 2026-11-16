@@ -79,7 +79,7 @@ if [ -n "${KEY:-}" ]; then
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/check_music_dsp_filters.py "$dsp_library"
   inventory_dir="${OUT_DIR:-$PWD/dist/release}"
   mkdir -p "$inventory_dir"
-  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_inventory.py "$dsp_library" --require h264 --require hevc --require av1 --require vp9 --require mpeg2video --require vc1 --require mpeg4 --require vvc --output "$inventory_dir/codec-inventory-${ARCH:-$(uname -m)}.json"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_inventory.py "$dsp_library" --require h264 --require hevc --require av1 --require vp9 --require mpeg2video --require vc1 --require mpeg4 --require vvc --require evc --require avs2 --require avs3 --output "$inventory_dir/codec-inventory-${ARCH:-$(uname -m)}.json"
   bash platforms/linux/package.sh
 fi
 '

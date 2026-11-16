@@ -25,3 +25,25 @@ Validation: `python3 scripts/test_codec_inventory.py` checks native-node decodin
 and failure conditions; `bash platforms/linux/test.sh` exercises the source
 acquisition and build arguments. The library enumeration itself is a release
 build gate and cannot be replaced by those unit checks.
+
+## External video decoders
+
+The Linux build now links pinned static XEVD (EVC Main/Baseline), davs2 (AVS2),
+and uavs3d (AVS3, including its 10-bit build). Their source pins participate in
+the package content key. The final loaded-library gate requires `evc`, `avs2`
+and `avs3`, so a successful dependency build alone cannot pass publication.
+The pinned davs2 release only accepts an 8-bit build; 10-bit AVS2 is **not**
+covered by this recipe. These additions do not imply inclusion on other targets.
+
+Local x86_64 validation on 2026-11-16 built all three static libraries, linked
+their wrappers into the pinned FFmpeg revision
+`46f23be8b1976ed4c8ec85584daabcf0e57a7b9e`, and decoded ten frames of the
+official FATE `evc/akiyo_cif.evc` sample with `-xerror` successfully. AVS2/AVS3
+media execution, ARM64 builds and packaged libmpv execution remain separate
+qualification requirements.
+
+AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
+dav2d source currently requires a separate FFmpeg integration and uses evolving
+AV2 syntax. LCEVC enhancement reconstruction likewise needs an external library
+and a correctly connected enhancement path; decoding its base layer does not
+qualify as LCEVC reconstruction.

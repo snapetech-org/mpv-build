@@ -7,7 +7,9 @@
     "platforms/linux/container-build.sh",
     "scripts/symbols.py",
     "scripts/check_music_dsp_filters.py",
-    "scripts/inspect_pcm_package.py"
+    "scripts/inspect_pcm_package.py",
+    "scripts/codec_inventory.py",
+    "scripts/build_video_decoder.sh"
   ],
   "artifacts": {
     "libmpv-linux": {
@@ -21,7 +23,10 @@
         "nv-codec-headers",
         "wayland-protocols",
         "vulkan-headers",
-        "vulkan-loader"
+        "vulkan-loader",
+        "xevd",
+        "davs2",
+        "uavs3d"
       ],
       "variants": [
         "x86_64",

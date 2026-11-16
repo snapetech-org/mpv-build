@@ -50,6 +50,18 @@ import json
 import sys
 
 SPECS = """
+XEVD_VERSION xevd version
+XEVD_URL xevd url
+XEVD_REF xevd ref
+XEVD_COMMIT xevd commit
+DAVS2_VERSION davs2 version
+DAVS2_URL davs2 url
+DAVS2_REF davs2 ref
+DAVS2_COMMIT davs2 commit
+UAVS3D_VERSION uavs3d version
+UAVS3D_URL uavs3d url
+UAVS3D_REF uavs3d ref
+UAVS3D_COMMIT uavs3d commit
 FFMPEG_VERSION ffmpeg version
 FFMPEG_URL ffmpeg url
 FFMPEG_REF ffmpeg ref
@@ -128,7 +140,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
+resolve_pins xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -304,6 +316,21 @@ main() {
   ninja -C build install
   finish_step dav1d
 
+  # Optional format families need external libraries, even with all built-in
+  # FFmpeg decoders enabled. Every source is pinned and links statically.
+  local decoder upper url_var ref_var commit_var version_var tree
+  for decoder in xevd davs2 uavs3d; do
+    upper=${decoder^^}
+    url_var=${upper}_URL
+    ref_var=${upper}_REF
+    commit_var=${upper}_COMMIT
+    version_var=${upper}_VERSION
+    tree="$srcdir/$decoder-${!version_var}"
+    checkout_verified_ref "${!url_var}" "${!ref_var}" "${!commit_var}" "$tree"
+    apply_patch_series "$decoder" "$tree"
+    "$REPO_ROOT/scripts/build_video_decoder.sh" "$decoder" "$tree" "$prefix" "$jobs"
+  done
+
   # ─── Step 2: nv-codec-headers (ffnvcodec, headers only) ────────────────────
   # NVIDIA hardware decoding (ffmpeg's nvdec hwaccel, mpv's cuda hwdec and its
   # GL interop) compiles against ffnvcodec: headers plus a pkg-config file,
@@ -367,6 +394,11 @@ main() {
     --enable-ffnvcodec \
     --enable-nvdec \
     --enable-libdav1d \
+    --enable-libxevd \
+    --enable-libdavs2 \
+    --enable-libuavs3d \
+    --pkg-config-flags=--static \
+    --extra-libs=-lstdc++ \
     --disable-vdpau \
     --enable-debug=1 \
     --disable-stripping
