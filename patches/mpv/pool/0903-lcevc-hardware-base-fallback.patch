@@ -1,0 +1,42 @@
+diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
+index 6ecb233..64282d0 100644
+--- a/video/decode/vd_lavc.c
++++ b/video/decode/vd_lavc.c
+@@ -206,6 +206,7 @@ typedef struct lavc_ctx {
+     AVFrame *pic;
+     AVPacket *avpkt;
+     bool use_hwdec;
++    bool lcevc_requires_software;
+     struct hwdec_info hwdec; // valid only if use_hwdec==true
+     bstr *attempted_hwdecs;
+     int num_attempted_hwdecs;
+@@ -511,7 +512,7 @@ static void select_and_set_hwdec(struct mp_filter *vd)
+     int num_hwdecs = 0;
+     add_all_hwdec_methods(&hwdecs, &num_hwdecs);
+ 
+-    char **hwdec_api = ctx->hwdec_opts->hwdec_api;
++    char **hwdec_api = ctx->lcevc_requires_software ? NULL : ctx->hwdec_opts->hwdec_api;
+     for (int i = 0; hwdec_api && hwdec_api[i]; i++) {
+         bstr opt = bstr0(hwdec_api[i]);
+ 
+@@ -1307,6 +1308,20 @@ static int decode_frame(struct mp_filter *vd)
+         return ret;
+     }
+ 
++    // The bundled CPU LCEVC SDK cannot enhance hardware surfaces. FFmpeg
++    // leaves the enhancement side data on frames it did not reconstruct.
++    // Replay the probing packets through software instead of presenting the
++    // apparently successful, lower-resolution base layer.
++    if (ctx->use_hwdec &&
++        av_frame_get_side_data(ctx->pic, AV_FRAME_DATA_LCEVC))
++    {
++        MP_INFO(vd, "LCEVC enhancement requires software decoding; replaying base packets.\n");
++        ctx->lcevc_requires_software = true;
++        ctx->hwdec_failed = true;
++        av_frame_unref(ctx->pic);
++        return AVERROR(EAGAIN);
++    }
++
+     mp_codec_info_from_av(avctx, ctx->codec);
+ 
+     // If something was decoded successfully, it must return a frame with valid

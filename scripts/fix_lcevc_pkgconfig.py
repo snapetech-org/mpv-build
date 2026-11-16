@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import re
 
-RUNTIME = re.compile(r'(?<!\S)(?:-l(?:stdc\+\+|c\+\+(?:_shared|abi)?|m|pthread|log|dl|atomic)|-pthread)(?=\s|$)')
+RUNTIME = re.compile(r'(?<!\S)(?:-l(?:stdc\+\+|c\+\+(?:_shared|abi)?|m|pthread|log|android|dl|atomic)|-pthread)(?=\s|$)')
 
 
 def normalize(text: str, runtime: str) -> str:
@@ -20,6 +20,9 @@ def normalize(text: str, runtime: str) -> str:
     dependencies = [value for value in dependencies if not value.startswith(('-lstdc++', '-lc++'))]
     if runtime == 'c++_shared':
         dependencies = [value for value in dependencies if value != '-lpthread']
+        # The CPU pipeline references ANativeWindow even when FFmpeg supplies
+        # external pictures. Upstream's static .pc omits its platform library.
+        dependencies = list(dict.fromkeys([*dependencies, '-landroid']))
     archives = RUNTIME.sub('', libraries)
     lines[index] = 'Libs: ' + re.sub(r'\s+', ' ', archives).strip() + ' ' + ' '.join([f'-l{runtime}', *dependencies])
     return '\n'.join(lines) + '\n'

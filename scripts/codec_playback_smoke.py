@@ -146,7 +146,9 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
         command('set', 'pause', 'no')
         second = finish(require_restart=True)
         report = {'decode': 'passed', 'seek': 'passed', 'firstEnd': first,
-                  'seekEnd': second, 'output': params, 'hardwareDecoding': False}
+                  'seekEnd': second, 'output': params,
+                  'hardwareDecoder': prop('hwdec-current'),
+                  'hardwareDecoding': prop('hwdec-current') not in (None, '', 'no')}
     finally:
         lib.mpv_terminate_destroy(ctx)
         try:

@@ -2,3 +2,4 @@
 0900-fel-common-integration.patch
 0902-fel-ordered-audio-tap.patch
 
+0903-lcevc-hardware-base-fallback.patch

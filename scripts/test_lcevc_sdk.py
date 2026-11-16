@@ -18,6 +18,7 @@ class StaticSDKTests(unittest.TestCase):
         actual = normalize('Libs: -L${libdir} -lc++ -llog -lpthread -llcevc_dec_api -lm\n', 'c++_shared')
         self.assertIn('-llcevc_dec_api -lc++_shared -llog -lm', actual)
         self.assertNotIn('-lpthread', actual)
+        self.assertIn('-landroid', actual)
 
     def test_does_not_rewrite_a_shared_or_unrecognized_descriptor(self):
         with self.assertRaises(ValueError):

@@ -38,3 +38,6 @@
 # Plezy's additive ordered PCM reader. Keep it in common so every shipped
 # libmpv ABI, including Apple static archives, carries the same optional ABI.
 0210-plezy-ordered-audio-tap.patch
+
+# Preserve LCEVC enhancement instead of silently presenting hardware base frames.
+0903-lcevc-hardware-base-fallback.patch

@@ -120,3 +120,21 @@ against the exact library being packaged, on both architectures. The hash-bound
 fixture must decode and seek at 640×360 normally and 320×180 with forced base
 passthrough. Reports explicitly distinguish this dimension check from pixel
 conformance. A missing SDK or ignored enhancement fails publication.
+
+### Hardware bypass and Android final-link fixes
+
+A headless VA-API test on 2026-11-16 reproduced a silent 320×180 base-only
+result with the SDK-linked FFmpeg. The SDK's CPU API cannot consume hardware
+surfaces. The common mpv patch now detects a hardware frame retaining LCEVC
+side data, retires that hardware route and replays the probing packets through
+software. The same headless test then decoded and sought at 640×360. An ordinary
+H.264 control remained on `vaapi-copy`; unrelated streams keep hardware decoding.
+This is local Linux/VA-API evidence, not Android/VideoToolbox/D3D device qualification.
+
+The exact pinned NDK 29.0.14206865 is available under the local Android SDK.
+LCEVC SDK static builds and final C-client links passed for arm64-v8a,
+armeabi-v7a, x86 and x86_64 at API 25, with `--as-needed` and 16 KiB page
+alignment. These final links exposed and fixed the upstream static pkg-config
+file's missing `-landroid` dependency for ANativeWindow symbols. Android uses
+the packaged `libc++_shared.so`, rather than an unbundled C++ runtime. The
+cross-compiled clients have not been executed on Android devices.
