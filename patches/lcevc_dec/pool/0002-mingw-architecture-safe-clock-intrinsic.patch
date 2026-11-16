@@ -1,0 +1,9 @@
+diff --git a/src/common/include/LCEVC/common/detail/clock_win32.h b/src/common/include/LCEVC/common/detail/clock_win32.h
+--- a/src/common/include/LCEVC/common/detail/clock_win32.h
++++ b/src/common/include/LCEVC/common/detail/clock_win32.h
+@@ -20,2 +20,4 @@
+-#include <immintrin.h>
++#ifdef _MSC_VER
++#include <intrin.h>
++#endif
+ #include <time.h>
