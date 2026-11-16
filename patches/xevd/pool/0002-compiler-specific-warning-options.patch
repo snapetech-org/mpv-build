@@ -1,0 +1,17 @@
+Use XEVD's existing Clang options for AppleClang too. AppleClang
+otherwise falls through to the GCC branch, whose unsupported warning
+options become fatal under -Werror. Decoder sources and options are unchanged.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2105671..0947f2f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -112,7 +112,7 @@ if( MSVC )
+       $<$<CONFIG:Debug>:/MDd> #---|-- Dynamically link the runtime libraries
+       $<$<CONFIG:Release>:/MD> #--|
+     )
+-elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
++elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
+     message("Using LLVM Clang compiler")
+     if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+         set(OPT_LV "O0")
