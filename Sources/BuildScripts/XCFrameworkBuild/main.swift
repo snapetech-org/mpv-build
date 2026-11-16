@@ -26,6 +26,7 @@ do {
         ZipBaseBuild(library: .libuavs3d),
         BuildXEVD(),
         BuildDAVS2(),
+        BuildLCEVC(),
         ZipBaseBuild(library: .libdovi),
         BuildVulkan(),
         ZipBaseBuild(library: .libshaderc),
@@ -97,7 +98,7 @@ enum Versions {
 enum Library: String, CaseIterable {
     case libmpv, FFmpeg, libshaderc, vulkan, lcms2, libdovi, openssl, libunibreak, libfreetype,
         libfribidi, libharfbuzz, libass, libplacebo, libdav1d, libuchardet, libbluray, libluajit,
-        libuavs3d, libxevd, libdavs2
+        libuavs3d, libxevd, libdavs2, liblcevcdec
 
     /// Component name in `versions.json` and `patches/`. The only mapping
     /// between Swift raw values and canonical component names.
@@ -111,6 +112,8 @@ enum Library: String, CaseIterable {
             return "xevd"
         case .libdavs2:
             return "davs2"
+        case .liblcevcdec:
+            return "lcevc_dec"
         default:
             return rawValue.lowercased()
         }
@@ -179,6 +182,8 @@ enum Library: String, CaseIterable {
         case .libxevd:
             // Apple folds XEVD into Libavcodec, so consumers do not need a
             // separately published binary target for this private dependency.
+            return []
+        case .liblcevcdec:
             return []
         case .libdavs2:
             // Apple folds davs2 into Libavcodec for the same reason.
@@ -371,6 +376,54 @@ private class BuildMPV: BaseBuild {
 
 }
 
+private class BuildLCEVC: BaseBuild {
+    init() {
+        super.init(library: .liblcevcdec)
+    }
+
+    override func frameworks() throws -> [String] { [] }
+
+    override func build(platform: PlatformType, arch: ArchType) throws {
+        let buildURL = scratch(platform: platform, arch: arch)
+        let prefix = thinDir(platform: platform, arch: arch)
+        let environ = environment(platform: platform, arch: arch)
+        let cmake = Utility.shell("which cmake", isOutput: true)!
+        let targetPlatform: String
+        switch platform {
+        case .ios, .isimulator, .maccatalyst: targetPlatform = "iOS"
+        case .tvos, .tvsimulator: targetPlatform = "tvOS"
+        default: targetPlatform = "macOS"
+        }
+        try Utility.launch(path: cmake, arguments: [
+            "-S", directoryURL.path, "-B", buildURL.path, "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_INSTALL_PREFIX=\(prefix.path)",
+            "-DCMAKE_INSTALL_LIBDIR=lib", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=\(arch.cpuFamily)",
+            "-DCMAKE_OSX_ARCHITECTURES=\(arch.rawValue)",
+            "-DCMAKE_OSX_SYSROOT=\(platform.isysroot)",
+            "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+            "-DTARGET_PLATFORM=\(targetPlatform)", "-DBUILD_SHARED_LIBS=OFF",
+            "-DVN_SDK_EXECUTABLES=OFF", "-DVN_SDK_UNIT_TESTS=OFF",
+            "-DVN_SDK_SAMPLE_SOURCE=OFF", "-DVN_SDK_JSON_CONFIG=OFF",
+            "-DVN_SDK_DOCS=OFF", "-DVN_SDK_BUILD_DETAILS=OFF",
+            "-DVN_SDK_TRACING=OFF", "-DVN_SDK_METRICS=OFF",
+        ], currentDirectoryURL: directoryURL, environment: environ)
+        for arguments in [["--build", buildURL.path, "-j8"], ["--install", buildURL.path]] {
+            try Utility.launch(path: cmake, arguments: arguments,
+                               currentDirectoryURL: directoryURL, environment: environ)
+        }
+        let python = Utility.shell("which python3", isOutput: true)!
+        try Utility.launch(path: python, arguments: [
+            (URL.currentDirectory + ["scripts", "fix_lcevc_pkgconfig.py"]).path,
+            (prefix + ["lib", "pkgconfig", "lcevc_dec.pc"]).path, "--runtime", "c++",
+        ], environment: environ)
+        try Utility.launch(path: python, arguments: [
+            (URL.currentDirectory + ["scripts", "stage_decoder_notices.py"]).path,
+            directoryURL.path, prefix.path, "lcevc_dec",
+        ], environment: environ)
+    }
+}
+
 private class BuildXEVD: BaseBuild {
     init() {
         super.init(library: .libxevd)
@@ -545,7 +598,7 @@ private class BuildFFMPEG: BaseBuild {
     }
 
     override func flagsDependencelibrarys() -> [Library] {
-        [.libdovi, .libxevd, .libdavs2]
+        [.libdovi, .libxevd, .libdavs2, .liblcevcdec]
     }
 
     override func frameworks() throws -> [String] {
@@ -580,6 +633,30 @@ private class BuildFFMPEG: BaseBuild {
         let davs2Archive = URL.currentDirectory + [
             "libdavs2", platform.rawValue, "thin", arch.rawValue, "lib", "libdavs2.a",
         ]
+        let sdkPrefix = thinDir(library: .liblcevcdec, platform: platform, arch: arch)
+        let sdkArchives = ["api", "api_utility", "pipeline_cpu", "pipeline", "enhancement",
+                           "pixel_processing", "common", "extract"].map {
+            sdkPrefix + ["lib", "liblcevc_dec_\($0).a"]
+        }
+        for archive in sdkArchives {
+            guard FileManager.default.fileExists(atPath: archive.path) else {
+                throw NSError(domain: "BuildFFMPEG", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Missing bundled SDK archive: \(archive.path)"])
+            }
+        }
+        let notices = prefix + ["share", "licenses", "pleazyng-codecs"]
+        try FileManager.default.createDirectory(at: notices, withIntermediateDirectories: true)
+        let python = Utility.shell("which python3", isOutput: true)!
+        for dependency in [Library.libxevd, .libdavs2] {
+            try Utility.launch(path: python, arguments: [
+                (URL.currentDirectory + ["scripts", "stage_decoder_notices.py"]).path,
+                (URL.currentDirectory + "\(dependency.rawValue)-\(dependency.version)").path,
+                prefix.path, dependency.canonicalName,
+            ])
+        }
+        let sdkNotices = sdkPrefix + ["share", "licenses", "pleazyng-codecs", "lcevc_dec"]
+        try? FileManager.default.removeItem(at: notices + "lcevc_dec")
+        try FileManager.default.copyItem(at: sdkNotices, to: notices + "lcevc_dec")
         let mergedArchive = prefix + ["lib", "libavcodec.merged.a"]
         guard FileManager.default.fileExists(atPath: codecArchive.path),
             FileManager.default.fileExists(atPath: xevdArchive.path),
@@ -599,7 +676,7 @@ private class BuildFFMPEG: BaseBuild {
             arguments: [
                 "-static", "-o", mergedArchive.path, codecArchive.path,
                 xevdArchive.path, davs2Archive.path,
-            ],
+            ] + sdkArchives.map { $0.path },
             currentDirectoryURL: directoryURL,
             environment: environment(platform: platform, arch: arch)
         )
@@ -714,14 +791,14 @@ private class BuildFFMPEG: BaseBuild {
         // library for libplacebo/mpv, without passing it as an FFmpeg option.
         let dependencyLibrary = [
             Library.libfreetype, .libharfbuzz, .libfribidi, .libass, .vulkan,
-            .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d, .libxevd, .libdavs2,
+            .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d, .libxevd, .libdavs2, .liblcevcdec,
             .openssl,
         ]
         for library in dependencyLibrary {
             let path =
                 URL.currentDirectory + [library.rawValue, platform.rawValue, "thin", arch.rawValue]
             if FileManager.default.fileExists(atPath: path.path) {
-                arguments.append("--enable-\(library.rawValue)")
+                arguments.append(library == .liblcevcdec ? "--enable-liblcevc-dec" : "--enable-\(library.rawValue)")
                 if library == .libdav1d || library == .libuavs3d || library == .libxevd
                     || library == .libdavs2
                 {

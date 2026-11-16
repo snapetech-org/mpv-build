@@ -180,6 +180,8 @@ if __name__ == "__main__":'''))
     (build_scripts / "XCFrameworkBuild" / "base.swift").write_text("// base\n", encoding="utf-8")
     (build_scripts / "XCFrameworkBuild" / "main.swift").write_text("// main\n", encoding="utf-8")
     (repo / "scripts" / "merge_xcframeworks.py").write_text("# merge\n", encoding="utf-8")
+    for helper in ("fix_lcevc_pkgconfig.py", "stage_decoder_notices.py"):
+        (repo / "scripts" / helper).write_text("# helper\n", encoding="utf-8")
 
     # mpv and ffmpeg carry patches; libass deliberately has no patches/ dir at
     # all in this fixture, so a component without one stays covered.

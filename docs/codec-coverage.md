@@ -58,7 +58,13 @@ package inventory or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
 dav2d source currently requires a separate FFmpeg integration and uses evolving
-AV2 syntax. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux. Its installed
+AV2 syntax. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
+Windows and all Apple slices. Android packages it into its FFmpeg shared
+libraries and carries the original notices in both native tarballs and AAR
+assets. Windows links the static SDK into FFmpeg. Apple folds all eight SDK
+archives into Libavcodec and retains notices in the framework resources.
+These source integrations still require successful platform publication and
+application pin updates before users receive them. Its installed
 pkg-config descriptor is normalized so C++ runtime dependencies follow SDK
 archives, including under `--as-needed`; a C client linked and initialized the
 SDK successfully on x86_64. The recipe retains upstream COPYRIGHT and licensing

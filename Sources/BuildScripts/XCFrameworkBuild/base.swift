@@ -615,6 +615,12 @@ class BaseBuild {
         // It was originally using `platform.minVersion`
         createPlist(path: frameworkDir.path + "/Info.plist", name: framework, minVersion: "100.0", platform: platform.sdk)
         try fixShallowBundles(framework: framework, platform: platform, frameworkDir: frameworkDir)
+        if framework == "Libavcodec", let arch = platform.architectures.first {
+            let notices = thinDir(platform: platform, arch: arch) + ["share", "licenses", "pleazyng-codecs"]
+            let resources = frameworkDir + "Resources"
+            try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: notices, to: resources + "pleazyng-codecs")
+        }
         return frameworkDir.path
     }
 

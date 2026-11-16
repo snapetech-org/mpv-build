@@ -77,7 +77,7 @@ APPLE_DRIVER = Path("Sources/BuildScripts/XCFrameworkBuild/main.swift")
 # the lowercased name. The driver names libraries in its own spelling
 # (`libmpv`, `FFmpeg`), versions.json keys them canonically, and this is where
 # the two meet: keys.py's artifact names go through here too.
-COMPONENT_ALIASES = {"libmpv": "mpv", "libxevd": "xevd", "libdavs2": "davs2"}
+COMPONENT_ALIASES = {"libmpv": "mpv", "libxevd": "xevd", "libdavs2": "davs2", "liblcevcdec": "lcevc_dec"}
 
 
 def canonical_component(artifact: str) -> str:

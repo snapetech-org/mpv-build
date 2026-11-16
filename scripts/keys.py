@@ -277,6 +277,8 @@ GROUPS = {
             # The publish job's XCFramework merge writes the bytes of every
             # framework asset, so it keys them like the driver that compiles them.
             Path("scripts/merge_xcframeworks.py"),
+            Path("scripts/fix_lcevc_pkgconfig.py"),
+            Path("scripts/stage_decoder_notices.py"),
         ),
         package=Path("Package.swift"),
     ),
