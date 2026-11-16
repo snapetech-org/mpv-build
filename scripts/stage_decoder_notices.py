@@ -19,13 +19,33 @@ def stage(source: Path, prefix: Path, component: str):
     destination = prefix / 'share/licenses/pleazyng-codecs' / component
     destination.mkdir(parents=True, exist_ok=True)
     hashes = {}
-    for path in files:
+
+    def copy_notice(path: Path, relative: Path):
+        if path.is_symlink() or not path.is_file():
+            return
         if path.stat().st_size > 2 * 1024**2:
             raise ValueError('Unexpectedly large dependency notice')
-        target = destination / path.name
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
-        hashes[path.name] = hashlib.sha256(target.read_bytes()).hexdigest()
-    (destination / 'notice-manifest.json').write_text(json.dumps({'component': component, 'files': hashes}, indent=2) + '\n')
+        hashes[relative.as_posix()] = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    for path in files:
+        copy_notice(path, Path(path.name))
+
+    # The LCEVC source tree carries third-party notices separately from its
+    # top-level license files. Preserve that complete tree inside the portable
+    # notice bundle so Linux, Android/AAR, Apple and Windows retain it.
+    if component == 'lcevc_dec':
+        nested = sorted(path for path in (source / 'licenses').rglob('*') if path.is_file())
+        for path in nested:
+            if path.is_symlink():
+                continue
+            relative = path.relative_to(source / 'licenses')
+            copy_notice(path, Path('upstream') / relative)
+
+    manifest = json.dumps({'component': component, 'files': hashes}, indent=2) + '\n'
+    (destination / 'notice-manifest.json').write_text(manifest)
 
 
 if __name__ == '__main__':

@@ -80,6 +80,8 @@ for arch in "${archs[@]}"; do
 	done
 	test -f "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/COPYING"
 	test -f "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md"
+	test -f "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/notice-manifest.json"
+	grep -q '"upstream/' "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/notice-manifest.json"
 	mkdir -p "$staging/share/licenses"
 	cp -R "prefix/$prefix_name/share/licenses/pleazyng-codecs" "$staging/share/licenses/"
 	asset="libmpv-android-$prefix_name.tar.gz"
