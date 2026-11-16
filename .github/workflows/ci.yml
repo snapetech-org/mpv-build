@@ -82,6 +82,7 @@ jobs:
           python3 scripts/test_prepare_android_java.py
           python3 scripts/test_prepare_android_qairt.py
           python3 scripts/test_inspect_pcm_package.py
+          python3 scripts/test_codec_inventory.py
           python3 scripts/test_dependency_retry.py
           python3 scripts/test_release_repository.py
           python3 scripts/test_linux_arm64_runtime_workflow.py

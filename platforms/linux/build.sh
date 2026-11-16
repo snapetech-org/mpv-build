@@ -356,8 +356,10 @@ main() {
     --disable-muxers \
     --enable-muxer=spdif \
     --disable-devices \
-    --disable-bsfs \
-    --enable-bsf=aac_adtstoasc,av1_metadata,dovi_split,extract_extradata,h264_metadata,h264_mp4toannexb,hevc_metadata,hevc_mp4toannexb,vp9_metadata \
+    --enable-decoders \
+    --enable-demuxers \
+    --enable-parsers \
+    --enable-bsfs \
     --disable-filters \
     --enable-filter=aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
     --enable-gnutls \

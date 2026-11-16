@@ -31,6 +31,7 @@ cpuflags=
 	--enable-{jni,mediacodec,openssl,libdav1d,libdovi} --disable-vulkan \
 	--disable-static --enable-shared --enable-{gpl,version3} \
 	--disable-{stripping,doc,programs} \
+	--enable-{decoders,demuxers,parsers,bsfs} \
 	--disable-{muxers,encoders,devices,filters} \
 	--enable-muxer=spdif \
 	--enable-filter=aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,loudnorm,acompressor,alimiter \
