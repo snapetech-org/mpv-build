@@ -414,11 +414,11 @@ private class BuildLCEVC: BaseBuild {
         }
         let python = Utility.shell("which python3", isOutput: true)!
         try Utility.launch(path: python, arguments: [
-            (URL.currentDirectory + ["scripts", "fix_lcevc_pkgconfig.py"]).path,
+            (URL.currentDirectory + ["..", "scripts", "fix_lcevc_pkgconfig.py"]).path,
             (prefix + ["lib", "pkgconfig", "lcevc_dec.pc"]).path, "--runtime", "c++",
         ], environment: environ)
         try Utility.launch(path: python, arguments: [
-            (URL.currentDirectory + ["scripts", "stage_decoder_notices.py"]).path,
+            (URL.currentDirectory + ["..", "scripts", "stage_decoder_notices.py"]).path,
             directoryURL.path, prefix.path, "lcevc_dec",
         ], environment: environ)
     }
@@ -629,12 +629,10 @@ private class BuildFFMPEG: BaseBuild {
         // pinned archives into libavcodec so the published SwiftPM framework
         // stays self-contained without separate decoder targets.
         let codecArchive = prefix + ["lib", "libavcodec.a"]
-        let xevdArchive = URL.currentDirectory + [
-            "xevd", platform.rawValue, "thin", arch.rawValue, "lib", "libxevd.a",
-        ]
-        let davs2Archive = URL.currentDirectory + [
-            "libdavs2", platform.rawValue, "thin", arch.rawValue, "lib", "libdavs2.a",
-        ]
+        let xevdArchive = thinDir(library: .libxevd, platform: platform, arch: arch)
+            + ["lib", "libxevd.a"]
+        let davs2Archive = thinDir(library: .libdavs2, platform: platform, arch: arch)
+            + ["lib", "libdavs2.a"]
         let sdkPrefix = thinDir(library: .liblcevcdec, platform: platform, arch: arch)
         let sdkArchives = ["api", "api_utility", "pipeline_cpu", "pipeline", "enhancement",
                            "pixel_processing", "common", "extract"].map {
@@ -651,7 +649,7 @@ private class BuildFFMPEG: BaseBuild {
         let python = Utility.shell("which python3", isOutput: true)!
         for dependency in [Library.libxevd, .libdavs2] {
             try Utility.launch(path: python, arguments: [
-                (URL.currentDirectory + ["scripts", "stage_decoder_notices.py"]).path,
+                (URL.currentDirectory + ["..", "scripts", "stage_decoder_notices.py"]).path,
                 (URL.currentDirectory + "\(dependency.rawValue)-\(dependency.version)").path,
                 prefix.path, dependency.canonicalName,
             ])
