@@ -112,6 +112,7 @@ EXTRA_COMPONENTS = {
     "nv-codec-headers": "packages/nvcodec-headers.cmake",
     "openssl": "packages/openssl.cmake",
     "libaribcaption": "packages/libaribcaption.cmake",
+    "xevd": "packages/xevd.cmake",
 }
 GROUP = "windows"
 # The meta-build checkout build.sh fetches: its commit pins the whole
@@ -208,6 +209,53 @@ def stage_patches(repo, component, packages_dir):
         shutil.copyfile(pool_file, target)
         staged.append(target.name)
     return staged
+
+
+def stage_xevd_package(repo, packages_dir):
+    """Install Pleazyng's XEVD recipe into the pinned winbuild package graph."""
+    template = repo / "platforms/windows/testdata/xevd.cmake"
+    target = packages_dir / "xevd.cmake"
+    marker = "Generated and pinned by platforms/windows/pin_packages.py."
+    if not template.is_file():
+        fail(f"{template}: missing XEVD package recipe")
+    if target.exists() and marker not in target.read_text(encoding="utf-8"):
+        fail(f"{target}: unexpected upstream xevd recipe; audit it before replacing")
+    shutil.copyfile(template, target)
+
+    package_list = packages_dir / "CMakeLists.txt"
+    if not package_list.is_file():
+        fail(f"{package_list}: missing pinned package graph")
+    text = package_list.read_text(encoding="utf-8")
+    entries = [line for line in text.splitlines() if line.strip() == "xevd"]
+    if len(entries) > 1:
+        fail(f"{package_list}: xevd appears more than once in the package graph")
+    if not entries:
+        anchor = "    davs2\n"
+        if text.count(anchor) != 1:
+            fail(f"{package_list}: cannot place xevd after the expected davs2 entry")
+        package_list.write_text(text.replace(anchor, anchor + "    xevd\n", 1), encoding="utf-8")
+
+
+FFMPEG_XEVD_DEPENDENCY_ANCHOR = "        ${ffmpeg_davs2}\n"
+FFMPEG_XEVD_DEPENDENCY = FFMPEG_XEVD_DEPENDENCY_ANCHOR + "        xevd\n"
+FFMPEG_XEVD_ENABLE_ANCHOR = "        --enable-libdav1d\n"
+FFMPEG_XEVD_ENABLE = FFMPEG_XEVD_ENABLE_ANCHOR + "        --enable-libxevd\n"
+
+
+def enable_ffmpeg_xevd(text):
+    """Add the EVC source dependency and FFmpeg wrapper as one checked edit."""
+    dependency_present = "        xevd\n" in text
+    option_present = "        --enable-libxevd\n" in text
+    if dependency_present and option_present:
+        return text
+    if dependency_present != option_present:
+        fail("packages/ffmpeg.cmake: XEVD dependency and configure option are out of sync")
+    if text.count(FFMPEG_XEVD_DEPENDENCY_ANCHOR) != 1:
+        fail("packages/ffmpeg.cmake: cannot place XEVD after the expected AVS2 dependency")
+    if text.count(FFMPEG_XEVD_ENABLE_ANCHOR) != 1:
+        fail("packages/ffmpeg.cmake: cannot place --enable-libxevd beside --enable-libdav1d")
+    text = text.replace(FFMPEG_XEVD_DEPENDENCY_ANCHOR, FFMPEG_XEVD_DEPENDENCY, 1)
+    return text.replace(FFMPEG_XEVD_ENABLE_ANCHOR, FFMPEG_XEVD_ENABLE, 1)
 
 
 def indent_of(line):
@@ -550,6 +598,8 @@ def main(argv):
     if not packages_dir.is_dir():
         fail(f"{winbuild}: not a mpv-winbuild-cmake checkout (no packages/ directory)")
 
+    stage_xevd_package(repo, packages_dir)
+
     for component in COMPONENTS:
         pins = resolved_pins(versions, component)
         staged = stage_patches(repo, component, packages_dir)
@@ -559,7 +609,7 @@ def main(argv):
         text = package_file.read_text(encoding="utf-8")
         pinned = rewrite(text, component, pins, bool(staged))
         if component == "ffmpeg":
-            pinned = remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned))
+            pinned = enable_ffmpeg_xevd(remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned)))
         if component == "mpv":
             pinned = capture_libmpv_pdb(gate_mpv_options(pinned))
         if pinned != text:

@@ -55,8 +55,8 @@
 # davs2.cmake carries the configure step that pin_davs2_build_time extends
 # with a rewrite of the build time davs2's version.sh reads from `date`.
 #
-# When bumping the mpv-winbuild-cmake pin in versions.json, refresh these
-# twelve fixtures from the new commit and update the hashes above;
+# When bumping the mpv-winbuild-cmake pin in versions.json, refresh every
+# upstream fixture from the new commit and update the hashes above;
 # test_pin_packages.py asserts them, so a stale fixture fails the suite.
 
 # llvm-libcxx.cmake: fetched from the same pinned 87e22100 commit on 2026-11-05.
@@ -67,3 +67,8 @@
 
 # libplacebo.cmake: fetched from the same pinned commit via GitHub Contents API on 2026-11-06.
 #   64c407a343a43bfe8b372b12d5dac4621d1362f094239cfb2c215e6ce213332f  libplacebo.cmake
+
+# CMakeLists.txt: fetched from the pinned winbuild commit via GitHub Contents API on 2026-11-16.
+#   7b67de59bbd02b15f072e1630d89ded9252ea31dbb3e63b5a3961e4acb58cb0d  CMakeLists.txt
+# xevd.cmake is the repo-authored EVC package recipe staged into that pinned winbuild checkout.
+#   ba1c9e1f80fb0e9ac658efeda7d1493440d9472868de96144dc014c72e6d2589  xevd.cmake

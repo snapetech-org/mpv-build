@@ -191,12 +191,9 @@ class BaseBuild {
         let patchStateFile = patchStateURL()
 
         if FileManager.default.fileExists(atPath: directoryURL.path) {
-            guard let expectedPatchState else {
-                return
-            }
-
             let currentPatchState = try? String(contentsOf: patchStateFile, encoding: .utf8)
-            if currentPatchState == expectedPatchState {
+            let patchMatches = expectedPatchState == nil || currentPatchState == expectedPatchState
+            if patchMatches && (try pinnedSourceMatches()) {
                 return
             }
 
@@ -206,7 +203,14 @@ class BaseBuild {
         }
 
         // pull code from git
-        try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone", "--recursive", "--depth", "1", "--branch", library.version, library.url, directoryURL.path])
+        try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone", "--recursive", "--depth", "1", "--branch", library.ref, library.url, directoryURL.path])
+        guard try pinnedSourceMatches() else {
+            throw NSError(
+                domain: "Pinned source mismatch for \(library.rawValue)",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "The checkout does not match versions.json commit \(library.commit ?? "unknown")."]
+            )
+        }
 
         for patchFile in patchFiles {
             try Utility.launch(path: "/usr/bin/git", arguments: ["apply", patchFile.path], currentDirectoryURL: directoryURL)
@@ -223,6 +227,18 @@ class BaseBuild {
 
     private func patchStateURL() -> URL {
         directoryURL.appendingPathExtension("patch-state")
+    }
+
+    private func pinnedSourceMatches() throws -> Bool {
+        guard let expectedCommit = library.commit else {
+            return true
+        }
+        let actualCommit = try Utility.launch(
+            path: "/usr/bin/git",
+            arguments: ["-C", directoryURL.path, "rev-parse", "HEAD"],
+            isOutput: true
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return actualCommit == expectedCommit
     }
 
     /// Resolved patch series for the apple platform group: the entries of
@@ -254,6 +270,8 @@ class BaseBuild {
         var state = ""
         state += "library=\(library.rawValue)\n"
         state += "version=\(library.version)\n"
+        state += "ref=\(library.ref)\n"
+        state += "commit=\(library.commit ?? "")\n"
         state += "url=\(library.url)\n"
 
         for patchFile in patchFiles {

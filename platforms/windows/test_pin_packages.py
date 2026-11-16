@@ -31,6 +31,7 @@ import pin_packages  # noqa: E402
 # own pinned+patched idiom: the tests read it, nothing rewrites it.
 CHECKOUT_FILES = {f"{c}.cmake": f"packages/{c}.cmake" for c in pin_packages.COMPONENTS}
 CHECKOUT_FILES.update({Path(r).name: r for r in pin_packages.EXTRA_COMPONENTS.values()})
+CHECKOUT_FILES["CMakeLists.txt"] = "packages/CMakeLists.txt"
 CHECKOUT_FILES["custom_steps.cmake"] = "cmake/custom_steps.cmake"
 CHECKOUT_FILES["davs2.cmake"] = "packages/davs2.cmake"
 CHECKOUT_FILES["highway.cmake"] = "packages/highway.cmake"
@@ -86,6 +87,15 @@ def read_tree(root):
 
 
 class PinPackagesTest(unittest.TestCase):
+    def test_ffmpeg_xevd_dependency_and_wrapper_are_added_together(self):
+        text = (TESTDATA / "ffmpeg.cmake").read_text(encoding="utf-8")
+        enabled = pin_packages.enable_ffmpeg_xevd(text)
+        self.assertIn("        xevd\n", enabled)
+        self.assertIn("        --enable-libxevd\n", enabled)
+        self.assertEqual(pin_packages.enable_ffmpeg_xevd(enabled), enabled)
+        with self.assertRaises(SystemExit):
+            pin_packages.enable_ffmpeg_xevd(enabled.replace("        xevd\n", ""))
+
     def test_ffmpeg9_drops_removed_output_device_option(self):
         text = (TESTDATA/'ffmpeg.cmake').read_text()
         self.assertIn('--enable-opengl', text)
@@ -274,6 +284,13 @@ class PinPackagesTest(unittest.TestCase):
         self.assertIn(pin_packages.CHECK_GIT_NEUTRALIZED, steps)
         davs2 = (self.winbuild / "packages/davs2.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.DAVS2_BUILD_TIME, davs2)
+        xevd = self.package_text("xevd")
+        self.assertIn(f"GIT_TAG {self.pins['xevd']['commit']}", xevd)
+        self.assertIn("-DSET_PROF=MAIN", xevd)
+        package_list = (self.winbuild / "packages/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertEqual(package_list.count("    xevd\n"), 1)
+        self.assertIn("        xevd\n", self.package_text("ffmpeg"))
+        self.assertIn("        --enable-libxevd\n", self.package_text("ffmpeg"))
         highway = (self.winbuild / "packages/highway.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.HIGHWAY_TESTS_STANDALONE, highway)
         self.assertIn("-nostdinc++", (self.winbuild / "toolchain/llvm/llvm-libcxx.cmake").read_text())

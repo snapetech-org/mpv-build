@@ -29,15 +29,18 @@ build gate and cannot be replaced by those unit checks.
 ## External video decoders
 
 Linux links pinned static XEVD (EVC Main/Baseline), davs2 (AVS2), and uavs3d
-(AVS3, including its 10-bit build). Android now builds pinned XEVD and 10-bit
-uavs3d for all four packaged ABIs and enables both FFmpeg wrappers. The Android
-AVS3 ARMv7 build deliberately uses upstream's portable C kernels: its ARMv7
-assembly recipe forces a hard-float calling convention that does not match the
-Android `armeabi-v7a` ABI. Source pins participate in each platform's package
-content key. Linux's loaded-library gate requires `evc`, `avs2` and `avs3`; the
-Android package inventory and device execution remain separate qualification
-steps. The pinned davs2 release only accepts an 8-bit build; 10-bit AVS2 is
-**not** covered by this recipe, and davs2 remains Linux-only.
+(AVS3, including its 10-bit build). Android builds pinned XEVD and 10-bit
+uavs3d for all four packaged ABIs and enables both FFmpeg wrappers. Apple adds
+a per-slice XEVD source build alongside its pinned AVS3 library and merges the
+XEVD archive into `libavcodec.a`; Windows adds XEVD to the pinned winbuild graph
+alongside its existing AVS2/AVS3 packages.
+The Android AVS3 ARMv7 build deliberately uses upstream's portable C kernels:
+its ARMv7 assembly recipe forces a hard-float calling convention that does not
+match the Android `armeabi-v7a` ABI. Source pins participate in each platform's
+package content key. Linux's loaded-library gate requires `evc`, `avs2` and
+`avs3`; Android, Apple, and Windows package inventories and device execution
+remain separate qualification steps. The pinned Linux davs2 release only
+accepts an 8-bit build; 10-bit AVS2 is **not** covered on Linux.
 
 Local x86_64 validation on 2026-11-16 built all three Linux static libraries,
 linked their wrappers into the pinned FFmpeg revision
@@ -46,9 +49,11 @@ official FATE `evc/akiyo_cif.evc` sample with `-xerror` successfully. AVS2/AVS3
 media execution, ARM64 builds and packaged libmpv execution remain separate
 qualification requirements.
 
-The Android decoder integration was source- and build-graph-checked on
-2026-11-16, but the pinned NDK is not available in this workspace. No Android
-cross-build, package inventory, or device playback result is claimed.
+Android's decoder integration and the Windows XEVD package graph were source-
+and build-graph-checked on 2026-11-16, but the pinned Android NDK and Windows
+cross-build environment are not available in this workspace. The Apple XEVD
+build source has not been run on macOS here. No new cross-platform package
+inventory or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
 dav2d source currently requires a separate FFmpeg integration and uses evolving

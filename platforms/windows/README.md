@@ -34,8 +34,8 @@ sets `-Dgl=disabled -Degl-angle=disabled` for that target.
 
 `group.json` lists components `mpv`, `ffmpeg`, `libass`, `libplacebo`,
 `mpv-winbuild-cmake`, `mingw-w64`, `llvm`, `svt-av1`, `nv-codec-headers`
-and `openssl` (the last five being the packages
-`pin_packages.EXTRA_COMPONENTS` pins). The winbuild graph builds ~60 more dependencies (freetype,
+and `openssl`, plus `xevd` (the toolchain and extra dependency packages are pinned
+through `pin_packages.EXTRA_COMPONENTS`). The winbuild graph builds ~60 more dependencies (freetype,
 harfbuzz, x264, dav1d, ...). Those are deliberately NOT individual
 versions.json components: they track whatever `GIT_RESET`/URL pins the
 winbuild commit carries, so they are keyed -- coarsely but honestly --

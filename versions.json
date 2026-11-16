@@ -543,10 +543,12 @@
       "ref": "v0.8.0",
       "commit": "8fa744e865e9bdb94a5d5da6a4ab18268cdc4bb4",
       "platforms": [
+        "apple",
         "linux",
-        "android"
+        "android",
+        "windows"
       ],
-      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; Android four-ABI integration is configured but cross-build and device qualification remain open."
+      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; Apple, Android, and Windows builds are integrated but cross-build/package/device qualification remain open."
     },
     "davs2": {
       "kind": "git",

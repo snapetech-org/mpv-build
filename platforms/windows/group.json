@@ -23,7 +23,8 @@
         "svt-av1",
         "nv-codec-headers",
         "openssl",
-        "libplacebo"
+        "libplacebo",
+        "xevd"
       ],
       "variants": [
         "x86_64",
