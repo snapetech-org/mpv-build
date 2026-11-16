@@ -58,9 +58,17 @@ package inventory or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The pinned
 FFmpeg source has no AV2 codec ID, decoder wrapper or demuxer integration.
-AV2 specification 1.0.0 was finalized on 2026-05-28; an old preview decoder
-being incompatible with that syntax is not evidence that the specification
-is still a draft. A dav2d SDK build alone does not add AV2 playback to mpv. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
+The AV2 v1.0.0 specification is final (published 2026-05-28), but the official
+VideoLAN dav2d project still describes its decoder as early and advises against
+production use; its roadmap lists completion of the C decoder, a usable API
+and platform ports as ongoing work. A dav2d SDK build alone does not add AV2
+playback to mpv, and the current source is not included in production packages.
+Keep AV2 out of measured decoder inventories until a stable integration is
+available and validated against AV2 v1.0.0 streams on each target. The client
+should use a server conversion only when the server offers a compatible route,
+and otherwise report the unsupported source accurately.
+Sources: [AV2 v1.0 specification](https://av2.aomedia.org/),
+[VideoLAN dav2d project](https://code.videolan.org/videolan/dav2d). LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
 Windows and all Apple slices. Android packages it into its FFmpeg shared
 libraries and carries the original notices in both native tarballs and AAR
 assets. Windows links the static SDK into FFmpeg. Apple folds all eight SDK
