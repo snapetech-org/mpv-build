@@ -598,7 +598,9 @@ private class BuildFFMPEG: BaseBuild {
     }
 
     override func flagsDependencelibrarys() -> [Library] {
-        [.libdovi, .libxevd, .libdavs2, .liblcevcdec]
+        // LCEVC consists of multiple archives; its pkg-config descriptor
+        // supplies them. The generic flag builder would invent -llcevcdec.
+        [.libdovi, .libxevd, .libdavs2]
     }
 
     override func frameworks() throws -> [String] {
