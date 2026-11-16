@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +24,15 @@ class BundledEngineTests(unittest.TestCase):
                 p = self.natives / abi / 'include' / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_bytes(b'reviewed matching header\n')
+            for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec'):
+                directory = self.natives / abi / 'share/licenses/pleazyng-codecs' / component
+                directory.mkdir(parents=True)
+                hashes = {}
+                for name in ('LICENSE.md', 'COPYING'):
+                    data = b'original SDK terms'
+                    (directory / name).write_bytes(data)
+                    hashes[name] = hashlib.sha256(data).hexdigest()
+                (directory / 'notice-manifest.json').write_text(json.dumps({'files': hashes}))
         self.write_aar()
 
     def write_aar(self, missing=None):
@@ -38,6 +49,7 @@ class BundledEngineTests(unittest.TestCase):
             self.assertEqual(data['abis'], list(metadata.ABIS))
             self.assertEqual(data['activation'], 'runtime-settings-default-off')
             self.assertEqual(data['schema_version'], 2)
+            self.assertEqual(archive.read(metadata.LICENSE_PREFIX + 'arm64-v8a/lcevc_dec/COPYING'), b'original SDK terms')
             for abi in metadata.ABIS:
                 self.assertEqual(archive.read(metadata.PREFIX + abi + '/libavcodec/avcodec.h'), b'reviewed matching header\n')
 
@@ -52,6 +64,13 @@ class BundledEngineTests(unittest.TestCase):
         before = self.aar.read_bytes()
         (self.natives / 'x86/include/libavcodec/avcodec.h').write_bytes(b'different source')
         with self.assertRaisesRegex(ValueError, 'non-generated FFmpeg headers differ'):
+            metadata.bundle(self.aar, self.natives)
+        self.assertEqual(self.aar.read_bytes(), before)
+
+    def test_rejects_altered_sdk_license_without_changing_aar(self):
+        before = self.aar.read_bytes()
+        (self.natives / 'x86/share/licenses/pleazyng-codecs/lcevc_dec/COPYING').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'altered lcevc_dec notice'):
             metadata.bundle(self.aar, self.natives)
         self.assertEqual(self.aar.read_bytes(), before)
 

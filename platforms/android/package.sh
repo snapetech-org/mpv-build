@@ -78,6 +78,10 @@ for arch in "${archs[@]}"; do
 	for dir in "${ffmpeg_headers[@]}"; do
 		cp -R "prefix/$prefix_name/include/$dir" "$staging/include/"
 	done
+	test -f "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/COPYING"
+	test -f "prefix/$prefix_name/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md"
+	mkdir -p "$staging/share/licenses"
+	cp -R "prefix/$prefix_name/share/licenses/pleazyng-codecs" "$staging/share/licenses/"
 	asset="libmpv-android-$prefix_name.tar.gz"
 	# Reproducible bytes: the release skips re-uploading an existing
 	# content-addressed name, so a rebuild of the same key MUST produce the
@@ -85,7 +89,7 @@ for arch in "${archs[@]}"; do
 	# bytes. Fixed order, owners and mtimes; gzip -n drops its own timestamp.
 	tar --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime='2020-01-01 00:00:00 UTC' \
-		-C "$staging" -cf - lib include | gzip -n -9 > "$release_dir/$asset"
+		-C "$staging" -cf - lib include share | gzip -n -9 > "$release_dir/$asset"
 	rm -rf "$staging"
 	python3 "$root/scripts/inspect_pcm_package.py" "$release_dir/$asset" --expected 1 --motion-platform android
 	echo "packaged $asset"

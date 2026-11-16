@@ -36,6 +36,9 @@ case "$component" in
 		# davs2 uses its own configure/Makefile build, not CMake.
 		options=()
 		;;
+	lcevc_dec)
+		options=(-DANDROID_STL=c++_shared)
+		;;
 	uavs3d)
 		options=(-DCOMPILE_10BIT=ON)
 		;;
