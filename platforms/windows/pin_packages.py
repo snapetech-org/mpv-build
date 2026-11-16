@@ -115,6 +115,7 @@ EXTRA_COMPONENTS = {
     "xevd": "packages/xevd.cmake",
     "lcevc_dec": "packages/lcevc_dec.cmake",
 }
+CUSTOM_DECODER_COMPONENTS = ("xevd", "lcevc_dec")
 GROUP = "windows"
 # The meta-build checkout build.sh fetches: its commit pins the whole
 # dependency graph, so it is also the build-state cache key.
@@ -616,8 +617,8 @@ def main(argv):
     if not packages_dir.is_dir():
         fail(f"{winbuild}: not a mpv-winbuild-cmake checkout (no packages/ directory)")
 
-    stage_decoder_package(repo, packages_dir, "xevd")
-    stage_decoder_package(repo, packages_dir, "lcevc_dec")
+    for component in CUSTOM_DECODER_COMPONENTS:
+        stage_decoder_package(repo, packages_dir, component)
 
     for component in COMPONENTS:
         pins = resolved_pins(versions, component)
@@ -643,7 +644,11 @@ def main(argv):
             fail(f"{toolchain_file}: missing")
         text = toolchain_file.read_text(encoding="utf-8")
         patched = upstream_patch_step(text, component)
-        pinned = rewrite(text, component, pins, have_patches=patched)
+        # These recipes are ours; stage their resolved source patches too.
+        # Other extras keep upstream's patch files and must not have that
+        # glob cleared by stage_patches().
+        staged = stage_patches(repo, component, packages_dir) if component in CUSTOM_DECODER_COMPONENTS else []
+        pinned = rewrite(text, component, pins, have_patches=patched or bool(staged))
         if pinned != text:
             toolchain_file.write_text(pinned, encoding="utf-8")
         converted = ", upstream patch step converted to git apply" if patched else ""

@@ -260,7 +260,7 @@ class PinPackagesTest(unittest.TestCase):
                 pinned = self.package_text(component)
                 self.assertIn(f"    GIT_TAG {self.pins[component]['commit']}\n", pinned)
                 self.assertEqual(pinned.count("GIT_TAG"), 1)
-        for component in pin_packages.COMPONENTS:
+        for component in (*pin_packages.COMPONENTS, *pin_packages.CUSTOM_DECODER_COMPONENTS):
             with self.subTest(staged=component):
                 entries = series_entries(component)
                 staged = sorted(path.name for path
@@ -277,7 +277,8 @@ class PinPackagesTest(unittest.TestCase):
                 upstream = (TESTDATA / COMPONENT_FILES[component]).read_text(encoding="utf-8")
                 # An extra's own patch step survives as git apply over the
                 # same glob; one without a patch step gains none.
-                self.assertEqual("PATCH_COMMAND" in pinned, "PATCH_COMMAND" in upstream)
+                own_patches = component in pin_packages.CUSTOM_DECODER_COMPONENTS and bool(series_entries(component))
+                self.assertEqual("PATCH_COMMAND" in pinned, "PATCH_COMMAND" in upstream or own_patches)
                 self.assertNotIn("git am", pinned)
         # The gates main() applies on top of the rewrite: dropping one ships a
         # configure failure (ffmpeg aarch64 cuda), a silently disabled feature
