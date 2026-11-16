@@ -32,6 +32,10 @@ class BundledEngineTests(unittest.TestCase):
                     data = b'original SDK terms'
                     (directory / name).write_bytes(data)
                     hashes[name] = hashlib.sha256(data).hexdigest()
+                if component == 'lcevc_dec':
+                    (directory / 'upstream').mkdir()
+                    (directory / 'upstream/NOTICE.txt').write_bytes(b'upstream terms')
+                    hashes['upstream/NOTICE.txt'] = hashlib.sha256(b'upstream terms').hexdigest()
                 (directory / 'notice-manifest.json').write_text(json.dumps({'files': hashes}))
         self.write_aar()
 

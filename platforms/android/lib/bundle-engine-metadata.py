@@ -3,7 +3,7 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tempfile
 import zipfile
 
@@ -43,7 +43,9 @@ def bundle(aar: Path, natives: Path):
             if component == 'lcevc_dec' and not {'LICENSE.md', 'COPYING'} <= hashes.keys():
                 raise ValueError(f'{abi}: incomplete LCEVC licensing information')
             for name, digest in hashes.items():
-                if Path(name).name != name:
+                relative = PurePosixPath(name)
+                if (relative.is_absolute() or '..' in relative.parts or
+                        '\\' in name or '\0' in name or relative.as_posix() != name):
                     raise ValueError('Invalid notice filename')
                 data = (directory / name).read_bytes()
                 if hashlib.sha256(data).hexdigest() != digest:
