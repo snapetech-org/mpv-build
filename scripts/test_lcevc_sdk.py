@@ -20,6 +20,11 @@ class StaticSDKTests(unittest.TestCase):
         self.assertNotIn('-lpthread', actual)
         self.assertIn('-landroid', actual)
 
+    def test_apple_and_windows_use_libcxx_after_static_archives(self):
+        for runtime in ('c++', 'c++_shared'):
+            actual = normalize('Libs: -lc++ -lm -llcevc_dec_api -llcevc_dec_common\n', runtime)
+            self.assertIn(f'-llcevc_dec_api -llcevc_dec_common -l{runtime} -lm', actual)
+
     def test_does_not_rewrite_a_shared_or_unrecognized_descriptor(self):
         with self.assertRaises(ValueError):
             normalize('Libs: -lunknown\n', 'stdc++')
@@ -33,10 +38,15 @@ class StaticSDKTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 stage(source, prefix, 'lcevc_dec')
             (source / 'LICENSE.md').write_text('Additional licensing information: no patent license')
+            (source / 'licenses' / 'vma').mkdir(parents=True)
+            (source / 'licenses' / 'vma' / 'LICENSE.txt').write_text('third party terms')
             stage(source, prefix, 'lcevc_dec')
             destination = prefix / 'share/licenses/pleazyng-codecs/lcevc_dec'
             self.assertEqual((destination / 'COPYING').read_text(), 'copyright terms')
             self.assertIn('no patent license', (destination / 'LICENSE.md').read_text())
+            self.assertEqual((destination / 'upstream/vma/LICENSE.txt').read_text(), 'third party terms')
+            manifest = (destination / 'notice-manifest.json').read_text()
+            self.assertIn('upstream/vma/LICENSE.txt', manifest)
 
 
 if __name__ == '__main__':

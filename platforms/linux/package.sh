@@ -145,9 +145,17 @@ if [ "$found_pkgconfig" -eq 0 ]; then
 fi
 
 # Statically linked SDKs still owe their copyright notices to the final package.
-if [[ -f "$PREFIX/lib/pkgconfig/lcevc_dec.pc" && ! -f "$PREFIX/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md" ]]; then
-  echo "LCEVC dependency licensing information is missing from the install prefix" >&2
-  exit 1
+if [[ -f "$PREFIX/lib/pkgconfig/lcevc_dec.pc" ]]; then
+  for notice in COPYING LICENSE.md notice-manifest.json; do
+    if [[ ! -f "$PREFIX/share/licenses/pleazyng-codecs/lcevc_dec/$notice" ]]; then
+      echo "LCEVC dependency licensing file is missing: $notice" >&2
+      exit 1
+    fi
+  done
+  if ! grep -q '"upstream/' "$PREFIX/share/licenses/pleazyng-codecs/lcevc_dec/notice-manifest.json"; then
+    echo "LCEVC third-party notices are missing from the package manifest" >&2
+    exit 1
+  fi
 fi
 if [[ -d "$PREFIX/share/licenses/pleazyng-codecs" ]]; then
   mkdir -p "$stage/share/licenses"

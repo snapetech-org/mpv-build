@@ -60,8 +60,11 @@ if [[ ! -f "$PDB" ]]; then
   exit 1
 fi
 
-test -f "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs/lcevc_dec/COPYING"
-test -f "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md"
+NOTICE_DIR="$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs/lcevc_dec"
+test -f "$NOTICE_DIR/COPYING"
+test -f "$NOTICE_DIR/LICENSE.md"
+test -f "$NOTICE_DIR/notice-manifest.json"
+grep -q '"upstream/' "$NOTICE_DIR/notice-manifest.json"
 mkdir -p "$DEV_DIR/share/licenses"
 cp -R "$BUILD/install/$ARCH-w64-mingw32/share/licenses/pleazyng-codecs" "$DEV_DIR/share/licenses/"
 
