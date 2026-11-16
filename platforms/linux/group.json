@@ -9,6 +9,7 @@
     "scripts/check_music_dsp_filters.py",
     "scripts/inspect_pcm_package.py",
     "scripts/codec_inventory.py",
+    "scripts/codec_playback_smoke.py",
     "scripts/build_video_decoder.sh"
   ],
   "artifacts": {

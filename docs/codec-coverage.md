@@ -47,3 +47,29 @@ dav2d source currently requires a separate FFmpeg integration and uses evolving
 AV2 syntax. LCEVC enhancement reconstruction likewise needs an external library
 and a correctly connected enhancement path; decoding its base layer does not
 qualify as LCEVC reconstruction.
+
+## Generated-media release check
+
+`scripts/codec_playback_smoke.py /absolute/path/to/libmpv.so --output report.json`
+generates 28 short video/audio fixtures using the host FFmpeg, then decodes and
+seeks each through the supplied libmpv in its own bounded worker process. It
+forces software decoding. The video cases include AVC/HEVC/AV1/VP8/VP9, 10-bit
+examples, MPEG-2/4, WMV2, ProRes, FFV1, HuffYUV, JPEG, Theora, FLV, QuickTime RLE
+and Cinepak. Audio includes AAC, MP3, Opus, Vorbis, FLAC, ALAC, AC-3/E-AC-3,
+24-bit PCM and WavPack. Audio output must contain the expected nonempty PCM
+duration across initial playback and seeking; packet timestamp heuristics alone
+are insufficient. Video must produce the expected output dimensions and finish
+both playback passes. Reports bind the loaded binary and generated fixture
+hashes to the results and explicitly exclude physical-output/performance claims.
+
+Linux publication executes this after inventory and before packaging, on each
+native architecture. The host FFmpeg creates media only; the decoder under test
+is always the newly built library. A missing host encoder fails fixture creation
+instead of silently skipping that family. Passing this corpus does not establish
+every profile, bit depth, chroma mode, corrupt-input case, subtitle format or
+audio/video combination in those families.
+
+Harness validation on 2026-11-16: all 28 cases passed against Debian's x86_64
+libmpv 0.40.0 (`0.40.0-3+deb13u1`). This validates the harness against a reference
+engine; it is **not** a passing result for a new Pleazyng package. The newly
+built library must pass this gate independently before its release.

@@ -656,6 +656,7 @@ jobs:
           path: |
             ./dist/release/*.tar.zst
             ./dist/release/codec-inventory-*.json
+            ./dist/release/codec-playback-*.json
             ./dist/release/libmpv-linux-x86_64-symbols.zip
           if-no-files-found: error
 
@@ -708,6 +709,7 @@ jobs:
           path: |
             ./dist/release/*.tar.zst
             ./dist/release/codec-inventory-*.json
+            ./dist/release/codec-playback-*.json
             ./dist/release/libmpv-linux-aarch64-symbols.zip
           if-no-files-found: error
 
