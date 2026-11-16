@@ -533,15 +533,6 @@ private class BuildDAVS2: BaseBuild {
         let host = "\(hostArch)-apple-darwin"
         let configureDirectory = sourceURL + ["build", "linux"]
         try Utility.launch(
-            path: "/usr/bin/sed",
-            arguments: [
-                "-i", "", "-E",
-                "s/(#define XBUILD_TIME[[:space:]]+)\"[^\"]*\"/\\1\"2020-01-01 00:00:00\"/",
-                (sourceURL + ["source", "version.h"]).path,
-            ],
-            currentDirectoryURL: sourceURL
-        )
-        try Utility.launch(
             path: "/bin/bash",
             arguments: [
                 (configureDirectory + "configure").path,
@@ -555,6 +546,16 @@ private class BuildDAVS2: BaseBuild {
             ],
             currentDirectoryURL: configureDirectory,
             environment: crossEnvironment
+        )
+        // configure creates source/version.h; normalize only after it exists.
+        try Utility.launch(
+            path: "/usr/bin/sed",
+            arguments: [
+                "-i", "", "-E",
+                "s/(#define XBUILD_TIME[[:space:]]+)\"[^\"]*\"/\\1\"2020-01-01 00:00:00\"/",
+                (sourceURL + ["source", "version.h"]).path,
+            ],
+            currentDirectoryURL: sourceURL
         )
         try Utility.launch(
             path: "/usr/bin/make",
