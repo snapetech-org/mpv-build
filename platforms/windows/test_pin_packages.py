@@ -96,6 +96,15 @@ class PinPackagesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             pin_packages.enable_ffmpeg_lcevc(enabled.replace('        lcevc_dec\n', ''))
 
+    def test_windows_lcevc_clock_patch_avoids_unconditional_x86_intrinsics(self):
+        patch_name = "0002-mingw-architecture-safe-clock-intrinsic.patch"
+        self.assertIn(patch_name, pin_packages.resolve_series(REPO, "lcevc_dec"))
+        patch = (REPO / "patches/lcevc_dec/pool" / patch_name).read_text(encoding="utf-8")
+        self.assertIn("clock_win32.h", patch)
+        self.assertIn("-#include <immintrin.h>", patch)
+        self.assertIn("+#ifdef _MSC_VER", patch)
+        self.assertIn("+#include <intrin.h>", patch)
+
     def test_ffmpeg_xevd_dependency_and_wrapper_are_added_together(self):
         text = (TESTDATA / "ffmpeg.cmake").read_text(encoding="utf-8")
         enabled = pin_packages.enable_ffmpeg_xevd(text)
