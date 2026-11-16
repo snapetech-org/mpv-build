@@ -10,6 +10,8 @@ root, output = map(Path, sys.argv[1:])
 patch = (root / 'patches/mpv/pool/0904-lcevc-before-hardware-submission.patch').read_text()
 section = patch.split('diff --git a/video/decode/lcevc_probe.h b/video/decode/lcevc_probe.h\n', 1)[1]
 text = ''.join(line[1:] + '\n' for line in section.splitlines() if line.startswith('+') and not line.startswith('+++'))
+fel = (root / 'patches/mpv/pool/0904-lcevc-before-hardware-submission-fel.patch').read_text()
+assert section == fel.split('diff --git a/video/decode/lcevc_probe.h b/video/decode/lcevc_probe.h\n', 1)[1], 'both MPV source versions must use the same tested probe'
 assert 'static bool mp_lcevc_probe' in text
 output.write_text(text)
 PY

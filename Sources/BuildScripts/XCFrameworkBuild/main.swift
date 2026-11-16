@@ -453,6 +453,8 @@ private class BuildXEVD: BaseBuild {
                 "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
                 "-DCMAKE_INSTALL_PREFIX=\(prefix.path)",
                 "-DCMAKE_INSTALL_LIBDIR=lib",
+                "-DCMAKE_SYSTEM_NAME=Darwin",
+                "-DCMAKE_OSX_ARCHITECTURES=\(arch.rawValue)",
                 "-DCMAKE_SYSTEM_PROCESSOR=\(arch.cpuFamily)",
                 "-DARM=\(arch.cpuFamily == "aarch64" ? "TRUE" : "FALSE")",
                 "-DSET_PROF=MAIN",
