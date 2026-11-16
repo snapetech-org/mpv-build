@@ -56,9 +56,11 @@ cross-build environment are not available in this workspace. The Apple XEVD
 and davs2 build sources have not been run on macOS here. No new cross-platform
 package inventory or device playback result is claimed.
 
-AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
-dav2d source currently requires a separate FFmpeg integration and uses evolving
-AV2 syntax. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
+AV2 is a named source identity, not an installed FFmpeg decoder. The pinned
+FFmpeg source has no AV2 codec ID, decoder wrapper or demuxer integration.
+AV2 specification 1.0.0 was finalized on 2026-05-28; an old preview decoder
+being incompatible with that syntax is not evidence that the specification
+is still a draft. A dav2d SDK build alone does not add AV2 playback to mpv. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
 Windows and all Apple slices. Android packages it into its FFmpeg shared
 libraries and carries the original notices in both native tarballs and AAR
 assets. Windows links the static SDK into FFmpeg. Apple folds all eight SDK
@@ -166,3 +168,23 @@ The resulting libraries depend on the packaged FFmpeg/libc++ libraries and
 Android system libraries; no separately installed decoder SDK is required.
 These minimal cross-builds do not replace the complete published libmpv/AAR
 build or device execution qualification.
+
+## SDK bundling decisions
+
+| Dependency | Delivery decision |
+| --- | --- |
+| XEVD, davs2, uavs3d | Pinned static decoder code enters the normal native packages; root notices remain in native packages and the app. davs2 covers 8-bit AVS2. |
+| LCEVCdec | Pinned static CPU implementation, matching C++ runtime and complete upstream notice tree. Android needs libandroid; Apple merges the SDK archives into Libavcodec. Users do not install an SDK. Hardware base-only output must fall back to reconstruction rather than masquerade as enhanced playback. |
+| dav2d / AV2 | A public decoder exists, but this FFmpeg pin has no AV2 integration. Requires a codec/container implementation and reference-stream tests before availability can be advertised. [VideoLAN announcement](https://jbkempf.com/blog/2026/dav2d/), [released AV2 specification](https://av2.aomedia.org/v1.0.0/20260528_38f28e7_AV2_Spec_v1.0.0.pdf). |
+| Fraunhofer MPEG-H decoder | A public C/C++ SDK and FFmpeg wrapper exist; source access does not require a proprietary account. This FFmpeg pin classifies libmpeghdec as nonfree. Its license retains source/notice requirements and excludes patent rights. This is not an enabled dependency in normal redistributable builds. [SDK source](https://github.com/Fraunhofer-IIS/mpeghdec), [SDK license](https://github.com/Fraunhofer-IIS/mpeghdec/blob/4448b69738da2fa5f2f2f2b0ce29eea32509e046/LICENSE.txt), [pinned FFmpeg configuration](https://github.com/FFmpeg/FFmpeg/blob/46f23be8b1976ed4c8ec85584daabcf0e57a7b9e/configure). |
+
+FFmpeg states that enabling incompatible dependencies with `--enable-nonfree`
+makes its resulting binary unredistributable; do not silently use that switch
+to turn a missing decoder into a release checkbox. A separately authorized
+component or a server conversion route needs its own delivery and execution
+evidence. [FFmpeg licensing](https://www.ffmpeg.org/doxygen/4.3/md_LICENSE.html).
+
+For every route, advertise the loaded decoder inventory and actual enhancement
+use. Native webOS, Tizen and ExoPlayer do not gain optional SDKs from an mpv
+package. Unsupported sources must use an available conversion route or report
+the actual unsupported codec; a recognized extension is not a working feature.
