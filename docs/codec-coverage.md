@@ -31,9 +31,10 @@ build gate and cannot be replaced by those unit checks.
 Linux links pinned static XEVD (EVC Main/Baseline), davs2 (8-bit AVS2), and
 uavs3d (AVS3, including its 10-bit build). Android builds pinned XEVD, davs2
 (8-bit AVS2), and 10-bit uavs3d for all four packaged ABIs and enables their
-FFmpeg wrappers. Apple adds a per-slice XEVD source build alongside its pinned
-AVS3 library and merges the XEVD archive into `libavcodec.a`; Windows adds XEVD
-to the pinned winbuild graph alongside its existing AVS2/AVS3 packages.
+FFmpeg wrappers. Apple builds XEVD and 8-bit davs2 for each platform slice,
+alongside its pinned AVS3 library, and merges both decoder archives into
+`libavcodec.a`. Windows adds XEVD to the pinned winbuild graph alongside its
+existing AVS2/AVS3 packages.
 The Android AVS3 ARMv7 build deliberately uses upstream's portable C kernels:
 its ARMv7 assembly recipe forces a hard-float calling convention that does not
 match the Android `armeabi-v7a` ABI. Source pins participate in each platform's
@@ -52,8 +53,8 @@ qualification requirements.
 Android's decoder integration and the Windows XEVD package graph were source-
 and build-graph-checked on 2026-11-16, but the pinned Android NDK and Windows
 cross-build environment are not available in this workspace. The Apple XEVD
-build source has not been run on macOS here. No new cross-platform package
-inventory or device playback result is claimed.
+and davs2 build sources have not been run on macOS here. No new cross-platform
+package inventory or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
 dav2d source currently requires a separate FFmpeg integration and uses evolving

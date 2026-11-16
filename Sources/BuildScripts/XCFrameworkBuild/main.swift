@@ -25,6 +25,7 @@ do {
         ZipBaseBuild(library: .openssl),
         ZipBaseBuild(library: .libuavs3d),
         BuildXEVD(),
+        BuildDAVS2(),
         ZipBaseBuild(library: .libdovi),
         BuildVulkan(),
         ZipBaseBuild(library: .libshaderc),
@@ -96,7 +97,7 @@ enum Versions {
 enum Library: String, CaseIterable {
     case libmpv, FFmpeg, libshaderc, vulkan, lcms2, libdovi, openssl, libunibreak, libfreetype,
         libfribidi, libharfbuzz, libass, libplacebo, libdav1d, libuchardet, libbluray, libluajit,
-        libuavs3d, libxevd
+        libuavs3d, libxevd, libdavs2
 
     /// Component name in `versions.json` and `patches/`. The only mapping
     /// between Swift raw values and canonical component names.
@@ -108,6 +109,8 @@ enum Library: String, CaseIterable {
             return "ffmpeg"
         case .libxevd:
             return "xevd"
+        case .libdavs2:
+            return "davs2"
         default:
             return rawValue.lowercased()
         }
@@ -176,6 +179,9 @@ enum Library: String, CaseIterable {
         case .libxevd:
             // Apple folds XEVD into Libavcodec, so consumers do not need a
             // separately published binary target for this private dependency.
+            return []
+        case .libdavs2:
+            // Apple folds davs2 into Libavcodec for the same reason.
             return []
         }
     }
@@ -446,6 +452,79 @@ private class BuildXEVD: BaseBuild {
     }
 }
 
+private class BuildDAVS2: BaseBuild {
+    init() {
+        super.init(library: .libdavs2)
+    }
+
+    override func frameworks() throws -> [String] {
+        // The archive is merged into FFmpeg's libavcodec before packaging.
+        return []
+    }
+
+    override func build(platform: PlatformType, arch: ArchType) throws {
+        let buildURL = scratch(platform: platform, arch: arch)
+        try? FileManager.default.removeItem(at: buildURL)
+        try FileManager.default.createDirectory(at: buildURL, withIntermediateDirectories: true)
+        let sourceURL = buildURL + "source"
+        try FileManager.default.copyItem(at: directoryURL, to: sourceURL)
+        try? FileManager.default.removeItem(at: sourceURL + ".git")
+
+        let prefix = thinDir(platform: platform, arch: arch)
+        let environment = self.environment(platform: platform, arch: arch)
+        var crossEnvironment = environment
+        crossEnvironment["CC"] = environment["CXX"]
+        let hostArch = arch.cpuFamily == "aarch64" ? "aarch64" : arch.cpuFamily
+        let host = "\(hostArch)-apple-darwin"
+        let configureDirectory = sourceURL + ["build", "linux"]
+        try Utility.launch(
+            path: "/usr/bin/sed",
+            arguments: [
+                "-i", "", "-E",
+                "s/(#define XBUILD_TIME[[:space:]]+)\"[^\"]*\"/\\1\"2020-01-01 00:00:00\"/",
+                (sourceURL + ["source", "version.h"]).path,
+            ],
+            currentDirectoryURL: sourceURL
+        )
+        try Utility.launch(
+            path: "/bin/bash",
+            arguments: [
+                (configureDirectory + "configure").path,
+                "--host=\(host)",
+                "--prefix=\(prefix.path)",
+                "--enable-pic",
+                "--disable-cli",
+                "--disable-asm",
+                "--bit-depth=8",
+                "--chroma-format=all",
+            ],
+            currentDirectoryURL: configureDirectory,
+            environment: crossEnvironment
+        )
+        try Utility.launch(
+            path: "/usr/bin/make",
+            arguments: ["-j8"],
+            currentDirectoryURL: configureDirectory,
+            environment: crossEnvironment
+        )
+        try Utility.launch(
+            path: "/usr/bin/make",
+            arguments: ["install"],
+            currentDirectoryURL: configureDirectory,
+            environment: crossEnvironment
+        )
+        try Utility.launch(
+            path: "/usr/bin/sed",
+            arguments: [
+                "-i", "", "-E",
+                "s/^Version: ([0-9]+\\.[0-9]+)\\.$/Version: \\1.0/",
+                (prefix + ["lib", "pkgconfig", "davs2.pc"]).path,
+            ],
+            currentDirectoryURL: sourceURL
+        )
+    }
+}
+
 private class BuildFFMPEG: BaseBuild {
     init() {
         super.init(library: .FFmpeg)
@@ -466,7 +545,7 @@ private class BuildFFMPEG: BaseBuild {
     }
 
     override func flagsDependencelibrarys() -> [Library] {
-        [.libdovi, .libxevd]
+        [.libdovi, .libxevd, .libdavs2]
     }
 
     override func frameworks() throws -> [String] {
@@ -491,29 +570,36 @@ private class BuildFFMPEG: BaseBuild {
         let buildURL = scratch(platform: platform, arch: arch)
         let prefix = thinDir(platform: platform, arch: arch)
 
-        // FFmpeg's libavcodec references XEVD symbols. Merge the pinned XEVD
-        // archive into libavcodec so the published SwiftPM framework remains
-        // self-contained and does not need a separate Libxevd target.
+        // FFmpeg's libavcodec references XEVD and davs2 symbols. Merge both
+        // pinned archives into libavcodec so the published SwiftPM framework
+        // stays self-contained without separate decoder targets.
         let codecArchive = prefix + ["lib", "libavcodec.a"]
         let xevdArchive = URL.currentDirectory + [
             "xevd", platform.rawValue, "thin", arch.rawValue, "lib", "libxevd.a",
         ]
+        let davs2Archive = URL.currentDirectory + [
+            "libdavs2", platform.rawValue, "thin", arch.rawValue, "lib", "libdavs2.a",
+        ]
         let mergedArchive = prefix + ["lib", "libavcodec.merged.a"]
         guard FileManager.default.fileExists(atPath: codecArchive.path),
-            FileManager.default.fileExists(atPath: xevdArchive.path)
+            FileManager.default.fileExists(atPath: xevdArchive.path),
+            FileManager.default.fileExists(atPath: davs2Archive.path)
         else {
             throw NSError(
                 domain: "BuildFFMPEG",
                 code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Cannot merge XEVD: expected libavcodec.a and libxevd.a for \(platform.rawValue)/\(arch.rawValue)"
+                        "Cannot merge external decoders: expected libavcodec.a, libxevd.a, and libdavs2.a for \(platform.rawValue)/\(arch.rawValue)"
                 ]
             )
         }
         try Utility.launch(
             path: "/usr/bin/libtool",
-            arguments: ["-static", "-o", mergedArchive.path, codecArchive.path, xevdArchive.path],
+            arguments: [
+                "-static", "-o", mergedArchive.path, codecArchive.path,
+                xevdArchive.path, davs2Archive.path,
+            ],
             currentDirectoryURL: directoryURL,
             environment: environment(platform: platform, arch: arch)
         )
@@ -628,7 +714,7 @@ private class BuildFFMPEG: BaseBuild {
         // library for libplacebo/mpv, without passing it as an FFmpeg option.
         let dependencyLibrary = [
             Library.libfreetype, .libharfbuzz, .libfribidi, .libass, .vulkan,
-            .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d, .libxevd,
+            .lcms2, .libplacebo, .libdav1d, .libdovi, .libuavs3d, .libxevd, .libdavs2,
             .openssl,
         ]
         for library in dependencyLibrary {
@@ -636,7 +722,9 @@ private class BuildFFMPEG: BaseBuild {
                 URL.currentDirectory + [library.rawValue, platform.rawValue, "thin", arch.rawValue]
             if FileManager.default.fileExists(atPath: path.path) {
                 arguments.append("--enable-\(library.rawValue)")
-                if library == .libdav1d || library == .libuavs3d || library == .libxevd {
+                if library == .libdav1d || library == .libuavs3d || library == .libxevd
+                    || library == .libdavs2
+                {
                     arguments.append("--enable-decoder=\(library.rawValue)")
                 } else if library == .libass {
                     arguments.append("--enable-filter=ass")
