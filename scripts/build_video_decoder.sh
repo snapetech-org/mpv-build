@@ -57,17 +57,45 @@ EOF
     fi
     ;;
   davs2)
-    cd "$source_dir/build/linux"
+    davs2_source=$source_dir
+    if [[ -n "${ANDROID_ABI:-}" ]]; then
+      # davs2 configures in its source checkout. Keep each Android ABI isolated
+      # so generated headers and object files can never cross-contaminate.
+      davs2_source="$source_dir/../.pleazyng-davs2-build-${ANDROID_ABI}"
+      rm -rf "$davs2_source"
+      mkdir -p "$davs2_source"
+      cp -a "$source_dir/." "$davs2_source/"
+      rm -rf "$davs2_source/.git"
+    fi
+    cd "$davs2_source/build/linux"
     # The pinned release rejects --bit-depth=10. Do not claim 10-bit AVS2.
     # Generic C++ is available on both Linux architectures; this avoids x86-only
     # assembler assumptions in the portable decoder floor.
-    CC="${CXX:-g++}" ./configure --prefix="$prefix" --enable-pic --disable-cli --disable-asm "$@"
-    sed -i -E 's/(#define XBUILD_TIME[[:space:]]+)"[^"]*"/\1"2020-01-01 00:00:00"/' "$source_dir/source/version.h"
+    configure_args=(--prefix="$install_prefix" --enable-pic --disable-cli --disable-asm)
+    if [[ -n "${ANDROID_ABI:-}" ]]; then
+      case "$ANDROID_ABI" in
+        arm64-v8a) target_host=aarch64-linux-gnu ;;
+        armeabi-v7a) target_host=arm-linux-gnueabi ;;
+        x86) target_host=i686-linux-gnu ;;
+        x86_64) target_host=x86_64-linux-gnu ;;
+        *) echo "Unsupported Android ABI for davs2: $ANDROID_ABI" >&2; exit 2 ;;
+      esac
+      configure_args+=(--host="$target_host")
+    else
+      configure_args=(--prefix="$prefix" --enable-pic --disable-cli --disable-asm "$@")
+    fi
+    CC="${CXX:-g++}" ./configure "${configure_args[@]}"
+    sed -i -E 's/(#define XBUILD_TIME[[:space:]]+)"[^"]*"/\1"2020-01-01 00:00:00"/' "$davs2_source/source/version.h"
     make -j"$jobs"
     make install
     # Upstream 1.7's shallow checkout emits the invalid pkg-config version
     # "1.6.". Preserve its advertised API floor with an explicit patch zero.
     sed -i -E 's/^Version: ([0-9]+\.[0-9]+)\.$/Version: \1.0/' "$prefix/lib/pkgconfig/davs2.pc"
+    if [[ -n "${ANDROID_ABI:-}" ]]; then
+      # Bionic provides pthreads through libc; do not emit a separate archive
+      # dependency in the pkg-config metadata consumed by FFmpeg.
+      sed -i 's/ -lpthread//g' "$prefix/lib/pkgconfig/davs2.pc"
+    fi
     ;;
   *) echo "Unsupported decoder component: $component" >&2; exit 2 ;;
 esac

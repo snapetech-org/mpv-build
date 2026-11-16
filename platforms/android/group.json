@@ -31,6 +31,7 @@
         "dav1d",
         "xevd",
         "uavs3d",
+        "davs2",
         "openssl",
         "freetype",
         "fribidi",

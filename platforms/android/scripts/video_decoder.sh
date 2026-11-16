@@ -9,8 +9,11 @@ component=${2:?component}
 build_dir="pleazyng-build-${prefix_name}"
 
 if [[ "$action" == clean ]]; then
-	 rm -rf "$build_dir"
-	 exit 0
+	rm -rf "$build_dir"
+	if [[ "$component" == davs2 ]]; then
+		rm -rf "../.pleazyng-davs2-build-${prefix_name}"
+	fi
+	exit 0
 fi
 if [[ "$action" != build ]]; then
 	echo >&2 "Unsupported decoder action: $action"
@@ -28,6 +31,10 @@ case "$component" in
 			# softfp calling convention while enabling those instructions.
 			options+=(-DCMAKE_C_FLAGS=-mfpu=neon)
 		fi
+		;;
+	davs2)
+		# davs2 uses its own configure/Makefile build, not CMake.
+		options=()
 		;;
 	uavs3d)
 		options=(-DCOMPILE_10BIT=ON)
@@ -49,9 +56,14 @@ export ANDROID_ABI="$prefix_name"
 export CMAKE_INSTALL_PREFIX=/usr/local
 export DESTDIR="$prefix_dir"
 
-../../../../scripts/build_video_decoder.sh \
-	"$component" "$PWD" "$prefix_dir" "$cores" \
-	-DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
-	-DANDROID_ABI="$prefix_name" \
-	-DANDROID_PLATFORM=android-25 \
-	"${options[@]}"
+if [[ "$component" == davs2 ]]; then
+	../../../../scripts/build_video_decoder.sh \
+		"$component" "$PWD" "$prefix_dir" "$cores"
+else
+	../../../../scripts/build_video_decoder.sh \
+		"$component" "$PWD" "$prefix_dir" "$cores" \
+		-DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
+		-DANDROID_ABI="$prefix_name" \
+		-DANDROID_PLATFORM=android-25 \
+		"${options[@]}"
+fi

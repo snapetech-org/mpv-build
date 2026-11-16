@@ -557,9 +557,10 @@
       "ref": "1.7",
       "commit": "b06d7585620f4e90a6d19a2926bb4e59793b8942",
       "platforms": [
-        "linux"
+        "linux",
+        "android"
       ],
-      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; Android four-ABI integration is configured but cross-build and device qualification remain open."
+      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally. Android now has an isolated 8-bit cross-build recipe for all four packaged ABIs; NDK cross-build and device playback qualification remain open."
     },
     "uavs3d": {
       "kind": "git",
