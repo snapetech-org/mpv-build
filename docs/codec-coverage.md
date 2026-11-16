@@ -156,3 +156,13 @@ its NEON sources contain AArch64-only intrinsics and cannot compile for 32-bit
 Android. ARM64 retains NEON. Android FFmpeg requests static pkg-config
 information even though its own output is shared, so the static decoder
 archives' private link dependencies are included.
+
+Android final-link validation also passed for all four ABIs using shared
+FFmpeg libraries with EVC, AVS2, AVS3 and LCEVC enabled together. The x86
+probe caught another upstream CMake mismatch: NDK reports `i686`, but uavs3d
+only recognized `i386`/`x86`, leaving its selected SIMD functions undefined at
+link. The Android patch now recognizes i686 and includes those sources.
+The resulting libraries depend on the packaged FFmpeg/libc++ libraries and
+Android system libraries; no separately installed decoder SDK is required.
+These minimal cross-builds do not replace the complete published libmpv/AAR
+build or device execution qualification.
