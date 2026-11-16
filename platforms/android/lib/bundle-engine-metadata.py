@@ -10,6 +10,7 @@ import zipfile
 ABIS = ('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
 PREFIX = 'META-INF/plezyng-dv/ffmpeg-headers/'
 LICENSE_PREFIX = 'assets/pleazyng_native_licenses/'
+STANDARD_LICENSE_PREFIX = 'META-INF/licenses/'
 ENGINE = 'plezyng-dv-fel-v1'
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -52,6 +53,13 @@ def bundle(aar: Path, natives: Path):
                     raise ValueError(f'{abi}: altered {component} notice {name}')
                 notices[f'{abi}/{component}/{name}'] = data
             notices[f'{abi}/{component}/notice-manifest.json'] = manifest.read_bytes()
+    # Every ABI comes from one pinned source graph. Verify complete notice
+    # trees before emitting the single standard AAR license directory.
+    license_trees = {abi: {name[len(abi) + 1:]: data for name, data in notices.items()
+                           if name.startswith(abi + '/')} for abi in ABIS}
+    for abi, tree in license_trees.items():
+        if tree != license_trees[ABIS[0]]:
+            raise ValueError(f'{abi}: decoder license files differ between ABI packages')
     reference = trees[ABIS[0]]
     # avconfig.h is generated for the target architecture (including
     # AV_HAVE_FAST_UNALIGNED). Preserve each ABI's value instead of applying
@@ -76,7 +84,7 @@ def bundle(aar: Path, natives: Path):
                 if ENGINE.encode() not in data:
                     raise ValueError(f'{abi}: AAR lacks the compiled experimental engine identity')
             for entry in source.infolist():
-                if entry.filename == 'META-INF/plezyng-dv-engine.json' or entry.filename.startswith((PREFIX, LICENSE_PREFIX)):
+                if entry.filename == 'META-INF/plezyng-dv-engine.json' or entry.filename.startswith((PREFIX, LICENSE_PREFIX, STANDARD_LICENSE_PREFIX)):
                     raise ValueError('AAR already contains DV metadata; refuse to overwrite it')
                 target.writestr(entry, source.read(entry))
             def write(name, data):
@@ -85,6 +93,8 @@ def bundle(aar: Path, natives: Path):
                 entry.external_attr = 0o100644 << 16
                 target.writestr(entry, data)
             write('META-INF/plezyng-dv-engine.json', (json.dumps(metadata, sort_keys=True, indent=2) + '\n').encode())
+            for name, data in sorted(license_trees[ABIS[0]].items()):
+                write(STANDARD_LICENSE_PREFIX + name, data)
             for name, data in sorted(notices.items()):
                 write(LICENSE_PREFIX + name, data)
             for abi, headers in trees.items():

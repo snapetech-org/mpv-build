@@ -54,6 +54,7 @@ class BundledEngineTests(unittest.TestCase):
             self.assertEqual(data['activation'], 'runtime-settings-default-off')
             self.assertEqual(data['schema_version'], 2)
             self.assertEqual(archive.read(metadata.LICENSE_PREFIX + 'arm64-v8a/lcevc_dec/COPYING'), b'original SDK terms')
+            self.assertEqual(archive.read(metadata.STANDARD_LICENSE_PREFIX + 'lcevc_dec/upstream/NOTICE.txt'), b'upstream terms')
             for abi in metadata.ABIS:
                 self.assertEqual(archive.read(metadata.PREFIX + abi + '/libavcodec/avcodec.h'), b'reviewed matching header\n')
 
@@ -68,6 +69,18 @@ class BundledEngineTests(unittest.TestCase):
         before = self.aar.read_bytes()
         (self.natives / 'x86/include/libavcodec/avcodec.h').write_bytes(b'different source')
         with self.assertRaisesRegex(ValueError, 'non-generated FFmpeg headers differ'):
+            metadata.bundle(self.aar, self.natives)
+        self.assertEqual(self.aar.read_bytes(), before)
+
+    def test_rejects_valid_but_different_license_trees_between_abis(self):
+        before = self.aar.read_bytes()
+        directory = self.natives / 'x86/share/licenses/pleazyng-codecs/lcevc_dec'
+        (directory / 'COPYING').write_bytes(b'different valid source')
+        manifest = directory / 'notice-manifest.json'
+        data = json.loads(manifest.read_text())
+        data['files']['COPYING'] = hashlib.sha256(b'different valid source').hexdigest()
+        manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'differ between ABI packages'):
             metadata.bundle(self.aar, self.natives)
         self.assertEqual(self.aar.read_bytes(), before)
 
