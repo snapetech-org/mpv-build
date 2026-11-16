@@ -1,0 +1,208 @@
+diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
+--- a/video/decode/vd_lavc.c
++++ b/video/decode/vd_lavc.c
+@@ -39,6 +39,7 @@
+ #include "common/codecs.h"
+ 
+ #include "video/fmt-conversion.h"
++#include "lcevc_probe.h"
+ 
+ #include "filters/f_decoder_wrapper.h"
+ #include "filters/filter_internal.h"
+@@ -60,6 +61,26 @@
+ static void uninit_avctx(struct mp_filter *vd);
+ 
+ static int get_buffer2_direct(AVCodecContext *avctx, AVFrame *pic, int flags);
++static bool lcevc_reconstruction_available(void)
++{
++    return strstr(avcodec_configuration(), "--enable-liblcevc-dec") != NULL;
++}
++
++static bool packet_has_lcevc(AVCodecContext *avctx, const AVPacket *packet)
++{
++    size_t side_size = 0;
++    if (av_packet_get_side_data(packet, AV_PKT_DATA_LCEVC, &side_size) && side_size)
++        return true;
++    bool hevc = avctx->codec_id == AV_CODEC_ID_HEVC;
++    if (!hevc && avctx->codec_id != AV_CODEC_ID_H264)
++        return false;
++    unsigned length_size = 4;
++    unsigned index = hevc ? 21 : 4;
++    if (avctx->extradata && avctx->extradata_size > (int)index && avctx->extradata[0] == 1)
++        length_size = (avctx->extradata[index] & 3) + 1;
++    return packet->size > 0 && mp_lcevc_probe(hevc, packet->data, packet->size, length_size);
++}
++
+ static enum AVPixelFormat get_format_hwdec(struct AVCodecContext *avctx,
+                                            const enum AVPixelFormat *pix_fmt);
+ static int hwdec_opt_help(struct mp_log *log, const m_option_t *opt,
+@@ -1234,6 +1255,19 @@
+ 
+     prepare_decoding(vd);
+ 
++    mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
++    // Full hardware decoders such as MediaCodec can discard in-band SEI.
++    // Detect signalling before they consume it (or keyframe waiting drops it).
++    // EAGAIN leaves this packet pending for the existing software retry path.
++    if (ctx->use_hwdec && pkt && lcevc_reconstruction_available() &&
++        packet_has_lcevc(avctx, ctx->avpkt))
++    {
++        MP_INFO(vd, "LCEVC signalling requires software decoding before hardware submission.\n");
++        ctx->lcevc_requires_software = true;
++        ctx->hwdec_failed = true;
++        return AVERROR(EAGAIN);
++    }
++
+     if (ctx->wait_for_keyframe > 0 && pkt) {
+         if (!pkt->keyframe && !ctx->intra_only) {
+             MP_DBG(vd, "Waiting for keyframe after reinit (dropping frame).\n");
+@@ -1245,8 +1279,6 @@
+ 
+     if (avctx->skip_frame == AVDISCARD_ALL)
+         return 0;
+-
+-    mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
+ 
+     int ret = avcodec_send_packet(avctx, pkt ? ctx->avpkt : NULL);
+     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+@@ -1312,7 +1344,7 @@
+     // leaves the enhancement side data on frames it did not reconstruct.
+     // Replay the probing packets through software instead of presenting the
+     // apparently successful, lower-resolution base layer.
+-    if (ctx->use_hwdec &&
++    if (ctx->use_hwdec && lcevc_reconstruction_available() &&
+         av_frame_get_side_data(ctx->pic, AV_FRAME_DATA_LCEVC))
+     {
+         MP_INFO(vd, "LCEVC enhancement requires software decoding; replaying base packets.\n");
+diff --git a/video/decode/lcevc_probe.h b/video/decode/lcevc_probe.h
+new file mode 100644
+--- /dev/null
++++ b/video/decode/lcevc_probe.h
+@@ -0,0 +1,127 @@
++/* Bounded LCEVC signalling probe. Does not modify or decode packet contents. */
++#ifndef MP_LCEVC_PROBE_H
++#define MP_LCEVC_PROBE_H
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++
++struct mp_lcevc_rbsp {
++    const uint8_t *data;
++    size_t size, offset;
++    unsigned zeros;
++};
++
++static bool mp_lcevc_byte(struct mp_lcevc_rbsp *r, uint8_t *value)
++{
++    if (r->offset >= r->size)
++        return false;
++    uint8_t byte = r->data[r->offset++];
++    if (r->zeros >= 2 && byte == 3 && r->offset < r->size &&
++        r->data[r->offset] <= 3)
++        byte = r->data[r->offset++];
++    r->zeros = byte == 0 ? (r->zeros < 2 ? r->zeros + 1 : 2) : 0;
++    *value = byte;
++    return true;
++}
++
++static bool mp_lcevc_number(struct mp_lcevc_rbsp *r, uint32_t *value)
++{
++    uint32_t total = 0;
++    uint8_t byte;
++    do {
++        if (!mp_lcevc_byte(r, &byte) || UINT32_MAX - total < byte)
++            return false;
++        total += byte;
++    } while (byte == 255);
++    *value = total;
++    return true;
++}
++
++static bool mp_lcevc_nal(bool hevc, const uint8_t *data, size_t size)
++{
++    size_t header = hevc ? 2 : 1;
++    if (size <= header || (data[0] & 0x80))
++        return false;
++    unsigned type = hevc ? ((data[0] >> 1) & 63) : (data[0] & 31);
++    if ((!hevc && type != 6) || (hevc && (type != 39 && type != 40)))
++        return false;
++    struct mp_lcevc_rbsp r = {data + header, size - header, 0, 0};
++    while (r.offset < r.size) {
++        uint32_t payload_type, payload_size;
++        if (!mp_lcevc_number(&r, &payload_type) ||
++            !mp_lcevc_number(&r, &payload_size) || payload_size > r.size - r.offset)
++            return false;
++        if (payload_type == 4 && payload_size > 4) {
++            uint8_t tag[4];
++            for (unsigned i = 0; i < 4; i++) {
++                if (!mp_lcevc_byte(&r, &tag[i]))
++                    return false;
++            }
++            // ITU-T T.35 UK registration used by LCEVC, not HDR10+/CC.
++            const uint8_t lcevc_tag[] = {0xb4, 0x00, 0x50, 0x00};
++            if (memcmp(tag, lcevc_tag, sizeof(tag)) == 0)
++                return true;
++            payload_size -= 4;
++        }
++        while (payload_size--) {
++            uint8_t ignored;
++            if (!mp_lcevc_byte(&r, &ignored))
++                return false;
++        }
++    }
++    return false;
++}
++
++static bool mp_lcevc_start(const uint8_t *data, size_t size,
++                           size_t *offset, size_t *prefix)
++{
++    for (size_t i = *offset; i < size && size - i >= 3; i++) {
++        if (data[i] || data[i + 1])
++            continue;
++        if (data[i + 2] == 1) {
++            *offset = i;
++            *prefix = 3;
++            return true;
++        }
++        if (size - i >= 4 && !data[i + 2] && data[i + 3] == 1) {
++            *offset = i;
++            *prefix = 4;
++            return true;
++        }
++    }
++    return false;
++}
++
++static bool mp_lcevc_probe(bool hevc, const uint8_t *data, size_t size,
++                           unsigned length_size)
++{
++    if (!data || !size)
++        return false;
++    if (length_size >= 1 && length_size <= 4) {
++        size_t offset = 0;
++        while (size - offset >= length_size) {
++            uint32_t length = 0;
++            for (unsigned i = 0; i < length_size; i++)
++                length = (length << 8) | data[offset++];
++            if (length > size - offset)
++                break;
++            if (mp_lcevc_nal(hevc, data + offset, length))
++                return true;
++            offset += length;
++        }
++    }
++    size_t start = 0, prefix;
++    while (mp_lcevc_start(data, size, &start, &prefix)) {
++        size_t begin = start + prefix, next = begin, next_prefix;
++        bool more = mp_lcevc_start(data, size, &next, &next_prefix);
++        size_t end = more ? next : size;
++        if (mp_lcevc_nal(hevc, data + begin, end - begin))
++            return true;
++        if (!more)
++            break;
++        start = next;
++    }
++    return false;
++}
++#endif

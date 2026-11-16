@@ -196,3 +196,21 @@ For every route, advertise the loaded decoder inventory and actual enhancement
 use. Native webOS, Tizen and ExoPlayer do not gain optional SDKs from an mpv
 package. Unsupported sources must use an available conversion route or report
 the actual unsupported codec; a recognized extension is not a working feature.
+
+### Detect enhancement before full hardware decoders
+
+The packet path now checks LCEVC side data and AVC/HEVC registered-user-data
+SEI before submitting packets to hardware, including full decoders such as
+MediaCodec that need not return the SEI on their output frames. A bounded,
+non-mutating probe supports Annex B and one-to-four-byte length prefixes,
+skips unrelated/HDR metadata, handles emulation prevention and rejects truncated
+payloads. It runs only when hardware is active and the loaded FFmpeg build
+includes the LCEVC SDK. The pending packet is retried through the existing
+software fallback rather than discarded. Frame-side detection remains a backup.
+
+Address/undefined sanitizer checks cover both codecs, framing variants,
+unrelated metadata and truncation/random inputs. A headless VA-API run verified
+that enhanced video switches to software before hardware submission and decodes
+and seeks at 640×360, while the ordinary AVC control remains on hardware.
+This closes the signalling-loss path; it is not a claim of physical Android,
+Apple or Windows device playback qualification.

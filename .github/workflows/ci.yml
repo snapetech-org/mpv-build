@@ -84,6 +84,7 @@ jobs:
           python3 scripts/test_inspect_pcm_package.py
           python3 scripts/test_codec_inventory.py
           python3 scripts/test_lcevc_sdk.py
+          bash scripts/test_lcevc_probe.sh
           python3 scripts/test_dependency_retry.py
           python3 scripts/test_release_repository.py
           python3 scripts/test_linux_arm64_runtime_workflow.py

@@ -3,3 +3,4 @@
 0902-fel-ordered-audio-tap.patch
 
 0903-lcevc-hardware-base-fallback.patch
+0904-lcevc-before-hardware-submission.patch
