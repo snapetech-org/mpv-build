@@ -43,18 +43,18 @@ package content key. Linux's loaded-library gate requires `evc`, `avs2` and
 remain separate qualification steps. The pinned davs2 release only accepts an
 8-bit build; 10-bit AVS2 is **not** covered.
 
-Local x86_64 validation on 2026-11-16 built all three Linux static libraries,
-linked their wrappers into the pinned FFmpeg revision
-`46f23be8b1976ed4c8ec85584daabcf0e57a7b9e`, and decoded ten frames of the
-official FATE `evc/akiyo_cif.evc` sample with `-xerror` successfully. AVS2/AVS3
-media execution, ARM64 builds and packaged libmpv execution remain separate
-qualification requirements.
+Local x86_64 validation on 2026-11-16 linked all three external decoders
+into pinned FFmpeg and decoded the official FATE EVC sample. AVS2 8-bit and
+AVS3 8/10-bit output matches upstream YUV hashes. The full Linux package also
+passed the corpus and LCEVC reconstruction gates described below.
 
-Android's decoder integration and the Windows XEVD package graph were source-
-and build-graph-checked on 2026-11-16, but the pinned Android NDK and Windows
-cross-build environment are not available in this workspace. The Apple XEVD
-and davs2 build sources have not been run on macOS here. No new cross-platform
-package inventory or device playback result is claimed.
+The pinned Android NDK 29.0.14206865 is available locally: all four ABI SDK
+clients and final shared FFmpeg libraries link successfully. Hosted builds of
+all four Android ABIs also pass; final AAR publication is a separate gate.
+Windows package tests and a local MinGW SDK client link pass, but the production
+LLVM builds and Apple platform builds must pass hosted CI before application
+pins advance. None of these build results establishes physical-device playback
+qualification. Earlier notes saying the Android NDK was absent are superseded.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The pinned
 FFmpeg source has no AV2 codec ID, decoder wrapper or demuxer integration.
