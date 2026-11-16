@@ -17,6 +17,7 @@
     "platforms/android/scripts/lua.sh",
     "platforms/android/scripts/meson.sh",
     "platforms/android/scripts/openssl.sh",
+    "platforms/android/scripts/video_decoder.sh",
     "scripts/prepare_android_qairt.py",
     "scripts/inspect_pcm_package.py"
   ],
@@ -28,6 +29,8 @@
         "libass",
         "libplacebo",
         "dav1d",
+        "xevd",
+        "uavs3d",
         "openssl",
         "freetype",
         "fribidi",

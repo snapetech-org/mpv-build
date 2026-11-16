@@ -28,19 +28,27 @@ build gate and cannot be replaced by those unit checks.
 
 ## External video decoders
 
-The Linux build now links pinned static XEVD (EVC Main/Baseline), davs2 (AVS2),
-and uavs3d (AVS3, including its 10-bit build). Their source pins participate in
-the package content key. The final loaded-library gate requires `evc`, `avs2`
-and `avs3`, so a successful dependency build alone cannot pass publication.
-The pinned davs2 release only accepts an 8-bit build; 10-bit AVS2 is **not**
-covered by this recipe. These additions do not imply inclusion on other targets.
+Linux links pinned static XEVD (EVC Main/Baseline), davs2 (AVS2), and uavs3d
+(AVS3, including its 10-bit build). Android now builds pinned XEVD and 10-bit
+uavs3d for all four packaged ABIs and enables both FFmpeg wrappers. The Android
+AVS3 ARMv7 build deliberately uses upstream's portable C kernels: its ARMv7
+assembly recipe forces a hard-float calling convention that does not match the
+Android `armeabi-v7a` ABI. Source pins participate in each platform's package
+content key. Linux's loaded-library gate requires `evc`, `avs2` and `avs3`; the
+Android package inventory and device execution remain separate qualification
+steps. The pinned davs2 release only accepts an 8-bit build; 10-bit AVS2 is
+**not** covered by this recipe, and davs2 remains Linux-only.
 
-Local x86_64 validation on 2026-11-16 built all three static libraries, linked
-their wrappers into the pinned FFmpeg revision
+Local x86_64 validation on 2026-11-16 built all three Linux static libraries,
+linked their wrappers into the pinned FFmpeg revision
 `46f23be8b1976ed4c8ec85584daabcf0e57a7b9e`, and decoded ten frames of the
 official FATE `evc/akiyo_cif.evc` sample with `-xerror` successfully. AVS2/AVS3
 media execution, ARM64 builds and packaged libmpv execution remain separate
 qualification requirements.
+
+The Android decoder integration was source- and build-graph-checked on
+2026-11-16, but the pinned NDK is not available in this workspace. No Android
+cross-build, package inventory, or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
 dav2d source currently requires a separate FFmpeg integration and uses evolving

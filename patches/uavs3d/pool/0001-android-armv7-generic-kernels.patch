@@ -1,0 +1,12 @@
+diff --git a/source/CMakeLists.txt b/source/CMakeLists.txt
+index 0000000..1111111 100644
+--- a/source/CMakeLists.txt
++++ b/source/CMakeLists.txt
+@@ -46,5 +46,5 @@ if("${UAVS3D_TARGET_CPU}" MATCHES "x86" OR
+   list(APPEND UAVS3D_ASM_FILES ${DIR_X86_SRC})
+   list(APPEND UAVS3D_ASM_FILES ${DIR_X86_256_SRC})
+-elseif("${UAVS3D_TARGET_CPU}" MATCHES "armv7")
++elseif("${UAVS3D_TARGET_CPU}" MATCHES "armv7" AND NOT ANDROID)
+   list(APPEND UAVS3D_ASM_FILES "./decore/armv7/armv7.c")
+   list(APPEND UAVS3D_ASM_FILES "./decore/armv7/alf_armv7.S")
+   list(APPEND UAVS3D_ASM_FILES "./decore/armv7/deblock_armv7.S")
