@@ -1,0 +1,11 @@
+diff --git a/src/common/include/LCEVC/common/detail/threads_win32.h b/src/common/include/LCEVC/common/detail/threads_win32.h
+--- a/src/common/include/LCEVC/common/detail/threads_win32.h
++++ b/src/common/include/LCEVC/common/detail/threads_win32.h
+@@ -21,6 +21,7 @@
+ #ifndef VN_LCEVC_COMMON_DETAIL_THREADS_WIN32_H
+ #define VN_LCEVC_COMMON_DETAIL_THREADS_WIN32_H
+ #include <LCEVC/common/platform.h>
++#include <errno.h>
+ 
+ enum ThreadResult
+ {

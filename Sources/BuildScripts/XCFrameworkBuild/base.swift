@@ -193,7 +193,7 @@ class BaseBuild {
         if FileManager.default.fileExists(atPath: directoryURL.path) {
             let currentPatchState = try? String(contentsOf: patchStateFile, encoding: .utf8)
             let patchMatches = expectedPatchState == nil || currentPatchState == expectedPatchState
-            if patchMatches && (try pinnedSourceMatches()) {
+            if patchMatches, try pinnedSourceMatches() {
                 return
             }
 

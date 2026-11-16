@@ -94,6 +94,9 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg cmake
 
+      - name: Compile native Apple build driver
+        run: swift build --package-path Sources/BuildScripts --scratch-path "$RUNNER_TEMP/native-build-driver-check"
+
       - name: Test patch framework
         run: bash scripts/test_patches.sh
 

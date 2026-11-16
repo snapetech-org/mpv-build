@@ -94,6 +94,9 @@ jobs:
           done
           if (( ${#missing[@]} )); then HOMEBREW_NO_AUTO_UPDATE=1 brew install "${missing[@]}"; fi
 
+      - name: Compile native Apple build driver
+        run: swift build --package-path Sources/BuildScripts --scratch-path "$RUNNER_TEMP/native-build-driver-check"
+
       - name: Verify Apple SDK and native regression toolchain
         shell: bash
         run: |
