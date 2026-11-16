@@ -50,6 +50,10 @@ import json
 import sys
 
 SPECS = """
+LCEVC_DEC_VERSION lcevc_dec version
+LCEVC_DEC_URL lcevc_dec url
+LCEVC_DEC_REF lcevc_dec ref
+LCEVC_DEC_COMMIT lcevc_dec commit
 XEVD_VERSION xevd version
 XEVD_URL xevd url
 XEVD_REF xevd ref
@@ -140,7 +144,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
+resolve_pins lcevc_dec:git xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -319,7 +323,7 @@ main() {
   # Optional format families need external libraries, even with all built-in
   # FFmpeg decoders enabled. Every source is pinned and links statically.
   local decoder upper url_var ref_var commit_var version_var tree
-  for decoder in xevd davs2 uavs3d; do
+  for decoder in xevd davs2 uavs3d lcevc_dec; do
     upper=${decoder^^}
     url_var=${upper}_URL
     ref_var=${upper}_REF
@@ -394,6 +398,7 @@ main() {
     --enable-ffnvcodec \
     --enable-nvdec \
     --enable-libdav1d \
+    --enable-liblcevc-dec \
     --enable-libxevd \
     --enable-libdavs2 \
     --enable-libuavs3d \

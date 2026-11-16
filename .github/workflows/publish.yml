@@ -256,6 +256,7 @@ jobs:
           python3 scripts/test_prepare_android_qairt.py
           python3 scripts/test_inspect_pcm_package.py
           python3 scripts/test_codec_inventory.py
+          python3 scripts/test_lcevc_sdk.py
           python3 scripts/test_dependency_retry.py
           python3 scripts/test_release_repository.py
 

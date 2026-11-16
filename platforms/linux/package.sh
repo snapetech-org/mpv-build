@@ -144,6 +144,16 @@ if [ "$found_pkgconfig" -eq 0 ]; then
   exit 1
 fi
 
+# Statically linked SDKs still owe their copyright notices to the final package.
+if [[ -f "$PREFIX/lib/pkgconfig/lcevc_dec.pc" && ! -f "$PREFIX/share/licenses/pleazyng-codecs/lcevc_dec/LICENSE.md" ]]; then
+  echo "LCEVC dependency licensing information is missing from the install prefix" >&2
+  exit 1
+fi
+if [[ -d "$PREFIX/share/licenses/pleazyng-codecs" ]]; then
+  mkdir -p "$stage/share/licenses"
+  cp -a "$PREFIX/share/licenses/pleazyng-codecs" "$stage/share/licenses/"
+fi
+
 mkdir -p "$OUT_DIR"
 
 # Every shared library the tarball ships gets a debug file. They are found in

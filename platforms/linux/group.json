@@ -10,7 +10,9 @@
     "scripts/inspect_pcm_package.py",
     "scripts/codec_inventory.py",
     "scripts/codec_playback_smoke.py",
-    "scripts/build_video_decoder.sh"
+    "scripts/build_video_decoder.sh",
+    "scripts/fix_lcevc_pkgconfig.py",
+    "scripts/stage_decoder_notices.py"
   ],
   "artifacts": {
     "libmpv-linux": {
@@ -27,7 +29,8 @@
         "vulkan-loader",
         "xevd",
         "davs2",
-        "uavs3d"
+        "uavs3d",
+        "lcevc_dec"
       ],
       "variants": [
         "x86_64",

@@ -2,6 +2,7 @@
 # Build a verified source checkout into the private FFmpeg prefix. Callers own
 # acquisition and hash verification; this script never fetches moving sources.
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 component=${1:?component}
 source_dir=${2:?source directory}
 prefix=${3:?install prefix}
@@ -19,6 +20,20 @@ if [[ -n "${ANDROID_ABI:-}" ]]; then
 fi
 
 case "$component" in
+  lcevc_dec)
+    cmake -S "$source_dir" -B "$build" -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DCMAKE_INSTALL_PREFIX="$install_prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+      -DBUILD_SHARED_LIBS=OFF -DVN_SDK_EXECUTABLES=OFF -DVN_SDK_UNIT_TESTS=OFF \
+      -DVN_SDK_SAMPLE_SOURCE=OFF -DVN_SDK_JSON_CONFIG=OFF -DVN_SDK_DOCS=OFF \
+      -DVN_SDK_BUILD_DETAILS=OFF -DVN_SDK_TRACING=OFF -DVN_SDK_METRICS=OFF "$@"
+    cmake --build "$build" --parallel "$jobs"
+    cmake --install "$build"
+    runtime=${LCEVC_CXX_RUNTIME:-stdc++}
+    [[ -z "${ANDROID_ABI:-}" ]] || runtime=c++_shared
+    python3 "$SCRIPT_DIR/fix_lcevc_pkgconfig.py" \
+      "$prefix/lib/pkgconfig/lcevc_dec.pc" --runtime "$runtime"
+    ;;
   xevd)
     cmake -S "$source_dir" -B "$build" -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
@@ -99,3 +114,5 @@ EOF
     ;;
   *) echo "Unsupported decoder component: $component" >&2; exit 2 ;;
 esac
+
+python3 "$SCRIPT_DIR/stage_decoder_notices.py" "$source_dir" "$prefix" "$component"

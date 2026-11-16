@@ -86,6 +86,7 @@ stub_extra="$temporary/stub-extra"
 records="$temporary/records"
 mkdir -p "$stub_bin" "$stub_extra" "$records" "$temporary/tmp" "$temporary/prefix/lib/pkgconfig"
 printf "Version: 1.6.\n" > "$temporary/prefix/lib/pkgconfig/davs2.pc"
+printf 'Libs: -lstdc++ -lm -llcevc_dec_api\n' > "$temporary/prefix/lib/pkgconfig/lcevc_dec.pc"
 
 # Deliberately unlike the pinned versions: every path below is derived from the
 # manifest, so a stub that matched by accident would prove nothing.
@@ -205,6 +206,8 @@ init_repository "$video_decoder_repository"
 mkdir -p "$video_decoder_repository/build/linux" "$video_decoder_repository/source"
 cp -- "$stub_extra/configure" "$video_decoder_repository/build/linux/configure"
 printf '#define XBUILD_TIME "unfixed"\n' > "$video_decoder_repository/source/version.h"
+printf "test copyright terms\n" > "$video_decoder_repository/COPYING"
+printf "test additional licensing information\n" > "$video_decoder_repository/LICENSE.md"
 git -C "$video_decoder_repository" add .
 git -C "$video_decoder_repository" update-index --chmod=+x build/linux/configure
 git -C "$video_decoder_repository" commit --quiet -m video-decoder
@@ -220,6 +223,7 @@ manifest="$temporary/versions.json"
 cat >"$manifest" <<JSON
 {
   "components": {
+    "lcevc_dec": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "xevd": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "davs2": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "uavs3d": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
@@ -405,6 +409,7 @@ assert_argument "$ffmpeg_configure" "--enable-libdav1d" "ffmpeg's configure"
 for decoder in xevd davs2 uavs3d; do
   assert_argument "$ffmpeg_configure" "--enable-lib$decoder" "ffmpeg's configure"
 done
+assert_argument "$ffmpeg_configure" "--enable-liblcevc-dec" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--pkg-config-flags=--static" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-ffnvcodec" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-nvdec" "ffmpeg's configure"

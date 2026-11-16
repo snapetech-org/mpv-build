@@ -574,6 +574,20 @@
         "android"
       ],
       "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; device decode and ARM64 qualification remain separate."
+    },
+    "lcevc_dec": {
+      "kind": "git",
+      "version": "4.3.1",
+      "url": "https://github.com/v-novaltd/LCEVCdec",
+      "ref": "4.3.1",
+      "commit": "e295d8438ba554bc541fb269baa9cbd567b626a8",
+      "platforms": [
+        "linux",
+        "android",
+        "apple",
+        "windows"
+      ],
+      "provenance": "Official 4.3.1 release tag d1281d05e960c62e0c42c39765d78a48378ed91f resolved to this commit on 2026-11-16. BSD-3-Clause-Clear plus upstream additional licensing information; copyright permission does not include a patent license. Package build and enhancement reconstruction require their own verification."
     }
   }
 }

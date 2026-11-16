@@ -58,9 +58,20 @@ package inventory or device playback result is claimed.
 
 AV2 is a named source identity, not an installed FFmpeg decoder. The reviewed
 dav2d source currently requires a separate FFmpeg integration and uses evolving
-AV2 syntax. LCEVC enhancement reconstruction likewise needs an external library
-and a correctly connected enhancement path; decoding its base layer does not
-qualify as LCEVC reconstruction.
+AV2 syntax. LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux. Its installed
+pkg-config descriptor is normalized so C++ runtime dependencies follow SDK
+archives, including under `--as-needed`; a C client linked and initialized the
+SDK successfully on x86_64. The recipe retains upstream COPYRIGHT and licensing
+notices in the package prefix. This is SDK/API evidence, not yet a packaged
+FFmpeg enhancement reconstruction result. Decoding only the base layer never
+qualifies as LCEVC reconstruction.
+
+The upstream SDK uses BSD-3-Clause-Clear and additional licensing information,
+which remain its own terms and explicitly exclude a patent license. Bundling
+the static implementation requires no SDK installation by end users. Preserve
+both upstream `COPYING` and `LICENSE.md` in distributions; do not describe the
+application license as replacing those terms. Sources: [LCEVCdec 4.3.1](https://github.com/v-novaltd/LCEVCdec/tree/e295d8438ba554bc541fb269baa9cbd567b626a8),
+[licensing information](https://github.com/v-novaltd/LCEVCdec/blob/e295d8438ba554bc541fb269baa9cbd567b626a8/LICENSE.md).
 
 ## Generated-media release check
 
