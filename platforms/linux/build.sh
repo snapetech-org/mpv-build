@@ -404,6 +404,7 @@ main() {
     --enable-libdav1d \
     --enable-liblcevc-dec \
     --enable-libxml2 \
+    --extra-cflags="-I$prefix/include" \
     --enable-libxevd \
     --enable-libdavs2 \
     --enable-libuavs3d \
