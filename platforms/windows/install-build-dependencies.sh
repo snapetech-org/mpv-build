@@ -6,18 +6,14 @@ set -euo pipefail
 sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
 export DEBIAN_FRONTEND=noninteractive
 
-# GitHub's Ubuntu image may point the Ubuntu suites at its regional Azure
-# mirror. That mirror stalled in the centralus hosted runner while the
-# canonical archive.ubuntu.com mirror responded immediately. Rewrite only
-# that Ubuntu mirror; leave third-party repositories and signed suites intact.
+# Hosted runners have stalled on both Azure and EC2 regional Ubuntu mirrors.
+# Preserve the Ubuntu suite, signing configuration and third-party sources.
 for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
   [[ -f "$source" ]] || continue
-  if grep -q 'azure.archive.ubuntu.com' "$source"; then
-    sudo sed -i \
-      -e 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' \
-      -e 's#https://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' \
+  if grep -Eq 'https?://(azure|([a-z0-9-]+\.)?ec2)\.archive\.ubuntu\.com/ubuntu([/[:space:]]|$)' "$source"; then
+    sudo sed -E -i \
+      's#https?://(azure|([a-z0-9-]+\.)?ec2)\.archive\.ubuntu\.com/ubuntu([/[:space:]]|$)#https://archive.ubuntu.com/ubuntu\3#g' \
       "$source"
-    echo "Replaced stalled Azure Ubuntu mirror in $source."
   fi
 done
 
@@ -27,7 +23,7 @@ apt_options=(
   -o Acquire::https::Timeout=15
 )
 sudo apt-get "${apt_options[@]}" update
-sudo apt-get "${apt_options[@]}" install -y \
+sudo apt-get "${apt_options[@]}" install --no-install-recommends -y \
   git cmake ninja-build build-essential pkg-config curl wget unzip \
   zip patch ca-certificates python3 python3-pip autoconf automake libtool \
   libtool-bin bison flex gettext mercurial subversion gyp yasm nasm \

@@ -788,7 +788,15 @@ jobs:
       - name: Install Windows build dependencies
         if: steps.host-llvm-archive.outputs.cache-hit != 'true'
         timeout-minutes: 20
-        run: bash platforms/windows/install-build-dependencies.sh
+        run: |
+          windows_root="${MPV_WINDOWS_WORKSPACE:-$GITHUB_WORKSPACE}"
+          # Exporting a working donor only needs Git, Python and the host
+          # compiler's runtime. A launch also checks its shared libraries.
+          if "$windows_root/build/windows/aarch64/install/bin/clang" --version >/dev/null 2>&1; then
+            echo "Restored host compiler runs on this image."
+          else
+            bash platforms/windows/install-build-dependencies.sh
+          fi
 
       - name: Export the restored host compiler
         id: host-llvm

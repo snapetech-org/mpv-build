@@ -226,7 +226,9 @@ windows_install = named_step(windows, "Install dependencies")
 assert "platforms/windows/install-build-dependencies.sh" in windows_install
 windows_dependencies = (ROOT / "platforms/windows/install-build-dependencies.sh").read_text()
 for token in (
-    "azure.archive.ubuntu.com",
+    "(azure|([a-z0-9-]+",
+    "ec2)",
+    "install --no-install-recommends -y",
     "https://archive.ubuntu.com/ubuntu",
     "-o Acquire::Retries=2",
     "-o Acquire::http::Timeout=15",
@@ -235,7 +237,7 @@ for token in (
     "--timeout 15 --retries 1 meson",
 ):
     assert token in windows_dependencies, f"Windows dependency bootstrap must bound mirror retries: {token}"
-assert windows_dependencies.index("azure.archive.ubuntu.com") < windows_dependencies.index(
+assert windows_dependencies.index("(azure|") < windows_dependencies.index(
     "apt-get \"${apt_options[@]}\" update"
 ), "the unreliable image mirror must be rewritten before apt update"
 assert "timeout-minutes: 20" in windows_install
@@ -253,7 +255,10 @@ assert windows_meson_positions == sorted(windows_meson_positions), (
 assert "platforms/windows/install-build-dependencies.sh" in named_step(
     host_llvm, "Install Windows build dependencies"
 ), "the host compiler producer and target builds must share their dependencies"
-assert "timeout-minutes: 20" in named_step(host_llvm, "Install Windows build dependencies")
+host_install = named_step(host_llvm, "Install Windows build dependencies")
+assert "timeout-minutes: 20" in host_install
+assert host_install.index("bin/clang") < host_install.index("install-build-dependencies.sh")
+assert " --version" in host_install
 keepalive = job_section(PUBLISH, "windows-cache-keepalive")
 assert "windows-ep4-${{ matrix.arch }}-" in named_step(
     keepalive, "Refresh Windows build state cache"
