@@ -21,18 +21,23 @@ frameworks.mkdir()
 for archive in sorted(release.glob('*.xcframework.zip')):
     with zipfile.ZipFile(archive) as zipped:
         zipped.extractall(frameworks)
-if not (frameworks / 'Libmpv.xcframework').is_dir():
-    raise SystemExit('Expected freshly packaged Libmpv.xcframework')
+local_frameworks = {p.stem for p in frameworks.glob('*.xcframework') if p.is_dir()}
+if not local_frameworks:
+    raise SystemExit('Expected at least one freshly built framework')
+replaced = set()
 
 def local_target(match):
     name = match['name']
-    if not (frameworks / f'{name}.xcframework').is_dir():
+    if name not in local_frameworks:
         return match[0]
+    replaced.add(name)
     return f'.binaryTarget(name: "{name}", path: "Frameworks/{name}.xcframework")'
 
 text = re.sub(r'\.binaryTarget\(\s*name: "(?P<name>[^"\n]+)",\s*'
               r'url: "[^"\n]+",\s*checksum: "[^"\n]+"\s*\)',
               local_target, manifest.read_text())
+if local_frameworks != replaced:
+    raise SystemExit(f'Fresh frameworks missing from SwiftPM targets: {sorted(local_frameworks - replaced)}')
 (package / 'Package.swift').write_text(text)
 PY
 cat > "$work/Consumer/main.m" <<'OBJC'
