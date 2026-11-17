@@ -74,7 +74,7 @@ jobs:
       (
         true
       )
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     env:
       # Keep small Python and Rust caches on local APFS for reliable metadata access.
