@@ -51,21 +51,25 @@ into pinned FFmpeg and decoded the official FATE EVC sample. AVS2 8-bit and
 AVS3 8/10-bit output matches upstream YUV hashes. The full Linux package also
 passed the corpus and LCEVC reconstruction gates described below.
 
-The pinned Android NDK 29.0.14206865 is available locally: all four ABI SDK
-clients and final shared FFmpeg libraries link successfully. Hosted run
-43983813338 passed both Linux architectures, all four Android ABIs, the Android
-AAR, and Linux/Android publication. Windows x86_64 built, but Windows publication failed because the required
-ARM64 binary and symbols were absent after its build failed. Windows ARM64
-failed in the LCEVC source build with x86 MMX intrinsic errors. That run
-started before the Windows cache-key fix at `4235371`, so it does not qualify
-the current Windows ARM64 source state.
+Hosted [run 43983813338](https://github.com/snapetech-org/mpv-build/actions/runs/43983813338)
+passed both Linux architectures, all four Android ABIs and the Android AAR,
+all six Apple targets, and Apple/Linux/Android publication. Apple's publication
+also linked Objective-C-only SwiftPM consumers on iOS and tvOS. Inspection of
+the Catalyst Libavcodec archive found defined LCEVC, XEVD and davs2 APIs in both
+ARM64 and Intel slices, with all twelve decoder notice-file hashes intact.
 
-Current `main` invalidates cached Windows source and build state when resolved
-patches change. Its cache-invalidation regression tests pass locally. A fresh
-same-commit Windows ARM64 build and successful package publication are still
-required before that target is qualified or the app pin advances. Build success
-also does not establish physical-device playback qualification. Earlier notes
-saying the Android NDK was absent are superseded.
+Windows [recovery run 43993496231](https://github.com/snapetech-org/mpv-build/actions/runs/43993496231)
+passed x86_64 and ARM64 builds, PCM ABI checks, packaging, publication and the
+manifest commit. The fixes select compiler-appropriate clock/NEON headers and
+invalidate cached source and build state when resolved patch contents change.
+The earlier ARM64 failures are superseded by this completed production build.
+All four platform groups now have matching published receipts; the application
+must consume the verified producer revision to deliver these packages.
+
+The pinned Android NDK 29.0.14206865 is also available locally: all four ABI SDK
+clients and final shared FFmpeg libraries link successfully. Earlier notes
+saying the NDK was absent are superseded. These compile, link and package
+results do not establish physical-device playback or real-time qualification.
 
 AV2 is not an installed FFmpeg decoder: this pin has no AV2 codec ID,
 decoder wrapper or demuxer integration, and a dav2d SDK build alone cannot add
@@ -77,18 +81,19 @@ AV2 v1.0.0 streams, and qualified on each target. The client should use a
 server conversion only when the server offers a compatible route, and otherwise
 report the unsupported source accurately.
 Sources: [AV2 v1.0 specification](https://av2.aomedia.org/),
-[VideoLAN dav2d status](https://jbkempf.com/blog/2026/dav2d/). LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
+[VideoLAN dav2d status](https://jbkempf.com/blog/2026/dav2d/).
+
+LCEVC now has a pinned 4.3.1 static SDK in published packages for Linux, Android,
 Windows and all Apple slices. Android packages it into its FFmpeg shared
 libraries and carries the original notices in both native tarballs and AAR
 assets. Windows links the static SDK into FFmpeg. Apple folds all eight SDK
 archives into Libavcodec and retains notices in the framework resources.
-These source integrations still require successful platform publication and
-application pin updates before users receive them. Its installed
+Application pin updates deliver these verified native packages to users. Its installed
 pkg-config descriptor is normalized so C++ runtime dependencies follow SDK
 archives, including under `--as-needed`; a C client linked and initialized the
 SDK successfully on x86_64. The recipe retains upstream COPYRIGHT and licensing
-notices in the package prefix. This is SDK/API evidence, not yet a packaged
-FFmpeg enhancement reconstruction result. Decoding only the base layer never
+notices in the package prefix. Packaged Linux decode/seek and enhancement reconstruction checks also pass
+on both native architectures. Decoding only the base layer never
 qualifies as LCEVC reconstruction.
 
 The upstream SDK uses BSD-3-Clause-Clear and additional licensing information,
