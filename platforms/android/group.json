@@ -32,6 +32,7 @@
         "libass",
         "libplacebo",
         "dav1d",
+        "libxml2",
         "xevd",
         "uavs3d",
         "davs2",

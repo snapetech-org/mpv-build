@@ -25,9 +25,9 @@ table () {
 	eval "printf '%s' \"\${${1//-/_}-}\""
 }
 
-components="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec ffmpeg freetype fribidi harfbuzz libunibreak libass lua libplacebo mpv"
+components="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec libxml2 ffmpeg freetype fribidi harfbuzz libunibreak libass lua libplacebo mpv"
 
-dep_ffmpeg="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec"
+dep_ffmpeg="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec libxml2"
 dep_libass="freetype fribidi harfbuzz libunibreak"
 dep_mpv="ffmpeg libass lua libplacebo"
 dep_libmpv_android="mpv"
@@ -39,6 +39,7 @@ recipe_xevd=video_decoder
 recipe_uavs3d=video_decoder
 recipe_davs2=video_decoder
 recipe_lcevc_dec=video_decoder
+recipe_libxml2=video_decoder
 recipe_ffmpeg=ffmpeg
 recipe_freetype=meson
 recipe_fribidi=meson

@@ -1,0 +1,64 @@
+name: Windows codec qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: x86_64
+            architecture: x64
+            runner: windows-2025
+          - variant: aarch64
+            architecture: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.architecture }}
+      - name: Fetch and verify the published DLL
+        shell: pwsh
+        run: |
+          $receipt = Get-Content artifacts.json -Raw | ConvertFrom-Json -AsHashtable
+          $windows = $receipt.platforms.windows
+          $artifact = $windows.libraries['libmpv-windows'].prebuilt[$env:VARIANT]
+          $archive = Join-Path $env:RUNNER_TEMP 'libmpv.zip'
+          $folder = Join-Path $env:RUNNER_TEMP 'libmpv'
+          Invoke-WebRequest -Uri "$($windows.assetBase)/$($artifact.asset)" -OutFile $archive
+          if ((Get-FileHash $archive).Hash -ine $artifact.checksum) {
+            throw 'Published Windows archive checksum mismatch'
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $folder
+          $library = Join-Path $folder 'libmpv-2.dll'
+          if ((Get-FileHash $library).Hash -ine $artifact.capabilities.binarySha256['libmpv-2.dll']) {
+            throw 'Published Windows DLL checksum mismatch'
+          }
+          "QUALIFICATION_DLL=$library" >> $env:GITHUB_ENV
+      - name: Observe decoder inventory and exercise reference fixtures
+        shell: pwsh
+        run: |
+          python scripts/codec_inventory.py $env:QUALIFICATION_DLL --require apv --require av1 --require vvc --require evc --require avs2 --require avs3 --output codec-inventory.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/codec_reference_smoke.py $env:QUALIFICATION_DLL --output codec-playback-reference.json
+      - name: Upload qualification receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-codecs-${{ matrix.variant }}
+          path: |
+            codec-inventory.json
+            codec-playback-reference.json

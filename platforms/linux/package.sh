@@ -145,6 +145,9 @@ if [ "$found_pkgconfig" -eq 0 ]; then
 fi
 
 # Statically linked SDKs still owe their copyright notices to the final package.
+if [[ -f "$PREFIX/lib/pkgconfig/libxml-2.0.pc" ]]; then
+  test -s "$PREFIX/share/licenses/pleazyng-codecs/libxml2/Copyright"
+fi
 if [[ -f "$PREFIX/lib/pkgconfig/lcevc_dec.pc" ]]; then
   for notice in COPYING LICENSE.md notice-manifest.json; do
     if [[ ! -f "$PREFIX/share/licenses/pleazyng-codecs/lcevc_dec/$notice" ]]; then

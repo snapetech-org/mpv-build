@@ -536,6 +536,15 @@
       ],
       "overrides": {}
     },
+    "libxml2": {
+      "kind": "git",
+      "version": "2.15.4",
+      "url": "https://github.com/GNOME/libxml2",
+      "ref": "v2.15.4",
+      "commit": "96498992efa48d52b0e8b83058bd88dbdaf153c1",
+      "provenance": "GNOME libxml2 v2.15.4 annotated tag 9fac185ccc0b719eb647db902d5c13c3aaa96263 dereferences to 96498992efa48d52b0e8b83058bd88dbdaf153c1. The source integrates DASH XML parsing without a shared libxml2 dependency.",
+      "platforms": ["linux", "android"]
+    },
     "xevd": {
       "kind": "git",
       "version": "0.8.0",

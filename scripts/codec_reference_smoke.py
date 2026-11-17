@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Exercise pinned decoder reference vectors through the packaged libmpv."""
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
+import platform
+import subprocess
+import sys
+import tempfile
+from urllib.request import urlopen
+
+from codec_playback_smoke import execute
+
+FATE = 'https://fate-suite.ffmpeg.org'
+AVS2 = 'https://raw.githubusercontent.com/pkuvcl/avs2stream/96065ae3d3f940ebad5a0b84251b3cf27ecf201c'
+AVS3 = 'https://raw.githubusercontent.com/uavs3/avs3stream/e9fcc4eac77061213c8fb07c87a8a1106fb66fe8'
+MAX_FIXTURE_BYTES = 16 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class Fixture:
+    name: str
+    url: str
+    sha256: str
+    dimensions: tuple[int, int]
+    pixels: str
+    min_end: float
+    seek: str | None
+
+
+FIXTURES = {
+    fixture.name: fixture
+    for fixture in (
+        Fixture('apv-422-10.apv', f'{FATE}/apv/profile_422-10.apv',
+                'abdf4b5e2bf10a6ad8435a5df31f96dde19e0c7f771522db484860966cb9cb77',
+                (320, 180), 'yuv422p10', .05, '0.033'),
+        # These two elementary streams have a single random-access point.
+        # Decode to EOF and verify output. Keep seek evidence separate.
+        Fixture('vvc-main10.vvc', f'{FATE}/vvc-conformance/APSMULT_A_4.bit',
+                '64abc0029be9aad1e76918d097c8a1556677f6d158426998d856b03cbf9dd08a',
+                (416, 240), 'yuv420p10', 1.7, None),
+        Fixture('evc-main.evc', f'{FATE}/evc/akiyo_cif.evc',
+                'f3ef572163a9354415ab380063137c0907df9cd097c22a7b6be65b351d3c6405',
+                (352, 288), 'yuv420p10', 11, None),
+        Fixture('avs2-8.avs2', f'{AVS2}/ES/BQSquare_416x240_60_ra/test.avs2',
+                '96a662310aae4365b3ad3018040465ea82eb8a77f246cbf15ceb373ccc3096b8',
+                (416, 240), 'yuv420p', 1.5, '0.25'),
+        Fixture('avs3-8.ts', f'{AVS3}/TS/City_1280x720_60_ra/test.ts',
+                '265b35090844f4a9bac98611a986a9aca9ab4a1584400c48b808c640c85713cc',
+                (1280, 720), 'yuv420p', 9, '2'),
+        Fixture('avs3-10.ts', f'{AVS3}/TS/MarketPlace_1920x1080_60_10bit_ra/test.ts',
+                '0b49d812779d971449a2f1f5680449771250f6459e1834cb9610a9ff3d3c88d8',
+                (1920, 1080), 'yuv420p10', 9, '2'),
+    )
+}
+
+
+def download(fixture, path):
+    with urlopen(fixture.url, timeout=45) as response:
+        data = response.read(MAX_FIXTURE_BYTES + 1)
+    if len(data) > MAX_FIXTURE_BYTES or hashlib.sha256(data).hexdigest() != fixture.sha256:
+        raise ValueError(f'{fixture.name}: reference fixture hash mismatch')
+    path.write_bytes(data)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('library', type=Path)
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--worker', type=Path)
+    args = parser.parse_args()
+    if args.worker:
+        fixture = FIXTURES[args.worker.name]
+        report = execute(
+            args.library, args.worker, 'video',
+            expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
+            seek_position=fixture.seek, expected_pixel_format=fixture.pixels,
+            extra_options={'untimed': 'yes', 'vd-lavc-threads': '1'} if fixture.name.startswith('evc-')
+            else {'untimed': 'yes'},
+        )
+        args.output.write_text(json.dumps(report), encoding='utf-8')
+        return
+
+    results = {}
+    with tempfile.TemporaryDirectory(prefix='codec-reference-') as temporary:
+        root = Path(temporary)
+        for fixture in FIXTURES.values():
+            path = root / fixture.name
+            receipt = root / (fixture.name + '.json')
+            try:
+                download(fixture, path)
+                command = [sys.executable, __file__, str(args.library.resolve()),
+                           '--worker', str(path), '--output', str(receipt)]
+                result = subprocess.run(command, text=True, capture_output=True, timeout=45)
+                if result.returncode:
+                    raise RuntimeError((result.stdout + result.stderr)[-4000:])
+                case = json.loads(receipt.read_text(encoding='utf-8'))
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                case = {'error': str(error)}
+            results[fixture.name] = {**case, 'fixtureUrl': fixture.url, 'fixtureSha256': fixture.sha256}
+            print(f'{fixture.name}: ' + (case.get('error') or 'decode passed; seek ' + case['seek']), flush=True)
+
+    with args.library.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    args.output.write_text(json.dumps({
+        'schemaVersion': 1,
+        'evidence': 'pinned-reference-playback',
+        'binarySha256': digest,
+        'architecture': platform.machine(),
+        'physicalOutputQualified': False,
+        'pixelConformanceQualified': False,
+        'results': results,
+    }, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    if any('error' in result for result in results.values()):
+        raise SystemExit('Native reference playback failures')
+
+
+if __name__ == '__main__':
+    main()

@@ -24,6 +24,9 @@ class BundledEngineTests(unittest.TestCase):
                 p = self.natives / abi / 'include' / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_bytes(b'reviewed matching header\n')
+            xml_notice = self.natives / abi / 'share/licenses/pleazyng-codecs/libxml2/Copyright'
+            xml_notice.parent.mkdir(parents=True)
+            xml_notice.write_bytes(b'libxml2 terms')
             for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec'):
                 directory = self.natives / abi / 'share/licenses/pleazyng-codecs' / component
                 directory.mkdir(parents=True)
@@ -54,6 +57,7 @@ class BundledEngineTests(unittest.TestCase):
             self.assertEqual(data['activation'], 'runtime-settings-default-off')
             self.assertEqual(data['schema_version'], 2)
             self.assertEqual(archive.read(metadata.LICENSE_PREFIX + 'arm64-v8a/lcevc_dec/COPYING'), b'original SDK terms')
+            self.assertEqual(archive.read(metadata.STANDARD_LICENSE_PREFIX + 'libxml2/Copyright'), b'libxml2 terms')
             self.assertEqual(archive.read(metadata.STANDARD_LICENSE_PREFIX + 'lcevc_dec/upstream/NOTICE.txt'), b'upstream terms')
             for abi in metadata.ABIS:
                 self.assertEqual(archive.read(metadata.PREFIX + abi + '/libavcodec/avcodec.h'), b'reviewed matching header\n')

@@ -27,13 +27,21 @@ from codec_inventory import Node, decode_node
 VIDEO = (
     ('h264', 'libx264', 'mkv', 'yuv420p', ('-preset', 'ultrafast')),
     ('h264-10bit', 'libx264', 'mkv', 'yuv420p10le', ('-preset', 'ultrafast')),
+    ('h264-422-10bit', 'libx264', 'mkv', 'yuv422p10le', ('-preset', 'ultrafast')),
+    ('h264-444-10bit', 'libx264', 'mkv', 'yuv444p10le', ('-preset', 'ultrafast')),
+    ('hevc-422-10bit', 'libx265', 'mov', 'yuv422p10le', ('-preset', 'ultrafast', '-x265-params', 'pools=1:frame-threads=1:log-level=error')),
+    ('hevc-444-12bit', 'libx265', 'mkv', 'yuv444p12le', ('-preset', 'ultrafast', '-x265-params', 'pools=1:frame-threads=1:log-level=error')),
     ('hevc-10bit', 'libx265', 'mkv', 'yuv420p10le', ('-preset', 'ultrafast', '-x265-params', 'pools=1:frame-threads=1:log-level=error')),
     ('av1', 'libaom-av1', 'mkv', 'yuv420p', ('-cpu-used', '8')),
+    ('av1-10bit', 'libaom-av1', 'mkv', 'yuv420p10le', ('-cpu-used', '8')),
+    ('av1-444-12bit', 'libaom-av1', 'mkv', 'yuv444p12le', ('-cpu-used', '8')),
     ('vp9-10bit', 'libvpx-vp9', 'webm', 'yuv420p10le', ('-deadline', 'realtime', '-cpu-used', '8')),
     ('vp8', 'libvpx', 'webm', 'yuv420p', ('-deadline', 'realtime')),
     ('mpeg2', 'mpeg2video', 'mpg', 'yuv420p', ()),
     ('mpeg4', 'mpeg4', 'avi', 'yuv420p', ()),
     ('wmv2', 'wmv2', 'asf', 'yuv420p', ()),
+    ('mpeg2-interlaced', 'mpeg2video', 'ts', 'yuv420p', ('-flags', '+ildct+ilme', '-top', '1')),
+    ('mpeg1', 'mpeg1video', 'mpg', 'yuv420p', ()),
     ('prores', 'prores_ks', 'mov', 'yuv422p10le', ('-profile:v', '2')),
     ('ffv1', 'ffv1', 'mkv', 'yuv444p10le', ('-level', '3')),
     ('huffyuv', 'huffyuv', 'avi', 'yuv422p', ()),
@@ -50,6 +58,8 @@ AUDIO = (
     ('flac', 'flac', 'flac'), ('alac', 'alac', 'm4a'),
     ('ac3', 'ac3', 'ac3'), ('eac3', 'eac3', 'eac3'),
     ('pcm', 'pcm_s24le', 'wav'), ('wavpack', 'wavpack', 'wv'),
+    ('dts', 'dca', 'dts'), ('truehd', 'truehd', 'mka'),
+    ('wmav2', 'wmav2', 'asf'), ('mp2', 'mp2', 'mka'),
 )
 
 
@@ -63,8 +73,14 @@ class EndFile(c.Structure):
 
 
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
-            seek_position="0.5", extra_options=None):
-    lib = c.CDLL(str(Path(library).resolve(strict=True)))
+            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None):
+    library = Path(library).resolve(strict=True)
+    if sys.platform == 'win32':
+        import os
+        dll_directory = os.add_dll_directory(str(library.parent))
+    else:
+        dll_directory = None
+    lib = c.CDLL(str(library))
     lib.mpv_create.restype = c.c_void_p
     lib.mpv_set_option_string.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p]
     lib.mpv_initialize.argtypes = [c.c_void_p]
@@ -124,6 +140,8 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
                            'audio-display': 'no', 'ytdl': 'no', 'load-scripts': 'no',
                            'osc': 'no'}
         options.update(extra_options or {})
+        if expected_subtitle:
+            options['sid'] = '1'
         if kind == 'audio':
             options.update({'ao': 'pcm', 'ao-pcm-file': str(pcm), 'audio-format': 's16',
                             'audio-samplerate': '48000', 'audio-channels': 'stereo'})
@@ -139,18 +157,36 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             raise ValueError('no decoded output parameters')
         if kind == 'video' and (params.get('w'), params.get('h')) != expected_dimensions:
             raise ValueError('decoded dimensions differ from fixture')
-        # Drain old playback-restart events before testing the seek operation.
-        while lib.mpv_wait_event(ctx, 0).contents.event_id:
-            pass
-        command('seek', seek_position, 'absolute+exact')
-        command('set', 'pause', 'no')
-        second = finish(require_restart=True)
-        report = {'decode': 'passed', 'seek': 'passed', 'firstEnd': first,
+        if expected_pixel_format is not None:
+            decoded = prop('video-params')
+            if not isinstance(decoded, dict) or decoded.get('pixelformat') != expected_pixel_format:
+                raise ValueError(f'unexpected decoded pixel format: {decoded}')
+        second = None
+        if seek_position is not None:
+            while lib.mpv_wait_event(ctx, 0).contents.event_id:
+                pass
+            if expected_subtitle:
+                command('set', 'pause', 'yes')
+            command('seek', seek_position, 'absolute+exact')
+            if expected_subtitle:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    lib.mpv_wait_event(ctx, .02)
+                    if expected_subtitle in (prop('sub-text') or ''):
+                        break
+                else:
+                    raise ValueError('selected timed text was not decoded at the seek position')
+            command('set', 'pause', 'no')
+            second = finish(require_restart=not expected_subtitle)
+        report = {'decode': 'passed', 'seek': 'passed' if second is not None else 'not-exercised', 'firstEnd': first,
                   'seekEnd': second, 'output': params,
+                  'subtitleTextVerified': expected_subtitle is not None,
                   'hardwareDecoder': prop('hwdec-current'),
                   'hardwareDecoding': prop('hwdec-current') not in (None, '', 'no')}
     finally:
         lib.mpv_terminate_destroy(ctx)
+        if dll_directory is not None:
+            dll_directory.close()
         try:
             if report is not None and kind == 'audio':
                 data = pcm.read_bytes()
@@ -170,7 +206,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
     return report
 
 
-def generate(ffmpeg, root):
+def generate(ffmpeg, root, *, expect_dash=False):
     fixtures = []
     for name, encoder, container, pixels, extra in VIDEO:
         path = root / f'{name}.{container}'
@@ -179,12 +215,39 @@ def generate(ffmpeg, root):
                         '-an', '-c:v', encoder, '-threads', '1', '-pix_fmt', pixels,
                         *extra, str(path)], check=True, timeout=90)
         fixtures.append((name, path, 'video'))
+    streams = [
+        ('m3u8', ('-f', 'hls', '-hls_time', '0.5', '-hls_playlist_type', 'vod', '-hls_segment_type', 'fmp4')),
+    ]
+    if expect_dash:
+        streams.append(('mpd', ('-f', 'dash', '-seg_duration', '0.5')))
+    for extension, args in streams:
+        directory = root / extension
+        directory.mkdir()
+        path = directory / f'manifest.{extension}'
+        subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y',
+                        '-f', 'lavfi', '-i', 'testsrc2=size=128x96:rate=25:duration=2',
+                        '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
+                        '-g', '12', '-sc_threshold', '0', *args, str(path)], check=True, timeout=30)
+        fixtures.append((extension, path, 'video'))
     for name, encoder, container in AUDIO:
         path = root / f'{name}.{container}'
         subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y',
                         '-f', 'lavfi', '-i', 'sine=frequency=997:sample_rate=48000:duration=2',
-                        '-ac', '2', '-c:a', encoder, str(path)], check=True, timeout=30)
+                        '-ac', '2', '-strict', 'experimental', '-c:a', encoder, str(path)], check=True, timeout=30)
         fixtures.append((name, path, 'audio'))
+
+    captions = root / 'captions.srt'
+    captions.write_text('1\n00:00:00,250 --> 00:00:01,250\nPleazyng caption Ω\n', encoding='utf-8')
+    for name, video_file, codec, container in (
+        ('subrip', 'h264.mkv', 'srt', 'mkv'),
+        ('ass', 'h264.mkv', 'ass', 'mkv'),
+        ('webvtt', 'vp8.webm', 'webvtt', 'webm'),
+    ):
+        path = root / f'{name}.{container}'
+        subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', '-i', str(root / video_file),
+                        '-i', str(root / 'opus.ogg'), '-i', str(captions), '-map', '0:v:0', '-map', '1:a:0',
+                        '-map', '2:s:0', '-c', 'copy', '-c:s', codec, str(path)], check=True, timeout=30)
+        fixtures.append((name, path, 'video'))
     return fixtures
 
 
@@ -193,24 +256,48 @@ def main():
     parser.add_argument('library', type=Path)
     parser.add_argument('--ffmpeg', default='ffmpeg')
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--expect-dash', action='store_true')
     parser.add_argument('--worker', type=Path)
     parser.add_argument('--kind', choices=['video', 'audio'])
     args = parser.parse_args()
     if args.worker:
-        print(json.dumps(execute(args.library, args.worker, args.kind)))
+        name = args.worker.stem
+        expected_subtitle = 'Pleazyng caption Ω' if name in ('subrip', 'ass', 'webvtt') else None
+        expected_pixel_format = next(
+            (pixels.removesuffix('le') for case, _, _, pixels, _ in VIDEO
+             if case == name and pixels.endswith(('10le', '12le'))),
+            None,
+        )
+        result = json.dumps(execute(
+            args.library, args.worker, args.kind, expected_subtitle=expected_subtitle,
+            expected_pixel_format=expected_pixel_format,
+            extra_options={'untimed': 'yes'} if args.kind == 'video' else None,
+        ))
+        if args.output:
+            args.output.write_text(result, encoding='utf-8')
+        else:
+            print(result)
         return
     results = {}
     with tempfile.TemporaryDirectory(prefix='codec-playback-') as directory:
-        for name, path, kind in generate(args.ffmpeg, Path(directory)):
+        root = Path(directory)
+        for name, path, kind in generate(args.ffmpeg, root, expect_dash=args.expect_dash):
+            worker_report = root / 'worker.json'
+            worker_report.unlink(missing_ok=True)
             try:
                 result = subprocess.run([sys.executable, __file__, str(args.library.resolve()),
-                                         '--worker', str(path), '--kind', kind],
+                                         '--worker', str(path), '--kind', kind, '--output', str(worker_report)],
                                         capture_output=True, text=True, timeout=35)
-                results[name] = (json.loads(result.stdout) if result.returncode == 0 else
-                                 {'error': result.stderr[-4000:], 'returncode': result.returncode})
+                results[name] = (json.loads(worker_report.read_text(encoding='utf-8')) if result.returncode == 0 else
+                                 {'error': (result.stdout + result.stderr)[-4000:], 'returncode': result.returncode})
             except subprocess.TimeoutExpired:
                 results[name] = {'error': 'native worker timed out'}
             results[name]['fixtureSha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if name in ('mpd', 'm3u8'):
+                results[name]['segmentsSha256'] = {
+                    asset.name: hashlib.sha256(asset.read_bytes()).hexdigest()
+                    for asset in sorted(path.parent.iterdir()) if asset != path
+                }
             print(f'{name}: ' + (results[name].get('error') or 'decode and seek passed'), flush=True)
     with args.library.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()

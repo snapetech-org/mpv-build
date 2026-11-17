@@ -28,6 +28,9 @@ case "$component" in
 		fi
 
 		;;
+	libxml2)
+		options=()
+		;;
 	davs2)
 		# davs2 uses its own configure/Makefile build, not CMake.
 		options=()

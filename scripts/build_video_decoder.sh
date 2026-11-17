@@ -20,6 +20,18 @@ if [[ -n "${ANDROID_ABI:-}" ]]; then
 fi
 
 case "$component" in
+  libxml2)
+    cmake -S "$source_dir" -B "$build" -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DCMAKE_INSTALL_PREFIX="$install_prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+      -DBUILD_SHARED_LIBS=OFF -DLIBXML2_WITH_PROGRAMS=OFF -DLIBXML2_WITH_TESTS=OFF \
+      -DLIBXML2_WITH_ICONV=OFF -DLIBXML2_WITH_ICU=OFF -DLIBXML2_WITH_MODULES=OFF "$@"
+    cmake --build "$build" --parallel "$jobs"
+    cmake --install "$build"
+    # The native package already carries this notice directory intact.
+    install -Dm644 "$source_dir/Copyright" "$prefix/share/licenses/pleazyng-codecs/libxml2/Copyright"
+    exit 0
+    ;;
   lcevc_dec)
     cmake -S "$source_dir" -B "$build" -G Ninja \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \

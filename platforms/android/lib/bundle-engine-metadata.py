@@ -35,6 +35,10 @@ def bundle(aar: Path, natives: Path):
                 raise ValueError(f'{abi}: missing matching installed header {required}')
         trees[abi] = headers
         license_root = natives / abi / 'share/licenses/pleazyng-codecs'
+        xml_notice = license_root / 'libxml2' / 'Copyright'
+        if not xml_notice.is_file() or not 0 < xml_notice.stat().st_size <= 64 * 1024:
+            raise ValueError(f'{abi}: missing or invalid libxml2 copyright notice')
+        notices[f'{abi}/libxml2/Copyright'] = xml_notice.read_bytes()
         for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec'):
             directory = license_root / component
             manifest = directory / 'notice-manifest.json'

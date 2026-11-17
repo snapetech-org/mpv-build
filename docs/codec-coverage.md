@@ -63,8 +63,9 @@ passed x86_64 and ARM64 builds, PCM ABI checks, packaging, publication and the
 manifest commit. The fixes select compiler-appropriate clock/NEON headers and
 invalidate cached source and build state when resolved patch contents change.
 The earlier ARM64 failures are superseded by this completed production build.
-All four platform groups now have matching published receipts; the application
-must consume the verified producer revision to deliver these packages.
+All four platform groups have matching published receipts. Pleazyng's
+[consuming commit](https://github.com/snapetech-org/pleazyng/commit/81af93a27f26)
+pins the producer revision recorded in those receipts.
 
 The pinned Android NDK 29.0.14206865 is also available locally: all four ABI SDK
 clients and final shared FFmpeg libraries link successfully. Earlier notes
@@ -106,12 +107,15 @@ application license as replacing those terms. Sources: [LCEVCdec 4.3.1](https://
 ## Generated-media release check
 
 `scripts/codec_playback_smoke.py /absolute/path/to/libmpv.so --output report.json`
-generates 28 short video/audio fixtures using the host FFmpeg, then decodes and
+generates 45 short playback fixtures using the host FFmpeg, then decodes and
 seeks each through the supplied libmpv in its own bounded worker process. It
 forces software decoding. The video cases include AVC/HEVC/AV1/VP8/VP9, 10-bit
 examples, MPEG-2/4, WMV2, ProRes, FFV1, HuffYUV, JPEG, Theora, FLV, QuickTime RLE
 and Cinepak. Audio includes AAC, MP3, Opus, Vorbis, FLAC, ALAC, AC-3/E-AC-3,
-24-bit PCM and WavPack. Audio output must contain the expected nonempty PCM
+24-bit PCM, WavPack, DTS core, TrueHD, WMA and MPEG Layer II. Native playback
+also exercises local fMP4 HLS and DASH VOD, timed SubRip/ASS/WebVTT tracks,
+interlaced MPEG-2, and 10/12-bit AVC, HEVC, AV1 and VP9 vectors with decoded
+pixel-format checks. Audio output must contain the expected nonempty PCM
 duration across initial playback and seeking; packet timestamp heuristics alone
 are insufficient. Video must produce the expected output dimensions and finish
 both playback passes. Reports bind the loaded binary and generated fixture
@@ -128,6 +132,34 @@ Harness validation on 2026-11-16: all 28 cases passed against Debian's x86_64
 libmpv 0.40.0 (`0.40.0-3+deb13u1`). This validates the harness against a reference
 engine; it is **not** a passing result for a new Pleazyng package. The newly
 built library must pass this gate independently before its release.
+
+## Reference vectors and DASH
+
+The Linux release inventory now requires APV. A second gate checks the exact
+packaged library against six SHA-256 pinned FATE and AVS project fixtures:
+APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, and AVS3 8/10-bit.
+The reports check decoded dimensions and pixel format. APV, AVS2 and both AVS3
+vectors also exercise a seek. The EVC and VVC elementary streams cover decode
+only. Passing these cases does not measure conformance against reference pixels.
+
+The existing Linux x86_64 package at key `89098dd65662` passed all six reference
+cases and the 44 generated fixtures outside the DASH gate. Its measured
+inventory includes HLS but lacks the DASH demuxer. New Linux and Android
+recipes build pinned libxml2 statically and enable the FFmpeg DASH demuxer.
+Linux publication requires a DASH decode and seek in addition to HLS.
+Apple and Windows already enable FFmpeg's libxml2 integration. Native TV
+players have separate streaming stacks. Manifest tests are local VOD examples;
+network reconnection, adaptive switching, and physical output are separate.
+
+The existing Linux x86_64 inventory has no JPEG XL or AC-4 decoder.
+JPEG XL requires a packaged libjxl build and playback fixtures. AC-4, AV2,
+10-bit AVS2, and MPEG-H still depend on a compatible implementation or
+the playback device/server's own support.
+
+The manual Windows codec qualification workflow runs the binary-hash inventory
+and same reference fixtures against the published x64 and ARM64 DLLs on
+matching hosted Windows runners. It produces separate evidence from the
+Linux release gate and the Windows packaging checks.
 
 ## LCEVC reconstruction evidence
 

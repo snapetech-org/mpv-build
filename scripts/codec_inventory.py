@@ -10,7 +10,9 @@ import argparse
 import ctypes as c
 import hashlib
 import json
+import os
 import platform
+import sys
 from pathlib import Path
 
 
@@ -82,7 +84,11 @@ def validate_inventory(properties, required=()):
 
 def inspect(library, required=()):
     path = Path(library).resolve(strict=True)
-    lib = c.CDLL(str(path))
+    if sys.platform == 'win32':
+        with os.add_dll_directory(str(path.parent)):
+            lib = c.CDLL(str(path))
+    else:
+        lib = c.CDLL(str(path))
     lib.mpv_create.restype = c.c_void_p
     lib.mpv_set_option_string.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p]
     lib.mpv_set_option_string.restype = c.c_int
