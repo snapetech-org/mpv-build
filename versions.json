@@ -608,6 +608,20 @@
       ],
       "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally; Apple, Android, and Windows builds are integrated but cross-build/package/device qualification remain open."
     },
+    "dav2d": {
+      "kind": "git",
+      "version": "0.0.1-79ef921",
+      "url": "https://code.videolan.org/videolan/dav2d.git",
+      "ref": "79ef921b885e720b25cc6a62e5c67599d9f0fd2b",
+      "commit": "79ef921b885e720b25cc6a62e5c67599d9f0fd2b",
+      "platforms": [
+        "apple",
+        "android",
+        "linux",
+        "windows"
+      ],
+      "provenance": "VideoLAN dav2d API 1.0, pinned for the FFmpeg AV2 backport."
+    },
     "davs2": {
       "kind": "git",
       "version": "1.7-f504350",

@@ -25,15 +25,16 @@ table () {
 	eval "printf '%s' \"\${${1//-/_}-}\""
 }
 
-components="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl ffmpeg freetype fribidi harfbuzz libunibreak libass lua libplacebo mpv"
+components="openssl dav1d dav2d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl ffmpeg freetype fribidi harfbuzz libunibreak libass lua libplacebo mpv"
 
-dep_ffmpeg="openssl dav1d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl"
+dep_ffmpeg="openssl dav1d dav2d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl"
 dep_libass="freetype fribidi harfbuzz libunibreak"
 dep_mpv="ffmpeg libass lua libplacebo"
 dep_libmpv_android="mpv"
 
 recipe_openssl=openssl
 recipe_dav1d=meson
+recipe_dav2d=meson
 recipe_libdovi=libdovi
 recipe_xevd=video_decoder
 recipe_uavs3d=video_decoder
@@ -51,6 +52,7 @@ recipe_lua=lua
 recipe_libplacebo=meson
 recipe_mpv=meson
 
+args_dav2d="-Denable_tools=false -Denable_tests=false -Denable_asm=false"
 args_dav1d="-Denable_tests=false -Db_lto=true -Dstack_alignment=16"
 args_fribidi="-Dtests=false -Ddocs=false"
 args_harfbuzz="-Dtests=disabled -Ddocs=disabled"

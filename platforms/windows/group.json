@@ -12,6 +12,7 @@
     "scripts/inspect_pcm_package.py",
     "scripts/fix_lcevc_pkgconfig.py",
     "scripts/stage_decoder_notices.py",
+    "platforms/windows/testdata/dav2d.cmake",
     "platforms/windows/testdata/lcevc_dec.cmake",
     "platforms/windows/testdata/xevd.cmake"
   ],
@@ -28,6 +29,7 @@
         "nv-codec-headers",
         "openssl",
         "libplacebo",
+        "dav2d",
         "davs2",
         "xevd",
         "lcevc_dec"

@@ -34,3 +34,6 @@ pc_libs=$(table "pc_libs_$component")
 if [ -n "$pc_libs" ]; then
 	${SED:-sed} "/^Libs:/ s|\$| $pc_libs|" "$prefix_dir/lib/pkgconfig/$component.pc" -i
 fi
+if [[ "$component" == dav2d ]]; then
+    python3 "$DIR/../../scripts/stage_decoder_notices.py" "$PWD" "$prefix_dir" dav2d
+fi

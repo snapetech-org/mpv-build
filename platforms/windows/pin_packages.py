@@ -113,10 +113,11 @@ EXTRA_COMPONENTS = {
     "nv-codec-headers": "packages/nvcodec-headers.cmake",
     "openssl": "packages/openssl.cmake",
     "libaribcaption": "packages/libaribcaption.cmake",
+    "dav2d": "packages/dav2d.cmake",
     "xevd": "packages/xevd.cmake",
     "lcevc_dec": "packages/lcevc_dec.cmake",
 }
-CUSTOM_DECODER_COMPONENTS = ("xevd", "lcevc_dec")
+CUSTOM_DECODER_COMPONENTS = ("dav2d", "xevd", "lcevc_dec")
 GROUP = "windows"
 # The meta-build checkout build.sh fetches: its commit pins the whole
 # dependency graph, so it is also the build-state cache key.
@@ -276,16 +277,16 @@ def enable_ffmpeg_xevd(text):
     return text.replace(FFMPEG_XEVD_ENABLE_ANCHOR, FFMPEG_XEVD_ENABLE, 1)
 
 
-def enable_ffmpeg_lcevc(text):
-    dependency = "        lcevc_dec\n"
-    option = "        --enable-liblcevc-dec\n"
+def enable_ffmpeg_decoder(text, component, library):
+    dependency = f"        {component}\n"
+    option = f"        --enable-{library}\n"
     if (dependency in text) != (option in text):
-        fail("LCEVC dependency and configure option are out of sync")
+        fail(f"{component} dependency and configure option are out of sync")
     if dependency in text:
         return text
     for anchor, insertion in (("        xevd\n", dependency), ("        --enable-libxevd\n", option)):
         if text.count(anchor) != 1:
-            fail("Cannot locate checked FFmpeg LCEVC insertion point")
+            fail(f"Cannot locate FFmpeg insertion point for {component}")
         text = text.replace(anchor, anchor + insertion, 1)
     return text
 
@@ -642,7 +643,9 @@ def main(argv):
         text = package_file.read_text(encoding="utf-8")
         pinned = rewrite(text, component, pins, bool(staged))
         if component == "ffmpeg":
-            pinned = enable_ffmpeg_lcevc(enable_ffmpeg_xevd(remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned))))
+            pinned = enable_ffmpeg_xevd(remove_ffmpeg9_obsolete_options(gate_ffmpeg_cuda(pinned)))
+            pinned = enable_ffmpeg_decoder(pinned, "lcevc_dec", "liblcevc-dec")
+            pinned = enable_ffmpeg_decoder(pinned, "dav2d", "libdav2d")
         if component == "mpv":
             pinned = capture_libmpv_pdb(gate_mpv_options(pinned))
         if pinned != text:

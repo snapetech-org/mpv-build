@@ -142,14 +142,17 @@ class CachedPatchTest(unittest.TestCase):
 
 
 class PinPackagesTest(unittest.TestCase):
-    def test_lcevc_cannot_be_enabled_without_its_sdk_dependency(self):
+    def test_optional_decoder_requires_its_sdk(self):
         text = pin_packages.enable_ffmpeg_xevd((TESTDATA / 'ffmpeg.cmake').read_text())
-        enabled = pin_packages.enable_ffmpeg_lcevc(text)
-        self.assertIn('        lcevc_dec\n', enabled)
-        self.assertIn('        --enable-liblcevc-dec\n', enabled)
-        self.assertEqual(pin_packages.enable_ffmpeg_lcevc(enabled), enabled)
-        with self.assertRaises(SystemExit):
-            pin_packages.enable_ffmpeg_lcevc(enabled.replace('        lcevc_dec\n', ''))
+        for component, library in [('lcevc_dec', 'liblcevc-dec'), ('dav2d', 'libdav2d')]:
+            with self.subTest(component=component):
+                enabled = pin_packages.enable_ffmpeg_decoder(text, component, library)
+                dependency = f'        {component}\n'
+                self.assertIn(dependency, enabled)
+                self.assertIn(f'        --enable-{library}\n', enabled)
+                self.assertEqual(pin_packages.enable_ffmpeg_decoder(enabled, component, library), enabled)
+                with self.assertRaises(SystemExit):
+                    pin_packages.enable_ffmpeg_decoder(enabled.replace(dependency, ''), component, library)
 
     def test_windows_lcevc_clock_patch_avoids_unconditional_x86_intrinsics(self):
         patch_name = "0002-mingw-architecture-safe-clock-intrinsic.patch"
@@ -215,7 +218,8 @@ class PinPackagesTest(unittest.TestCase):
     def test_windows_uses_the_selected_fel_sources_and_patches(self):
         self.assertEqual(pin_packages.resolve_series(REPO, "ffmpeg"), [
             "0900-fel-common-integration.patch", "0049-fel-align-libxevd-wrapper.patch",
-            "0048-libxevd-reset-for-seeking.patch", "0901-fel-windows-libssh-host-key.patch"])
+            "0048-libxevd-reset-for-seeking.patch", "0050-libdav2d-av2-playback.patch",
+            "0901-fel-windows-libssh-host-key.patch"])
         self.assertIn("0902-fel-ordered-audio-tap.patch", pin_packages.resolve_series(REPO, "mpv"))
         self.assertIn("0900-fel-reject-failed-composition.patch", pin_packages.resolve_series(REPO, "libplacebo"))
         self.assertIn("libplacebo", pin_packages.COMPONENTS)

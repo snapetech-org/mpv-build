@@ -78,6 +78,10 @@ FFMPEG_VERSION ffmpeg version
 FFMPEG_URL ffmpeg url
 FFMPEG_REF ffmpeg ref
 FFMPEG_COMMIT ffmpeg commit
+DAV2D_VERSION dav2d version
+DAV2D_URL dav2d url
+DAV2D_REF dav2d ref
+DAV2D_COMMIT dav2d commit
 DAV1D_VERSION dav1d version
 DAV1D_URL dav1d url
 DAV1D_MIRROR dav1d mirror optional
@@ -152,7 +156,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins libjxl:git libxml2:git lcevc_dec:git xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
+resolve_pins libjxl:git libxml2:git lcevc_dec:git xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git dav2d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -328,6 +332,16 @@ main() {
   ninja -C build install
   finish_step dav1d
 
+  local dav2d_source="$srcdir/dav2d-$DAV2D_VERSION"
+  checkout_verified_ref "$DAV2D_URL" "$DAV2D_REF" "$DAV2D_COMMIT" "$dav2d_source"
+  cd "$dav2d_source"
+  meson setup build --prefix="$prefix" --default-library=static --libdir=lib \
+    -Denable_tools=false -Denable_tests=false -Denable_asm=false
+  ninja -C build -j"$jobs"
+  ninja -C build install
+  python3 "$REPO_ROOT/scripts/stage_decoder_notices.py" "$dav2d_source" "$prefix" dav2d
+  finish_step dav2d
+
   # Optional format families need external libraries, even with all built-in
   # FFmpeg decoders enabled. Every source is pinned and links statically.
   local decoder upper url_var ref_var commit_var version_var tree
@@ -411,6 +425,7 @@ main() {
     --enable-vaapi \
     --enable-ffnvcodec \
     --enable-nvdec \
+    --enable-libdav2d \
     --enable-libdav1d \
     --enable-liblcevc-dec \
     --enable-libjxl \

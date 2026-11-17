@@ -27,7 +27,7 @@ class BundledEngineTests(unittest.TestCase):
             xml_notice = self.natives / abi / 'share/licenses/pleazyng-codecs/libxml2/Copyright'
             xml_notice.parent.mkdir(parents=True)
             xml_notice.write_bytes(b'libxml2 terms')
-            for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
+            for component in ('dav2d', 'xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
                 directory = self.natives / abi / 'share/licenses/pleazyng-codecs' / component
                 directory.mkdir(parents=True)
                 hashes = {}

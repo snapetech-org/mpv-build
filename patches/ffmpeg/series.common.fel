@@ -4,3 +4,4 @@
 # then apply the shared delayed-packet and seek implementation.
 0049-fel-align-libxevd-wrapper.patch
 0048-libxevd-reset-for-seeking.patch
+0050-libdav2d-av2-playback.patch

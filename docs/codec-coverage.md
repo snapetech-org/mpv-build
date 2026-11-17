@@ -74,17 +74,15 @@ clients and final shared FFmpeg libraries link successfully. Earlier notes
 saying the NDK was absent are superseded. These compile, link and package
 results do not establish physical-device playback or real-time qualification.
 
-AV2 is not an installed FFmpeg decoder: this pin has no AV2 codec ID,
-decoder wrapper or demuxer integration, and a dav2d SDK build alone cannot add
-playback to mpv. VideoLAN's May 2026 status describes dav2d as an early,
-functional decoder with 8/10-bit decoding, while conformance, optimization and
-platform support remain active work. Keep AV2 out of measured decoder
-inventories until the decoder is integrated with FFmpeg, validated against
-AV2 v1.0.0 streams, and qualified on each target. The client should use a
-server conversion only when the server offers a compatible route, and otherwise
-report the unsupported source accurately.
-Sources: [AV2 v1.0 specification](https://av2.aomedia.org/),
-[VideoLAN dav2d status](https://jbkempf.com/blog/2026/dav2d/).
+The native recipes build VideoLAN dav2d for AV2. Both FFmpeg pins carry
+Aditya Teltia's decoder and low-overhead OBU demuxer, plus the downstream
+AV02 IVF reader, multi-picture timestamp handling and seek path. On Linux
+the FourPeople reference produced 130 matching 480×270 frames from both
+containers. Seeking the IVF to one second reproduced the final 70 frames.
+Hosted package validation, other AV2 containers and physical device playback
+remain open. The app negotiates from the loaded engine's decoder list.
+[FFmpeg integration proposal](https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/23018).
+[Decoder source](https://code.videolan.org/videolan/dav2d).
 
 LCEVC now has a pinned 4.3.1 static SDK in published packages for Linux, Android,
 Windows and all Apple slices. Android packages it into its FFmpeg shared
@@ -175,8 +173,10 @@ builds libjxl, Brotli and Highway for each slice and links the matching
 Little CMS framework already in the SwiftPM product. Libavcodec carries the
 private archives and their notices. The macOS host build must decode the
 256×256 still and all 36 frames of the 128×96 animation. Apple publication
-and device playback are pending. MPEG-H, AC-4 and AV2 still require native
-decoder integration in the shipped packages.
+and device playback are pending. MPEG-H and AC-4 still use an available conversion route. The experimental
+AC-4 decoder matched the FATE stereo PCM and decoded a short 5.1 vector.
+The immersive transport-stream vector produced zero PCM, and the 5.1.4 MP4
+failed partway. Native AC-4 stays disabled in production builds.
 
 The manual Windows codec qualification workflow runs the binary-hash inventory
 and same reference fixtures against the published x64 and ARM64 DLLs on
@@ -271,7 +271,7 @@ build or device execution qualification.
 | --- | --- |
 | XEVD, davs2, uavs3d | Pinned static decoder code enters the normal native packages; root notices remain in native packages and the app. The new davs2 build handles both 8-bit and 10-bit AVS2. |
 | LCEVCdec | Pinned static CPU implementation, matching C++ runtime and complete upstream notice tree. Android needs libandroid; Apple merges the SDK archives into Libavcodec. Users do not install an SDK. Hardware base-only output must fall back to reconstruction rather than masquerade as enhanced playback. |
-| dav2d / AV2 | A public decoder exists, but this FFmpeg pin has no AV2 integration. Requires a codec/container implementation and reference-stream tests before availability can be advertised. [VideoLAN announcement](https://jbkempf.com/blog/2026/dav2d/), [released AV2 specification](https://av2.aomedia.org/v1.0.0/20260528_38f28e7_AV2_Spec_v1.0.0.pdf). |
+| dav2d / AV2 | All four native build groups integrate the pinned software decoder. The reference checks exercise IVF and raw OBUs. Verify each package and platform before advertising native playback there. |
 | Fraunhofer MPEG-H decoder | A public C/C++ SDK and FFmpeg wrapper exist; source access does not require a proprietary account. This FFmpeg pin classifies libmpeghdec as nonfree. Its license retains source/notice requirements and excludes patent rights. This is not an enabled dependency in normal redistributable builds. [SDK source](https://github.com/Fraunhofer-IIS/mpeghdec), [SDK license](https://github.com/Fraunhofer-IIS/mpeghdec/blob/4448b69738da2fa5f2f2f2b0ce29eea32509e046/LICENSE.txt), [pinned FFmpeg configuration](https://github.com/FFmpeg/FFmpeg/blob/46f23be8b1976ed4c8ec85584daabcf0e57a7b9e/configure). |
 
 FFmpeg states that enabling incompatible dependencies with `--enable-nonfree`

@@ -158,7 +158,8 @@ shaderc_commit="$(git -C "$shaderc_repository" rev-parse HEAD)"
 dav1d_repository="$temporary/dav1d-source"
 init_repository "$dav1d_repository"
 printf 'stub dav1d\n' >"$dav1d_repository/meson.build"
-git -C "$dav1d_repository" add meson.build
+printf "stub license\n" >"$dav1d_repository/COPYING"
+git -C "$dav1d_repository" add meson.build COPYING
 git -C "$dav1d_repository" commit --quiet -m dav1d
 git -C "$dav1d_repository" -c tag.gpgsign=false tag release
 dav1d_commit="$(git -C "$dav1d_repository" rev-parse HEAD)"
@@ -291,6 +292,7 @@ cat >"$manifest" <<JSON
       "ref": "release",
       "commit": "$ffmpeg_commit"
     },
+    "dav2d": {"kind":"git","version":"0.0.1","url":"file://$dav1d_repository","ref":"release","commit":"$dav1d_commit"},
     "dav1d": {
       "kind": "git",
       "version": "$dav1d_version",
@@ -453,6 +455,7 @@ assert_argument "$mpv_meson" "-Dcuda-interop=enabled" "mpv's meson setup"
 ffmpeg_configure="$(recorded_call configure "ffmpeg-$ffmpeg_version")" ||
   fail "the build plan never configured ffmpeg"
 assert_argument "$ffmpeg_configure" "--enable-vaapi" "ffmpeg's configure"
+assert_argument "$ffmpeg_configure" "--enable-libdav2d" "FFmpeg AV2 wrapper"
 assert_argument "$ffmpeg_configure" "--enable-libdav1d" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-libjxl" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-libxml2" "ffmpeg's configure"

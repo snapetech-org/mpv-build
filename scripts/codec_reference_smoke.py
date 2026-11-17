@@ -38,6 +38,10 @@ class Fixture:
 FIXTURES = {
     fixture.name: fixture
     for fixture in (
+        Fixture('av2-fourpeople.ivf',
+                'https://github.com/EwoutH/AV2/releases/download/samples-v1/FourPeople_480x270_60_qp210_130f.ivf',
+                'e7fd3676044bd69a9b96e8702ffac88cb2e5f7735e131a659f522812c008a0f5',
+                (480, 270), 'yuv420p', 2.1, '1'),
         Fixture('apv-422-10.apv', f'{FATE}/apv/profile_422-10.apv',
                 'abdf4b5e2bf10a6ad8435a5df31f96dde19e0c7f771522db484860966cb9cb77',
                 (320, 180), 'yuv422p10', .05, '0.033'),

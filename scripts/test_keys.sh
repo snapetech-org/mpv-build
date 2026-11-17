@@ -105,7 +105,7 @@ VERSIONS = {
         },
     },
 }
-for decoder in ("davs2", "lcevc_dec", "libjxl", "xevd"):
+for decoder in ("dav2d", "davs2", "lcevc_dec", "libjxl", "xevd"):
     VERSIONS["components"][decoder] = {
         "kind": "git", "version": "1.0.0", "url": f"https://example.invalid/{decoder}",
         "ref": "1.0.0", "commit": "1" * 40, "platforms": ["apple"],
@@ -319,7 +319,7 @@ with tempfile.TemporaryDirectory() as tmp:
     original = keys(repo)
     path = repo / "versions.json"
     pins = json.loads(path.read_text())
-    for decoder in ("davs2", "lcevc_dec", "libjxl", "xevd"):
+    for decoder in ("dav2d", "davs2", "lcevc_dec", "libjxl", "xevd"):
         before = keys(repo)
         pins["components"][decoder]["commit"] = "2" * 40
         path.write_text(json.dumps(pins))

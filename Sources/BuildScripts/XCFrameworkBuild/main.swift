@@ -26,6 +26,7 @@ do {
         ZipBaseBuild(library: .libuavs3d),
         BuildXEVD(),
         BuildDAVS2(),
+        BuildDAV2D(),
         BuildLCEVC(),
         ZipBaseBuild(library: .libdovi),
         BuildVulkan(),
@@ -99,7 +100,7 @@ enum Versions {
 enum Library: String, CaseIterable {
     case libmpv, FFmpeg, libshaderc, vulkan, lcms2, libdovi, openssl, libunibreak, libfreetype,
         libfribidi, libharfbuzz, libass, libplacebo, libdav1d, libuchardet, libbluray, libluajit,
-        libuavs3d, libxevd, libdavs2, liblcevcdec, libjxl
+        libuavs3d, libxevd, libdav2d, libdavs2, liblcevcdec, libjxl
 
     /// Component name in `versions.json` and `patches/`. The only mapping
     /// between Swift raw values and canonical component names.
@@ -111,6 +112,8 @@ enum Library: String, CaseIterable {
             return "ffmpeg"
         case .libxevd:
             return "xevd"
+        case .libdav2d:
+            return "dav2d"
         case .libdavs2:
             return "davs2"
         case .liblcevcdec:
@@ -184,7 +187,7 @@ enum Library: String, CaseIterable {
             // Apple folds XEVD into Libavcodec, so consumers do not need a
             // separately published binary target for this private dependency.
             return []
-        case .liblcevcdec, .libjxl:
+        case .libdav2d, .liblcevcdec, .libjxl:
             return []
         case .libdavs2:
             // Apple folds davs2 into Libavcodec for the same reason.
@@ -533,6 +536,16 @@ private class BuildXEVD: BaseBuild {
     }
 }
 
+private class BuildDAV2D: BaseBuild {
+    init() { super.init(library: .libdav2d) }
+
+    override func frameworks() throws -> [String] { [] }
+
+    override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
+        ["--libdir=lib", "-Denable_tools=false", "-Denable_tests=false", "-Denable_asm=false"]
+    }
+}
+
 private class BuildDAVS2: BaseBuild {
     init() {
         super.init(library: .libdavs2)
@@ -662,6 +675,8 @@ private class BuildFFMPEG: BaseBuild {
             + ["lib", "libxevd.a"]
         let davs2Archive = thinDir(library: .libdavs2, platform: platform, arch: arch)
             + ["lib", "libdavs2.a"]
+        let dav2dArchive = thinDir(library: .libdav2d, platform: platform, arch: arch)
+            + ["lib", "libdav2d.a"]
         let sdkPrefix = thinDir(library: .liblcevcdec, platform: platform, arch: arch)
         let sdkArchives = ["api", "api_utility", "pipeline_cpu", "pipeline", "enhancement",
                            "pixel_processing", "common", "extract"].map {
@@ -671,7 +686,7 @@ private class BuildFFMPEG: BaseBuild {
         let jxlArchives = ["jxl", "jxl_threads", "jxl_cms", "hwy", "brotlienc", "brotlidec", "brotlicommon"].map {
             jxlPrefix + ["lib", "lib\($0).a"]
         }
-        for archive in sdkArchives + jxlArchives {
+        for archive in [dav2dArchive] + sdkArchives + jxlArchives {
             guard FileManager.default.fileExists(atPath: archive.path) else {
                 throw NSError(domain: "BuildFFMPEG", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Missing bundled SDK archive: \(archive.path)"])
@@ -680,7 +695,7 @@ private class BuildFFMPEG: BaseBuild {
         let notices = prefix + ["share", "licenses", "pleazyng-codecs"]
         try FileManager.default.createDirectory(at: notices, withIntermediateDirectories: true)
         let python = Utility.shell("which python3", isOutput: true)!
-        for dependency in [Library.libxevd, .libdavs2] {
+        for dependency in [Library.libxevd, .libdavs2, .libdav2d] {
             try Utility.launch(path: python, arguments: [
                 (URL.currentDirectory + ["..", "scripts", "stage_decoder_notices.py"]).path,
                 (URL.currentDirectory + "\(dependency.rawValue)-\(dependency.version)").path,
@@ -710,7 +725,7 @@ private class BuildFFMPEG: BaseBuild {
             path: "/usr/bin/libtool",
             arguments: [
                 "-static", "-o", mergedArchive.path, codecArchive.path,
-                xevdArchive.path, davs2Archive.path,
+                xevdArchive.path, davs2Archive.path, dav2dArchive.path,
             ] + (sdkArchives + jxlArchives).map { $0.path },
             currentDirectoryURL: directoryURL,
             environment: environment(platform: platform, arch: arch)
@@ -718,10 +733,12 @@ private class BuildFFMPEG: BaseBuild {
         try FileManager.default.removeItem(at: codecArchive)
         try FileManager.default.moveItem(at: mergedArchive, to: codecArchive)
         if platform == .macos, arch.executable {
-            try Utility.launch(path: python, arguments: [
-                (URL.currentDirectory + ["..", "scripts", "test_jpegxl_decode.py"]).path,
-                (prefix + ["bin", "ffprobe"]).path,
-            ], currentDirectoryURL: directoryURL)
+            for test in ["test_jpegxl_decode.py", "test_av2_decode.py"] {
+                try Utility.launch(path: python, arguments: [
+                    (URL.currentDirectory + ["..", "scripts", test]).path,
+                    (prefix + ["bin", "ffprobe"]).path,
+                ], currentDirectoryURL: directoryURL)
+            }
         }
 
         let lldbFile = URL.currentDirectory + "LLDBInitFile"
@@ -793,6 +810,7 @@ private class BuildFFMPEG: BaseBuild {
         }
         arguments.append("--enable-gpl")
         arguments.append("--enable-libjxl")
+        arguments.append("--enable-libdav2d")
         // arguments += Build.ffmpegConfiguers
         arguments.append("--disable-large-tests")
         arguments.append("--ignore-tests=TESTS")

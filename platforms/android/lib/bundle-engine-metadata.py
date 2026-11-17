@@ -39,7 +39,7 @@ def bundle(aar: Path, natives: Path):
         if not xml_notice.is_file() or not 0 < xml_notice.stat().st_size <= 64 * 1024:
             raise ValueError(f'{abi}: missing or invalid libxml2 copyright notice')
         notices[f'{abi}/libxml2/Copyright'] = xml_notice.read_bytes()
-        for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
+        for component in ('dav2d', 'xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
             directory = license_root / component
             manifest = directory / 'notice-manifest.json'
             if not manifest.is_file():

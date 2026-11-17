@@ -8,7 +8,7 @@ import shutil
 
 
 def stage(source: Path, prefix: Path, component: str):
-    if component not in {'xevd', 'davs2', 'uavs3d', 'lcevc_dec'}:
+    if component not in {'dav2d', 'xevd', 'davs2', 'uavs3d', 'lcevc_dec'}:
         raise ValueError('Unknown decoder dependency')
     files = sorted({path for pattern in ('LICENSE*', 'COPYING*', 'NOTICE*') for path in source.glob(pattern)
                     if path.is_file() and not path.is_symlink()})

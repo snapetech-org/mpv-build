@@ -42,6 +42,7 @@
         "libjxl",
         "libxml2",
         "xevd",
+        "dav2d",
         "davs2",
         "uavs3d",
         "lcevc_dec"

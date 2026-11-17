@@ -37,6 +37,7 @@
         "libxml2",
         "xevd",
         "uavs3d",
+        "dav2d",
         "davs2",
         "openssl",
         "freetype",

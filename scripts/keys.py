@@ -192,7 +192,7 @@ VERSIONS_PATH = Path("versions.json")
 PATCHES_ROOT = Path("patches")
 
 CHECKSUM_RE = re.compile(r"\A[0-9a-f]{64}\Z")
-APPLE_FFMPEG_EMBEDDED_COMPONENTS = ("davs2", "lcevc_dec", "libjxl", "xevd")
+APPLE_FFMPEG_EMBEDDED_COMPONENTS = ("dav2d", "davs2", "lcevc_dec", "libjxl", "xevd")
 
 # The artifact-name -> versions.json component rule, including its alias table,
 # lives in scripts/patches.py: `check` needs it to compare the Swift driver's

@@ -75,3 +75,6 @@
 
 # lcevc_dec.cmake is Pleazyng's SDK recipe, not an upstream winbuild file.
 #   985932eb079c35cbe2f9d17fc6cfa8d29b3f871c1a4958e929e4b079c1587524  lcevc_dec.cmake
+
+# dav2d.cmake is the repo-authored AV2 decoder package recipe.
+#   27d08f47348416916747186fa24454d8d4e8023a6e36673857e7bf0adafb3171  dav2d.cmake
