@@ -313,6 +313,7 @@ apple = job_section(PUBLISH, "build-apple")
 assert 'runs-on: xcode-27' in apple
 apple_publish = job_section(PUBLISH, "publish-apple")
 assert "runs-on: xcode-27" in apple_publish
+assert "needs: [plan, build-apple, build-linux-arm64, tests]" in apple_publish
 assert (
     "- name: Verify the real AVFoundation shader implementation in every slice\n"
     "        if: contains(format(',{0},', needs.plan.outputs.stale_apple), ',libmpv,')\n"

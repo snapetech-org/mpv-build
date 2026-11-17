@@ -524,7 +524,7 @@ jobs:
 
   publish-apple:
     name: Publish apple
-    needs: [build-apple, build-linux-arm64, tests]
+    needs: [plan, build-apple, build-linux-arm64, tests]
     if: >-
       github.event_name != 'schedule' &&
       (
