@@ -59,9 +59,15 @@ export CMAKE_INSTALL_PREFIX=/usr/local
 export DESTDIR="$prefix_dir"
 
 if [[ "$component" == libjxl ]]; then
+	jpegxl_arch_args=()
+	if [[ "$prefix_name" == armeabi-v7a ]]; then
+		# NDK 29 cannot assemble bundled Little CMS cmsps2.c in Thumb mode.
+		jpegxl_arch_args+=(-DANDROID_ARM_MODE=arm)
+	fi
 	../../../../scripts/build_jpegxl.sh "$PWD" "$prefix_dir" "$cores" \
 		-DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
-		-DANDROID_ABI="$prefix_name" -DANDROID_PLATFORM=android-25 -DANDROID_STL=c++_shared
+		-DANDROID_ABI="$prefix_name" -DANDROID_PLATFORM=android-25 -DANDROID_STL=c++_shared \
+		"${jpegxl_arch_args[@]}"
 elif [[ "$component" == davs2 ]]; then
 	../../../../scripts/build_video_decoder.sh \
 		"$component" "$PWD" "$prefix_dir" "$cores"
