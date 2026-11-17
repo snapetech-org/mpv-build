@@ -202,8 +202,10 @@ class BaseBuild {
             try? FileManager.default.removeItem(at: patchStateFile)
         }
 
-        // pull code from git
-        try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone", "--recursive", "--depth", "1", "--branch", library.ref, library.url, directoryURL.path])
+        // libjxl initializes only the build-time gitlinks it needs in build_jpegxl.sh.
+        let submodules = library == .libjxl ? [] : ["--recursive"]
+        try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone"]
+            + submodules + ["--depth", "1", "--branch", library.ref, library.url, directoryURL.path])
         guard try pinnedSourceMatches() else {
             throw NSError(
                 domain: "Pinned source mismatch for \(library.rawValue)",
