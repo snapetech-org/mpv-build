@@ -232,16 +232,22 @@ git -C "$video_decoder_repository" -c tag.gpgsign=false tag release
 video_decoder_commit="$(git -C "$video_decoder_repository" rev-parse HEAD)"
 
 # Generate source-shaped local archives and exercise the exact SHA-256 path.
-for library in libdvdread libdvdnav libbluray; do
+for library in libcdio libcdio-paranoia libdvdread libdvdnav libbluray; do
   disc_tree="$temporary/$library-0.0.1"
   mkdir -p "$disc_tree"
   printf 'test disc reader notice\n' > "$disc_tree/COPYING"
+  if [[ "$library" == libcdio* ]]; then
+    cp "$stub_extra/configure" "$disc_tree/configure"
+    cp "$disc_tree/COPYING" "$disc_tree/AUTHORS"
+  fi
   if [[ "$library" == libbluray ]]; then
     mkdir -p "$disc_tree/contrib/libudfread"
     cp "$disc_tree/COPYING" "$disc_tree/contrib/libudfread/COPYING"
   fi
   tar -cJf "$disc_tree.tar.xz" -C "$temporary" "$library-0.0.1"
 done
+read -r cdio_sha _ < <(sha256sum "$temporary/libcdio-0.0.1.tar.xz")
+read -r paranoia_sha _ < <(sha256sum "$temporary/libcdio-paranoia-0.0.1.tar.xz")
 read -r dvdread_sha _ < <(sha256sum "$temporary/libdvdread-0.0.1.tar.xz")
 read -r dvdnav_sha _ < <(sha256sum "$temporary/libdvdnav-0.0.1.tar.xz")
 read -r bluray_sha _ < <(sha256sum "$temporary/libbluray-0.0.1.tar.xz")
@@ -256,6 +262,8 @@ cat >"$manifest" <<JSON
 {
   "components": {
     "lcevc_dec": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
+    "libcdio": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libcdio-0.0.1.tar.xz", "sha256":"$cdio_sha"},
+    "libcdio-paranoia": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libcdio-paranoia-0.0.1.tar.xz", "sha256":"$paranoia_sha"},
     "libdvdread": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libdvdread-0.0.1.tar.xz", "sha256":"$dvdread_sha"},
     "libdvdnav": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libdvdnav-0.0.1.tar.xz", "sha256":"$dvdnav_sha"},
     "libbluray_linux": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libbluray-0.0.1.tar.xz", "sha256":"$bluray_sha"},
@@ -414,6 +422,7 @@ mpv_meson="$(recorded_call meson "mpv-$mpv_version")" ||
 
 assert_argument "$mpv_meson" "-Ddvdnav=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dlibbluray=enabled" "mpv's meson setup"
+assert_argument "$mpv_meson" "-Dcdda=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dwayland=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dx11=disabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dvaapi=enabled" "mpv's meson setup"

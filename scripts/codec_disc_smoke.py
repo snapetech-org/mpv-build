@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise DVD and Blu-ray title playback from unencrypted disc trees."""
+"""Exercise DVD, Blu-ray and audio CD playback from unencrypted disc fixtures."""
 from __future__ import annotations
 
 import argparse
@@ -38,13 +38,28 @@ def author_dvd(ffmpeg, dvdauthor, root, disc):
         raise RuntimeError(generated.stderr[-4000:])
 
 
+def author_audio_cd(ffmpeg, disc):
+    disc.mkdir()
+    subprocess.run([
+        ffmpeg, '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
+        'sine=frequency=997:sample_rate=44100:duration=4',
+        '-ac', '2', '-c:a', 'pcm_s16le', '-f', 's16le', str(disc / 'audio.bin'),
+    ], check=True, timeout=30)
+    (disc / 'audio.cue').write_text(
+        'FILE "audio.bin" BINARY\n'
+        '  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n'
+        '  TRACK 02 AUDIO\n    INDEX 01 00:02:00\n',
+        encoding='ascii',
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('library', type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--ffmpeg', default='ffmpeg')
     parser.add_argument('--dvdauthor', default='dvdauthor')
-    parser.add_argument('--kind', choices=('dvd', 'bluray'), default='dvd')
+    parser.add_argument('--kind', choices=('dvd', 'bluray', 'cdda'), default='dvd')
     parser.add_argument('--worker', type=Path)
     args = parser.parse_args()
     if args.worker:
@@ -53,6 +68,12 @@ def main():
                 args.library, None, 'video', expected_dimensions=(1280, 720), minimum_position=7.3,
                 seek_position='4.2', extra_options={'bluray-device': str(args.worker), 'untimed': 'yes'},
                 source_uri='bd://', minimum_chapters=3, seek_tolerance=1.5,
+            )
+        elif args.kind == 'cdda':
+            report = execute(
+                args.library, None, 'audio', minimum_position=3.4, seek_position='2.2',
+                extra_options={'cdda-device': str(args.worker / 'audio.cue')}, source_uri='cdda://',
+                minimum_chapters=2, pcm_duration_range=(5.5, 6.6),
             )
         else:
             report = execute(
@@ -71,6 +92,8 @@ def main():
                 raise ValueError('Blu-ray fixture archive hash mismatch')
             with tarfile.open(BLURAY_FIXTURE) as archive:
                 archive.extractall(disc, filter='data')
+        elif args.kind == 'cdda':
+            author_audio_cd(args.ffmpeg, disc)
         else:
             author_dvd(args.ffmpeg, args.dvdauthor, root, disc)
         receipt = root / 'worker.json'

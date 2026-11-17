@@ -34,6 +34,8 @@
         "wayland-protocols",
         "vulkan-headers",
         "vulkan-loader",
+        "libcdio",
+        "libcdio-paranoia",
         "libdvdread",
         "libdvdnav",
         "libbluray_linux",

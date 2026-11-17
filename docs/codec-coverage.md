@@ -188,14 +188,16 @@ still need physical qualification.
 ## Linux disc title playback
 
 The Linux recipe statically links the pinned VideoLAN DVD and Blu-ray title
-readers and requires both native disc protocols in the release inventory. The
+readers and GNU libcdio audio CD libraries. The release inventory requires
+all three native disc protocols. The
 DVD gate authors an unencrypted VIDEO_TS tree. The Blu-ray gate uses a pinned,
 unencrypted BDMV title. Both verify chapter discovery and decoding, then
 require a fresh video frame near the seek target before completing playback.
 Both passed on the Debian reference libmpv with the pinned DVD and Blu-ray
-readers built locally. The new bundle, optical drives, disc
-images, interactive menus and encrypted media remain unqualified by these
-checks.
+readers built locally. A separate generated two-track BIN/CUE image passed
+track discovery, PCM output and a seek into the second track using the
+pinned CDDA libraries. Physical optical drives, ISO images, interactive
+menus and encrypted media remain unqualified by these checks.
 
 ## LCEVC reconstruction evidence
 

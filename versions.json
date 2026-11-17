@@ -536,6 +536,22 @@
       ],
       "overrides": {}
     },
+    "libcdio": {
+      "kind": "archive",
+      "version": "2.4.0",
+      "url": "https://github.com/libcdio/libcdio-C/releases/download/2.4.0/libcdio-2.4.0.tar.gz",
+      "sha256": "bf7cde63762bb12db7755c395c441e49406fde7e1d9f9a9be7e3b940b1f405d7",
+      "provenance": "Official GNU libcdio release asset, checked against the SHA-256 from the release API.",
+      "platforms": ["linux"]
+    },
+    "libcdio-paranoia": {
+      "kind": "archive",
+      "version": "10.2+2.0.2",
+      "url": "https://ftp.gnu.org/gnu/libcdio/libcdio-paranoia-10.2+2.0.2.tar.gz",
+      "sha256": "99488b8b678f497cb2e2f4a1a9ab4a6329c7e2537a366d5e4fef47df52907ff6",
+      "provenance": "GNU release archive, byte-for-byte identical to the project GitHub release asset.",
+      "platforms": ["linux"]
+    },
     "libdvdread": {
       "kind": "archive",
       "version": "7.1.1",

@@ -95,7 +95,8 @@ class EndFile(c.Structure):
 
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
             seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None,
-            expected_bitmap=False, source_uri=None, minimum_chapters=None, seek_tolerance=None):
+            expected_bitmap=False, source_uri=None, minimum_chapters=None, seek_tolerance=None,
+            pcm_duration_range=(3.2, 4.0)):
     library = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         import os
@@ -272,7 +273,8 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
                         break
                     cursor += 8 + size + (size & 1)
                 seconds = len(payload) / (48000 * 2 * 2)
-                if not 3.2 <= seconds <= 4.0 or not any(payload):
+                minimum, maximum = pcm_duration_range
+                if not minimum <= seconds <= maximum or not any(payload):
                     raise ValueError(f'incomplete decode/seek PCM output: {seconds}s')
                 report['pcmSeconds'] = seconds
         finally:

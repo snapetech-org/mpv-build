@@ -560,6 +560,7 @@ main() {
     -Dbuild-date=false \
     -Dlua=enabled \
     -Djavascript=enabled \
+    -Dcdda=enabled \
     -Ddvdnav=enabled \
     -Dlibbluray=enabled \
     -Dcplugins=disabled \

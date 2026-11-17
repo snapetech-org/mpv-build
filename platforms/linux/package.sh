@@ -145,6 +145,13 @@ if [ "$found_pkgconfig" -eq 0 ]; then
 fi
 
 # Statically linked SDKs still owe their copyright notices to the final package.
+for pair in libcdio:libcdio libcdio_paranoia:libcdio-paranoia; do
+  if [[ -f "$PREFIX/lib/pkgconfig/${pair%:*}.pc" ]]; then
+    for notice in AUTHORS COPYING; do
+      test -s "$PREFIX/share/licenses/pleazyng-codecs/${pair#*:}/$notice"
+    done
+  fi
+done
 for pair in dvdread:libdvdread dvdnav:libdvdnav libbluray:libbluray; do
   if [[ -f "$PREFIX/lib/pkgconfig/${pair%:*}.pc" ]]; then
     test -s "$PREFIX/share/licenses/pleazyng-codecs/${pair#*:}/COPYING"
