@@ -12,6 +12,7 @@
     "scripts/codec_playback_smoke.py",
     "scripts/codec_stream_smoke.py",
     "scripts/codec_disc_smoke.py",
+    "scripts/fixtures/bluray-title.tar.xz",
     "scripts/codec_reference_smoke.py",
     "scripts/build_disc_readers.sh",
     "scripts/build_jpegxl.sh",

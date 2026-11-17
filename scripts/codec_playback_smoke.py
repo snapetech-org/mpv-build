@@ -94,7 +94,8 @@ class EndFile(c.Structure):
 
 
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
-            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None, expected_bitmap=False, source_uri=None, minimum_chapters=None):
+            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None,
+            expected_bitmap=False, source_uri=None, minimum_chapters=None, seek_tolerance=None):
     library = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         import os
@@ -134,7 +135,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
         finally:
             lib.mpv_free_node_contents(c.byref(node))
 
-    def screenshot(mode):
+    def screenshot(mode, *, require_coded_size=True):
         result = Node()
         argv = (c.c_char_p * 4)(b'screenshot-raw', mode.encode(), b'rgba', None)
         if lib.mpv_command_ret(ctx, argv, c.byref(result)) < 0:
@@ -149,7 +150,9 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             if pixels.format != 9:
                 raise ValueError('screenshot returned an unexpected pixel payload')
             array = c.cast(pixels.u.pointer, c.POINTER(ByteArray)).contents
-            if (width, height) != expected_dimensions or stride < width * 4 or array.size < stride * height:
+            if (require_coded_size and (width, height) != expected_dimensions) or (
+                width <= 0 or height <= 0 or stride < width * 4 or array.size < stride * height
+            ):
                 raise ValueError('screenshot returned an unexpected frame layout')
             return b''.join(c.string_at(array.data + stride * row, width * 4) for row in range(height))
         finally:
@@ -210,13 +213,26 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             chapter_count = prop('chapters')
             if not isinstance(chapter_count, int) or chapter_count < minimum_chapters:
                 raise ValueError(f'Expected at least {minimum_chapters} chapters, found {chapter_count}')
-        second = None
+        second = seek_landed_at = None
         if seek_position is not None:
             while lib.mpv_wait_event(ctx, 0).contents.event_id:
                 pass
-            if verify_subtitle:
+            if verify_subtitle or seek_tolerance is not None:
                 command('set', 'pause', 'yes')
             command('seek', seek_position, 'absolute+exact')
+            if seek_tolerance is not None:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    event = lib.mpv_wait_event(ctx, .02).contents
+                    if event.event_id != 21 or prop('eof-reached') is not False:
+                        continue
+                    position = prop('time-pos')
+                    if isinstance(position, (float, int)) and abs(position - float(seek_position)) <= seek_tolerance:
+                        screenshot('video', require_coded_size=False)
+                        seek_landed_at = position
+                        break
+                else:
+                    raise ValueError('seek did not resume with a decoded frame near its target')
             if verify_subtitle:
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
@@ -232,13 +248,15 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             if expected_bitmap and screenshot('subtitles') == screenshot('video'):
                 raise ValueError('the bitmap subtitle did not change the rendered pixels')
             command('set', 'pause', 'no')
-            second = finish(require_restart=not verify_subtitle)
+            second = finish(require_restart=not verify_subtitle and seek_landed_at is None)
         report = {'decode': 'passed', 'seek': 'passed' if second is not None else 'not-exercised', 'firstEnd': first,
                   'seekEnd': second, 'output': params,
                   'subtitleTextVerified': expected_subtitle is not None,
                   'bitmapSubtitlePixelsVerified': expected_bitmap,
                   'hardwareDecoder': prop('hwdec-current'),
                   'hardwareDecoding': prop('hwdec-current') not in (None, '', 'no')}
+        if seek_landed_at is not None:
+            report['seekLandedAt'] = seek_landed_at
     finally:
         lib.mpv_terminate_destroy(ctx)
         if dll_directory is not None:

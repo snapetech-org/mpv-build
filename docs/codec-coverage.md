@@ -189,13 +189,13 @@ still need physical qualification.
 
 The Linux recipe statically links the pinned VideoLAN DVD and Blu-ray title
 readers and requires both native disc protocols in the release inventory. The
-DVD gate authors a small unencrypted VIDEO_TS tree, opens its first title
-through mpv, and verifies chapter discovery, decoding and seeking. The gate
-passed on the Debian reference libmpv with its existing disc readers. The
-pinned DVD and Blu-ray archives also built and linked locally. Blu-ray title
-playback and optical drive behavior have not been verified on the new bundle.
-The build targets title playback. Interactive DVD or BD-J menus and encrypted
-media are out of the title fixture's scope.
+DVD gate authors an unencrypted VIDEO_TS tree. The Blu-ray gate uses a pinned,
+unencrypted BDMV title. Both verify chapter discovery and decoding, then
+require a fresh video frame near the seek target before completing playback.
+Both passed on the Debian reference libmpv with the pinned DVD and Blu-ray
+readers built locally. The new bundle, optical drives, disc
+images, interactive menus and encrypted media remain unqualified by these
+checks.
 
 ## LCEVC reconstruction evidence
 
