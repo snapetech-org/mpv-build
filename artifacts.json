@@ -4,13 +4,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "1adb03337a50",
+          "key": "596f7a4a4378",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-1adb03337a50-arm64-v8a.tar.gz",
+              "asset": "libmpv-android-596f7a4a4378-arm64-v8a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "2b6436bce6fbbe00900823150154e550902e5a5da26712f833e5f3ec120d7cfd",
+                "artifactSha256": "038400d78bdee8840ab47090102ca3e7d8bf93c7273faa4a694949a27ac37956",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -43,13 +43,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "2b6436bce6fbbe00900823150154e550902e5a5da26712f833e5f3ec120d7cfd"
+              "checksum": "038400d78bdee8840ab47090102ca3e7d8bf93c7273faa4a694949a27ac37956"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-1adb03337a50-armeabi-v7a.tar.gz",
+              "asset": "libmpv-android-596f7a4a4378-armeabi-v7a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "34b3ee992554342d227a5da5d306118e02f9029b4f3d41d7469dc90b2ecf465a",
+                "artifactSha256": "68dd27e3451efc1f8ef6410a0ec072b6da427f3054813c47f20d0e237c369eac",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -79,13 +79,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "34b3ee992554342d227a5da5d306118e02f9029b4f3d41d7469dc90b2ecf465a"
+              "checksum": "68dd27e3451efc1f8ef6410a0ec072b6da427f3054813c47f20d0e237c369eac"
             },
             "x86": {
-              "asset": "libmpv-android-1adb03337a50-x86.tar.gz",
+              "asset": "libmpv-android-596f7a4a4378-x86.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "fcb874340d21c43398cc7a7a749d3125d3f1b63ec335fcc5ce7838d3d12a10ac",
+                "artifactSha256": "bff7f8d4ddb3cbda1a731ce14aa9f3c52e1769178e0c3e879f998f6fe13ac826",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -115,13 +115,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "fcb874340d21c43398cc7a7a749d3125d3f1b63ec335fcc5ce7838d3d12a10ac"
+              "checksum": "bff7f8d4ddb3cbda1a731ce14aa9f3c52e1769178e0c3e879f998f6fe13ac826"
             },
             "x86_64": {
-              "asset": "libmpv-android-1adb03337a50-x86_64.tar.gz",
+              "asset": "libmpv-android-596f7a4a4378-x86_64.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "0621ea00c4146314cc95b285e88132a33259b10b7d09f5563232d8e4e63ef2d6",
+                "artifactSha256": "2c15050ecec2cc794de066b9f7b6287d2b4e3e7db1e077b83aecb7b6dff81308",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -151,15 +151,15 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "0621ea00c4146314cc95b285e88132a33259b10b7d09f5563232d8e4e63ef2d6"
+              "checksum": "2c15050ecec2cc794de066b9f7b6287d2b4e3e7db1e077b83aecb7b6dff81308"
             }
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-36f48764374f.aar",
+          "asset": "mpv-android-b7ada10bac5a.aar",
           "capabilities": {
             "appleSlices": [],
-            "artifactSha256": "47567b87f9cb2288999e1bf66709fd8a8aea7f9b2433d8d7ec5c69966ab05bf0",
+            "artifactSha256": "6a40eb061d9655c5ad9f0a45a2189eff9a5ad39e8a701d3950eb89e36e5a5740",
             "binaries": [
               "jni/arm64-v8a/libmpv.so",
               "jni/armeabi-v7a/libmpv.so",
@@ -216,24 +216,24 @@
             ],
             "symbol": "mpv_plezy_audio_tap_read_next"
           },
-          "checksum": "47567b87f9cb2288999e1bf66709fd8a8aea7f9b2433d8d7ec5c69966ab05bf0",
-          "key": "36f48764374f",
+          "checksum": "6a40eb061d9655c5ad9f0a45a2189eff9a5ad39e8a701d3950eb89e36e5a5740",
+          "key": "b7ada10bac5a",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-36f48764374f-arm64-v8a-symbols.zip",
-              "checksum": "b29043d9a98fca04f652024201d3351b521c8dd21e851fe530beb73370a0db9a"
+              "asset": "mpv-android-b7ada10bac5a-arm64-v8a-symbols.zip",
+              "checksum": "4faedfe215f927c89f2329ed5e16c72db2332ba23977bd8327054704cbc5fc6d"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-36f48764374f-armeabi-v7a-symbols.zip",
-              "checksum": "6abf02e9ad23f7963de99c12e26fc9e257e08c369471428850f89f7e1d99f2f0"
+              "asset": "mpv-android-b7ada10bac5a-armeabi-v7a-symbols.zip",
+              "checksum": "91e47daddb020cadc5910ba1a00bd21839fdfb6c8699c31fb64b19df00944e3b"
             },
             "x86": {
-              "asset": "mpv-android-36f48764374f-x86-symbols.zip",
-              "checksum": "5acefce6d7799c671eb9d296d5f1a9418198cf0025cabcde0ab58208c2c0d3fc"
+              "asset": "mpv-android-b7ada10bac5a-x86-symbols.zip",
+              "checksum": "3fbda938c3afce238e03ef65b3b328cdac2ef865e1c3c39c5cae5c293f398a90"
             },
             "x86_64": {
-              "asset": "mpv-android-36f48764374f-x86_64-symbols.zip",
-              "checksum": "e726539bd1f025297358a8b4847db383443ab55b1008110fc6abb8627265b0d7"
+              "asset": "mpv-android-b7ada10bac5a-x86_64-symbols.zip",
+              "checksum": "c658b5e3e3a1682e0b4afd861c0cba6cc2b2b63b3ad3e0689a5db5f2fac2958e"
             }
           }
         }
@@ -480,13 +480,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-linux",
       "libraries": {
         "libmpv-linux": {
-          "key": "ba9519beaba1",
+          "key": "6d2c1aa4b577",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-linux-ba9519beaba1-aarch64.tar.zst",
+              "asset": "libmpv-linux-6d2c1aa4b577-aarch64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "b7797186f7c52531a4bce669ac31608e005398948a699658a9693648cfe27623",
+                "artifactSha256": "c5d55cc44d578bff993ad05e04e6cc160407731083128e5dab36d7d667610958",
                 "binaries": [
                   "lib/aarch64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -496,7 +496,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "fa55135c53af1fe9ae6beb8e84974b86904e45c8cb06ec7e575afda1ef8f8051"
+                  "lib/aarch64-linux-gnu/libmpv.so.2.6.0": "abc117edc3640978f06b96de8e29b5eb085ab96b54fd51393061793a16fa43d0"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -519,13 +519,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "b7797186f7c52531a4bce669ac31608e005398948a699658a9693648cfe27623"
+              "checksum": "c5d55cc44d578bff993ad05e04e6cc160407731083128e5dab36d7d667610958"
             },
             "x86_64": {
-              "asset": "libmpv-linux-ba9519beaba1-x86_64.tar.zst",
+              "asset": "libmpv-linux-6d2c1aa4b577-x86_64.tar.zst",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "8ac1e938dcbb35311d0f3fa6ed5b32009dc7521124b948f940a7aacbe35fd971",
+                "artifactSha256": "3ae9cb7cc13a4a56e152e5f9c169c4e25df1a5bee431fa19ca82031835ec7fb4",
                 "binaries": [
                   "lib/x86_64-linux-gnu/libmpv.so.2.6.0"
                 ],
@@ -535,7 +535,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "8bc95590d8a1642ba25476bc25cb2b39ec54ade596772724c7cf8c60da36fb6e"
+                  "lib/x86_64-linux-gnu/libmpv.so.2.6.0": "7d8b9961c0a08699082a93c90b1796c6463c7a484f0dca0faf9032531437291b"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -558,17 +558,17 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "8ac1e938dcbb35311d0f3fa6ed5b32009dc7521124b948f940a7aacbe35fd971"
+              "checksum": "3ae9cb7cc13a4a56e152e5f9c169c4e25df1a5bee431fa19ca82031835ec7fb4"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-linux-ba9519beaba1-aarch64-symbols.zip",
-              "checksum": "a372da89071d94583e062d916ffae8b01b8dd8b74f5c352e63ec607f0cb4fe27"
+              "asset": "libmpv-linux-6d2c1aa4b577-aarch64-symbols.zip",
+              "checksum": "f872a0f0e2d116d1ef0760c340331b767f174231b819694a6981c03a33b223f5"
             },
             "x86_64": {
-              "asset": "libmpv-linux-ba9519beaba1-x86_64-symbols.zip",
-              "checksum": "875f80083c2f1bedba154adb4b2aa110a14890b4dbec8a58c0576873641b3928"
+              "asset": "libmpv-linux-6d2c1aa4b577-x86_64-symbols.zip",
+              "checksum": "4c87134933a5815b714eee75c27f4dea6671545082040f744c135d65f37946d3"
             }
           }
         }
@@ -578,13 +578,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-windows",
       "libraries": {
         "libmpv-windows": {
-          "key": "b6719487259a",
+          "key": "f086f4324056",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-windows-b6719487259a-aarch64.zip",
+              "asset": "libmpv-windows-f086f4324056-aarch64.zip",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "cc0d88f67916208164be10e697b56b48c15998cbbfc8b5c869a028b7721f2f58",
+                "artifactSha256": "9eefd018b8abe0eadfeb54707d54fbf49d4c79b46b789ff9e398430c8330ec53",
                 "binaries": [
                   "libmpv-2.dll"
                 ],
@@ -594,7 +594,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "libmpv-2.dll": "1ce200572d897068d508c2c8b3309cc2066925901c02a3dbc28aa34e12fee17c"
+                  "libmpv-2.dll": "ea1afb4c78f13a17ecf27dd9fb7b06dde5b5dbc60deccf10136e0603ee9a47c3"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -617,13 +617,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "cc0d88f67916208164be10e697b56b48c15998cbbfc8b5c869a028b7721f2f58"
+              "checksum": "9eefd018b8abe0eadfeb54707d54fbf49d4c79b46b789ff9e398430c8330ec53"
             },
             "x86_64": {
-              "asset": "libmpv-windows-b6719487259a-x86_64.zip",
+              "asset": "libmpv-windows-f086f4324056-x86_64.zip",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "f72704d8feaa0b6263904f42e74169478c27bd4a034ce4126b07176b4cbbc346",
+                "artifactSha256": "82c1a9a4c2b7dc20d45fdefda38c94afbea6f62d2cc6e9c87c7e496b427eb529",
                 "binaries": [
                   "libmpv-2.dll"
                 ],
@@ -633,7 +633,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "libmpv-2.dll": "8506b2766d483935adf67297458227de55b0791dfa86a1c9c9a98c9059a14c71"
+                  "libmpv-2.dll": "d50c8ffac6a420a21bde1db1386edf49c4d8b2c1d77776da3368dc9056235e6c"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -656,17 +656,17 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "f72704d8feaa0b6263904f42e74169478c27bd4a034ce4126b07176b4cbbc346"
+              "checksum": "82c1a9a4c2b7dc20d45fdefda38c94afbea6f62d2cc6e9c87c7e496b427eb529"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-windows-b6719487259a-aarch64-symbols.zip",
-              "checksum": "2d1050d050fdfea37e57bfebd0f09007a4f9cc9709cd6d74bb9bb4d78de9f872"
+              "asset": "libmpv-windows-f086f4324056-aarch64-symbols.zip",
+              "checksum": "ccabc74d52426ddfb8b92fda66380fff48cb64895a3ded89c9be297219936f0d"
             },
             "x86_64": {
-              "asset": "libmpv-windows-b6719487259a-x86_64-symbols.zip",
-              "checksum": "9a606ab304b8546fef1e9c37e6b3038e92a269a1e91029c0e6b03fa93ebdf3c6"
+              "asset": "libmpv-windows-f086f4324056-x86_64-symbols.zip",
+              "checksum": "6d7ce3219e39ebce9ed244393a9e0bf280566d459ffd32a718149df2927302d3"
             }
           }
         }
