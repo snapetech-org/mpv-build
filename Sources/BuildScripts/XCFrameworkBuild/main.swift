@@ -567,7 +567,7 @@ private class BuildDAVS2: BaseBuild {
                 "--enable-pic",
                 "--disable-cli",
                 "--disable-asm",
-                "--bit-depth=8",
+                "--bit-depth=10",
                 "--chroma-format=all",
             ],
             currentDirectoryURL: configureDirectory,

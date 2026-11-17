@@ -214,7 +214,8 @@ class PinPackagesTest(unittest.TestCase):
 
     def test_windows_uses_the_selected_fel_sources_and_patches(self):
         self.assertEqual(pin_packages.resolve_series(REPO, "ffmpeg"), [
-            "0900-fel-common-integration.patch", "0901-fel-windows-libssh-host-key.patch"])
+            "0900-fel-common-integration.patch", "0049-fel-align-libxevd-wrapper.patch",
+            "0048-libxevd-reset-for-seeking.patch", "0901-fel-windows-libssh-host-key.patch"])
         self.assertIn("0902-fel-ordered-audio-tap.patch", pin_packages.resolve_series(REPO, "mpv"))
         self.assertIn("0900-fel-reject-failed-composition.patch", pin_packages.resolve_series(REPO, "libplacebo"))
         self.assertIn("libplacebo", pin_packages.COMPONENTS)

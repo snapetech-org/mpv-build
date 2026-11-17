@@ -79,7 +79,7 @@ _patch_spec = importlib.util.spec_from_file_location(
 _patch_tools = importlib.util.module_from_spec(_patch_spec)
 _patch_spec.loader.exec_module(_patch_tools)
 
-COMPONENTS = ("mpv", "ffmpeg", "libass", "libplacebo")
+COMPONENTS = ("mpv", "ffmpeg", "libass", "libplacebo", "davs2")
 # Additional pinned packages, component -> cmake file inside the winbuild
 # checkout. These pin through the same strip-before-inject rewrite but carry
 # no patch series of ours (the staged-patch glob is anchored to packages/

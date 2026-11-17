@@ -18,7 +18,8 @@ from codec_playback_smoke import execute
 FATE = 'https://fate-suite.ffmpeg.org'
 AVS2 = 'https://raw.githubusercontent.com/pkuvcl/avs2stream/96065ae3d3f940ebad5a0b84251b3cf27ecf201c'
 AVS3 = 'https://raw.githubusercontent.com/uavs3/avs3stream/e9fcc4eac77061213c8fb07c87a8a1106fb66fe8'
-MAX_FIXTURE_BYTES = 16 * 1024 * 1024
+AVS2_SAMPLES = 'https://raw.githubusercontent.com/xatabhk/avs2-avs3-video-samples/f5e12f4540784fc6b16dd736caca9ffdac44b038'
+MAX_FIXTURE_BYTES = 32 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class Fixture:
     min_end: float
     seek: str | None
     repetitions: int = 1
+    decode_timeout: int = 12
 
 
 FIXTURES = {
@@ -50,6 +52,9 @@ FIXTURES = {
         Fixture('avs2-8.avs2', f'{AVS2}/ES/BQSquare_416x240_60_ra/test.avs2',
                 '96a662310aae4365b3ad3018040465ea82eb8a77f246cbf15ceb373ccc3096b8',
                 (416, 240), 'yuv420p', 1.5, '0.25'),
+        Fixture('avs2-main10.mkv', f'{AVS2_SAMPLES}/CCTV4K.AVS2-10bit.AC3.CB.08-27-6s.mkv',
+                '60d2902afcc3b716bb075bb26a4a889fe1c98af9ac94fc80f07ec0a36809e7ef',
+                (3840, 2160), 'yuv420p10', 5.2, '2', decode_timeout=120),
         Fixture('avs3-8.ts', f'{AVS3}/TS/City_1280x720_60_ra/test.ts',
                 '265b35090844f4a9bac98611a986a9aca9ab4a1584400c48b808c640c85713cc',
                 (1280, 720), 'yuv420p', 9, '2'),
@@ -105,10 +110,10 @@ def main():
         report = execute(
             args.library, args.worker, 'video',
             expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
-            seek_position=fixture.seek, expected_pixel_format=fixture.pixels,
+            seek_position=fixture.seek, expected_pixel_format=fixture.pixels, decode_timeout=fixture.decode_timeout,
             seek_tolerance=.25 if fixture == EVC_TIMELINE else None,
             extra_options={'untimed': 'yes', 'vd-lavc-threads': '1'} if fixture.name.startswith('evc-')
-            else {'untimed': 'yes'},
+            else {'untimed': 'yes', 'aid': 'no'},
         )
         args.output.write_text(json.dumps(report), encoding='utf-8')
         return
@@ -139,7 +144,7 @@ def main():
                     download(fixture, path)
                 command = [sys.executable, __file__, str(args.library.resolve()),
                            '--worker', str(path), '--output', str(receipt), *flags]
-                result = subprocess.run(command, text=True, capture_output=True, timeout=45)
+                result = subprocess.run(command, text=True, capture_output=True, timeout=2 * fixture.decode_timeout + 21)
                 if result.returncode:
                     raise RuntimeError((result.stdout + result.stderr)[-4000:])
                 case = json.loads(receipt.read_text(encoding='utf-8'))

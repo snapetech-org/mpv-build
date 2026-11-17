@@ -204,8 +204,18 @@ class BaseBuild {
 
         // libjxl initializes only the build-time gitlinks it needs in build_jpegxl.sh.
         let submodules = library == .libjxl ? [] : ["--recursive"]
-        try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone"]
-            + submodules + ["--depth", "1", "--branch", library.ref, library.url, directoryURL.path])
+        if library.ref == library.commit {
+            try Utility.launch(path: "/usr/bin/git", arguments: ["init", "-q", directoryURL.path])
+            try Utility.launch(path: "/usr/bin/git", arguments: ["remote", "add", "origin", library.url], currentDirectoryURL: directoryURL)
+            try Utility.launch(path: "/usr/bin/git", arguments: ["fetch", "--depth", "1", "origin", library.ref], currentDirectoryURL: directoryURL)
+            try Utility.launch(path: "/usr/bin/git", arguments: ["checkout", "--detach", "FETCH_HEAD"], currentDirectoryURL: directoryURL)
+            if !submodules.isEmpty {
+                try Utility.launch(path: "/usr/bin/git", arguments: ["submodule", "update", "--init", "--recursive", "--depth", "1"], currentDirectoryURL: directoryURL)
+            }
+        } else {
+            try Utility.launch(path: "/usr/bin/git", arguments: ["-c", "advice.detachedHead=false", "clone"]
+                + submodules + ["--depth", "1", "--branch", library.ref, library.url, directoryURL.path])
+        }
         guard try pinnedSourceMatches() else {
             throw NSError(
                 domain: "Pinned source mismatch for \(library.rawValue)",

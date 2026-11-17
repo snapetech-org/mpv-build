@@ -1,0 +1,136 @@
+diff --git a/source/common/common.cc b/source/common/common.cc
+index 5720ce7..f046bfc 100644
+--- a/source/common/common.cc
++++ b/source/common/common.cc
+@@ -51,9 +51,9 @@
+  * ===========================================================================
+  */
+ #if HIGH_BIT_DEPTH
+-int max_pel_value = 255;
+-int g_bit_depth   = 8;
+-int g_dc_value    = 128;
++thread_local int max_pel_value = 255;
++thread_local int g_bit_depth   = 8;
++thread_local int g_dc_value    = 128;
+ #endif
+ 
+ 
+diff --git a/source/common/common.h b/source/common/common.h
+index 7a3c9b7..4b1a85e 100644
+--- a/source/common/common.h
++++ b/source/common/common.h
+@@ -1198,9 +1198,16 @@ struct davs2_t {
+  * ===========================================================================
+  */
+ #if HIGH_BIT_DEPTH
+-extern int max_pel_value;
+-extern int g_bit_depth;
+-extern int g_dc_value;
++extern thread_local int max_pel_value;
++extern thread_local int g_bit_depth;
++extern thread_local int g_dc_value;
++
++static inline void davs2_set_worker_depth(int depth)
++{
++    g_bit_depth = depth;
++    max_pel_value = (1 << depth) - 1;
++    g_dc_value = 1 << (depth - 1);
++}
+ #else
+ static const int g_bit_depth   = BIT_DEPTH;
+ static const int max_pel_value = (1 << BIT_DEPTH) - 1;
+diff --git a/source/common/davs2.cc b/source/common/davs2.cc
+index fc3479d..af60a3d 100644
+--- a/source/common/davs2.cc
++++ b/source/common/davs2.cc
+@@ -744,6 +744,7 @@ davs2_decoder_flush(void *decoder, davs2_seq_info_t *headerset, davs2_picture_t
+     if (mgr->es_unit != NULL && mgr->es_unit->len >= 4) {
+         es_unit_t *es_unit = mgr->es_unit;
+         mgr->es_unit = NULL;
++        es_unit->len = bs_dispose_pseudo_code(es_unit->data, es_unit->data, es_unit->len);
+         decoder_decode_es_unit(mgr, es_unit);
+     }
+ 
+diff --git a/source/common/decoder.cc b/source/common/decoder.cc
+index a81665d..cea6e83 100644
+--- a/source/common/decoder.cc
++++ b/source/common/decoder.cc
+@@ -595,6 +595,9 @@ static int decode_one_lcu_row_parse(davs2_t *h, davs2_bs_t *bs, int i_lcu_y)
+  */
+ static int decode_lcu_row_recon(davs2_t *h, int i_lcu_y)
+ {
++#if HIGH_BIT_DEPTH
++    davs2_set_worker_depth(h->sample_bit_depth);
++#endif
+     const int width_in_lcu  = h->i_width_in_lcu;
+     const int height_in_lcu = h->i_height_in_lcu;
+     int alf_enable          = h->pic_alf_on[0] | h->pic_alf_on[1] | h->pic_alf_on[2];
+@@ -1019,7 +1022,7 @@ void davs2_write_a_frame(davs2_picture_t *pic, davs2_frame_t *frame)
+ 
+         for (j = 0; j < img_height; j++) {
+             for (k = 0; k < img_width; k++) {
+-                p_dst[k] = (uint8_t)DAVS2_CLIP1((p_src[k] + (1 << (shift1 - 1))) >> shift1);
++                p_dst[k] = (uint8_t)DAVS2_CLIP3(0, 255, (p_src[k] + (1 << (shift1 - 1))) >> shift1);
+             }
+ 
+             p_src += i_src;
+@@ -1034,7 +1037,7 @@ void davs2_write_a_frame(davs2_picture_t *pic, davs2_frame_t *frame)
+ 
+             for (j = 0; j < img_height_c; j++) {
+                 for (k = 0; k < img_width_c; k++) {
+-                    p_dst[k] = (uint8_t)DAVS2_CLIP1((p_src[k] + (1 << (shift1 - 1))) >> shift1);
++                    p_dst[k] = (uint8_t)DAVS2_CLIP3(0, 255, (p_src[k] + (1 << (shift1 - 1))) >> shift1);
+                 }
+ 
+                 p_src += i_src;
+@@ -1048,7 +1051,7 @@ void davs2_write_a_frame(davs2_picture_t *pic, davs2_frame_t *frame)
+ 
+             for (j = 0; j < img_height_c; j++) {
+                 for (k = 0; k < img_width_c; k++) {
+-                    p_dst[k] = (uint8_t)DAVS2_CLIP1((p_src[k] + (1 << (shift1 - 1))) >> shift1);
++                    p_dst[k] = (uint8_t)DAVS2_CLIP3(0, 255, (p_src[k] + (1 << (shift1 - 1))) >> shift1);
+                 }
+ 
+                 p_src += i_src;
+@@ -1108,6 +1111,9 @@ davs2_t *decoder_open(davs2_mgr_t *mgr, davs2_t *h, int idx_decoder)
+ void *decoder_decode_picture_data(void *arg1, int arg2)
+ {
+     davs2_t *h     = (davs2_t *)arg1;
++#if HIGH_BIT_DEPTH
++    davs2_set_worker_depth(h->sample_bit_depth);
++#endif
+     davs2_bs_t *bs = h->p_bs;
+ 
+     UNUSED_PARAMETER(arg2);
+diff --git a/source/common/header.cc b/source/common/header.cc
+index 484f073..6fa6b73 100644
+--- a/source/common/header.cc
++++ b/source/common/header.cc
+@@ -164,13 +164,13 @@ int parse_sequence_header(davs2_mgr_t *mgr, davs2_seq_t *seq, davs2_bs_t *bs)
+         seq->sample_precision      = u_v(bs, 3, "sample_precision");
+         seq->encoding_precision    = 1;
+     }
+-    if (seq->sample_precision < 1 || seq->sample_precision > 3 ||
+-        seq->encoding_precision < 1 || seq->encoding_precision > 3) {
++    if (seq->sample_precision < 1 || seq->sample_precision > seq->encoding_precision ||
++        seq->encoding_precision < 1 || seq->encoding_precision > 2) {
+         return -1;
+     }
+ 
+     seq->head.internal_bit_depth   = 6 + (seq->encoding_precision << 1);
+-    seq->head.output_bit_depth     = 6 + (seq->encoding_precision << 1);
++    seq->head.output_bit_depth     = 6 + (seq->sample_precision << 1);
+     seq->head.bytes_per_sample     = seq->head.output_bit_depth > 8 ? 2 : 1;
+ 
+     /*  */
+@@ -1057,9 +1057,7 @@ int task_decoder_update(davs2_t *h)
+     }
+ 
+ #if HIGH_BIT_DEPTH
+-    g_bit_depth   = h->sample_bit_depth;
+-    max_pel_value = (1 << g_bit_depth) - 1;
+-    g_dc_value    = 1 << (g_bit_depth - 1);
++    davs2_set_worker_depth(h->sample_bit_depth);
+ #else
+     if (g_bit_depth != h->sample_bit_depth) {
+         davs2_log(h, DAVS2_LOG_ERROR, "Un-supported bit-depth %d in this version.\n", h->sample_bit_depth);

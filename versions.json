@@ -610,16 +610,12 @@
     },
     "davs2": {
       "kind": "git",
-      "version": "1.7",
-      "url": "https://github.com/pkuvcl/davs2",
-      "ref": "1.7",
-      "commit": "b06d7585620f4e90a6d19a2926bb4e59793b8942",
-      "platforms": [
-        "linux",
-        "android",
-        "apple"
-      ],
-      "provenance": "Official upstream release tag resolved with git ls-remote and checked out at the verified root commit on 2026-11-16. Static x86_64 library built locally. Apple and Android now have isolated 8-bit cross-build recipes; Apple SDK and Android NDK cross-builds plus device playback qualification remain open."
+      "version": "1.7-f504350",
+      "url": "https://github.com/saindriches/davs2",
+      "ref": "f50435051b72c168c2b566c544e27fcff71ba61a",
+      "commit": "f50435051b72c168c2b566c544e27fcff71ba61a",
+      "platforms": ["linux", "android", "apple", "windows"],
+      "provenance": "10-bit branch of the davs2 decoder already used by winbuild. All drivers resolve the same immutable object. The local series isolates pixel precision between active decoder workers."
     },
     "uavs3d": {
       "kind": "git",

@@ -28,10 +28,10 @@ build gate and cannot be replaced by those unit checks.
 
 ## External video decoders
 
-Linux links pinned static XEVD (EVC Main/Baseline), davs2 (8-bit AVS2), and
+Linux links pinned static XEVD (EVC Main/Baseline), davs2 (8/10-bit AVS2), and
 uavs3d (AVS3, including its 10-bit build). Android builds pinned XEVD, davs2
-(8-bit AVS2), and 10-bit uavs3d for all four packaged ABIs and enables their
-FFmpeg wrappers. Apple builds XEVD and 8-bit davs2 for each platform slice,
+(8/10-bit AVS2), and 10-bit uavs3d for all four packaged ABIs and enables their
+FFmpeg wrappers. Apple builds XEVD and 8/10-bit davs2 for each platform slice,
 alongside its pinned AVS3 library, and merges both decoder archives into
 `libavcodec.a`. Windows adds XEVD to the pinned winbuild graph alongside its
 existing AVS2/AVS3 packages.
@@ -43,8 +43,10 @@ package content key. Linux's loaded-library release gate requires
 `mpeg4`, `vvc`, `evc`, `avs2` and `avs3`; it also runs the generated
 playback corpus and LCEVC reconstruction smoke on each native architecture.
 Android, Apple, and Windows inventories and device execution remain separate
-qualification steps. The pinned davs2 release only accepts an 8-bit build;
-10-bit AVS2 is **not** covered.
+qualification steps. All four source builds now pin the 10-bit-capable
+saindriches/davs2 checkout used by winbuild. The additional Main 10 test
+uses a 3840×2160 50 Hz broadcast sample with a seek inside its Matroska container.
+Package publication and device performance for this revision remain pending.
 
 Local x86_64 validation on 2026-11-16 linked all three external decoders
 into pinned FFmpeg and decoded the official FATE EVC sample. AVS2 8-bit and
@@ -137,7 +139,7 @@ built library must pass this gate independently before its release.
 
 The Linux release inventory now requires APV. A second gate checks the exact
 packaged library against eight SHA-256 pinned FATE and AVS project fixtures:
-APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, AVS3 8/10-bit, and still and animated JPEG XL.
+APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 and AVS3 8/10-bit, and still and animated JPEG XL.
 The reports check decoded dimensions and pixel format. APV, AVS2 and both AVS3
 vectors also exercise a seek. The EVC and VVC elementary streams cover
 decoding. The existing Linux x64 library also completed a seek in a locally
@@ -267,7 +269,7 @@ build or device execution qualification.
 
 | Dependency | Delivery decision |
 | --- | --- |
-| XEVD, davs2, uavs3d | Pinned static decoder code enters the normal native packages; root notices remain in native packages and the app. davs2 covers 8-bit AVS2. |
+| XEVD, davs2, uavs3d | Pinned static decoder code enters the normal native packages; root notices remain in native packages and the app. The new davs2 build handles both 8-bit and 10-bit AVS2. |
 | LCEVCdec | Pinned static CPU implementation, matching C++ runtime and complete upstream notice tree. Android needs libandroid; Apple merges the SDK archives into Libavcodec. Users do not install an SDK. Hardware base-only output must fall back to reconstruction rather than masquerade as enhanced playback. |
 | dav2d / AV2 | A public decoder exists, but this FFmpeg pin has no AV2 integration. Requires a codec/container implementation and reference-stream tests before availability can be advertised. [VideoLAN announcement](https://jbkempf.com/blog/2026/dav2d/), [released AV2 specification](https://av2.aomedia.org/v1.0.0/20260528_38f28e7_AV2_Spec_v1.0.0.pdf). |
 | Fraunhofer MPEG-H decoder | A public C/C++ SDK and FFmpeg wrapper exist; source access does not require a proprietary account. This FFmpeg pin classifies libmpeghdec as nonfree. Its license retains source/notice requirements and excludes patent rights. This is not an enabled dependency in normal redistributable builds. [SDK source](https://github.com/Fraunhofer-IIS/mpeghdec), [SDK license](https://github.com/Fraunhofer-IIS/mpeghdec/blob/4448b69738da2fa5f2f2f2b0ce29eea32509e046/LICENSE.txt), [pinned FFmpeg configuration](https://github.com/FFmpeg/FFmpeg/blob/46f23be8b1976ed4c8ec85584daabcf0e57a7b9e/configure). |

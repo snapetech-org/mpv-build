@@ -96,7 +96,7 @@ class EndFile(c.Structure):
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
             seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None,
             expected_bitmap=False, source_uri=None, minimum_chapters=None, seek_tolerance=None,
-            pcm_duration_range=(3.2, 4.0)):
+            pcm_duration_range=(3.2, 4.0), decode_timeout=12):
     library = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         import os
@@ -160,7 +160,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             lib.mpv_free_node_contents(c.byref(result))
 
     def finish(require_restart=False):
-        deadline = time.monotonic() + 12
+        deadline = time.monotonic() + decode_timeout
         restarted = not require_restart
         while time.monotonic() < deadline:
             event = lib.mpv_wait_event(ctx, .02).contents

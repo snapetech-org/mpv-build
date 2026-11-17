@@ -28,6 +28,7 @@
         "nv-codec-headers",
         "openssl",
         "libplacebo",
+        "davs2",
         "xevd",
         "lcevc_dec"
       ],

@@ -98,7 +98,6 @@ EOF
       rm -rf "$davs2_source/.git"
     fi
     cd "$davs2_source/build/linux"
-    # The pinned release rejects --bit-depth=10. Do not claim 10-bit AVS2.
     # Generic C++ is available on both Linux architectures; this avoids x86-only
     # assembler assumptions in the portable decoder floor.
     configure_args=(--prefix="$install_prefix" --enable-pic --disable-cli --disable-asm)
@@ -114,7 +113,7 @@ EOF
     else
       configure_args=(--prefix="$prefix" --enable-pic --disable-cli --disable-asm "$@")
     fi
-    CC="${CXX:-g++}" ./configure "${configure_args[@]}"
+    CC="${CXX:-g++}" ./configure "${configure_args[@]}" --bit-depth=10
     sed -i -E 's/(#define XBUILD_TIME[[:space:]]+)"[^"]*"/\1"2020-01-01 00:00:00"/' "$davs2_source/source/version.h"
     make -j"$jobs"
     make install
