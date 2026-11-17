@@ -38,10 +38,13 @@ existing AVS2/AVS3 packages.
 The Android AVS3 ARMv7 build deliberately uses upstream's portable C kernels:
 its ARMv7 assembly recipe forces a hard-float calling convention that does not
 match the Android `armeabi-v7a` ABI. Source pins participate in each platform's
-package content key. Linux's loaded-library gate requires `evc`, `avs2` and
-`avs3`; Android, Apple, and Windows package inventories and device execution
-remain separate qualification steps. The pinned davs2 release only accepts an
-8-bit build; 10-bit AVS2 is **not** covered.
+package content key. Linux's loaded-library release gate requires
+`h264`, `hevc`, software `av1`, `vp9`, `mpeg2video`, `vc1`,
+`mpeg4`, `vvc`, `evc`, `avs2` and `avs3`; it also runs the generated
+playback corpus and LCEVC reconstruction smoke on each native architecture.
+Android, Apple, and Windows inventories and device execution remain separate
+qualification steps. The pinned davs2 release only accepts an 8-bit build;
+10-bit AVS2 is **not** covered.
 
 Local x86_64 validation on 2026-11-16 linked all three external decoders
 into pinned FFmpeg and decoded the official FATE EVC sample. AVS2 8-bit and
@@ -49,26 +52,32 @@ AVS3 8/10-bit output matches upstream YUV hashes. The full Linux package also
 passed the corpus and LCEVC reconstruction gates described below.
 
 The pinned Android NDK 29.0.14206865 is available locally: all four ABI SDK
-clients and final shared FFmpeg libraries link successfully. Hosted builds of
-all four Android ABIs also pass; final AAR publication is a separate gate.
-Windows package tests and a local MinGW SDK client link pass, but the production
-LLVM builds and Apple platform builds must pass hosted CI before application
-pins advance. None of these build results establishes physical-device playback
-qualification. Earlier notes saying the Android NDK was absent are superseded.
+clients and final shared FFmpeg libraries link successfully. Hosted run
+43983813338 passed both Linux architectures, all four Android ABIs, the Android
+AAR, and Linux/Android publication. Windows x86_64 built, but its publication
+manifest check rejected the artifact after `main` advanced during the run.
+Windows ARM64 failed in the LCEVC source build with x86 MMX intrinsic errors.
+That run started before the Windows cache-key fix at `4235371`, so it does not
+qualify the current Windows ARM64 source state.
 
-AV2 is a named source identity, not an installed FFmpeg decoder. The pinned
-FFmpeg source has no AV2 codec ID, decoder wrapper or demuxer integration.
-The AV2 v1.0.0 specification is final (published 2026-05-28), but the official
-VideoLAN dav2d project still describes its decoder as early and advises against
-production use; its roadmap lists completion of the C decoder, a usable API
-and platform ports as ongoing work. A dav2d SDK build alone does not add AV2
-playback to mpv, and the current source is not included in production packages.
-Keep AV2 out of measured decoder inventories until a stable integration is
-available and validated against AV2 v1.0.0 streams on each target. The client
-should use a server conversion only when the server offers a compatible route,
-and otherwise report the unsupported source accurately.
+Current `main` invalidates cached Windows source and build state when resolved
+patches change. Its cache-invalidation regression tests pass locally. A fresh
+same-commit Windows ARM64 build and successful package publication are still
+required before that target is qualified or the app pin advances. Build success
+also does not establish physical-device playback qualification. Earlier notes
+saying the Android NDK was absent are superseded.
+
+AV2 is not an installed FFmpeg decoder: this pin has no AV2 codec ID,
+decoder wrapper or demuxer integration, and a dav2d SDK build alone cannot add
+playback to mpv. VideoLAN's May 2026 status describes dav2d as an early,
+functional decoder with 8/10-bit decoding, while conformance, optimization and
+platform support remain active work. Keep AV2 out of measured decoder
+inventories until the decoder is integrated with FFmpeg, validated against
+AV2 v1.0.0 streams, and qualified on each target. The client should use a
+server conversion only when the server offers a compatible route, and otherwise
+report the unsupported source accurately.
 Sources: [AV2 v1.0 specification](https://av2.aomedia.org/),
-[VideoLAN dav2d project](https://code.videolan.org/videolan/dav2d). LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
+[VideoLAN dav2d status](https://jbkempf.com/blog/2026/dav2d/). LCEVC now has a pinned 4.3.1 static SDK source recipe on Linux, Android,
 Windows and all Apple slices. Android packages it into its FFmpeg shared
 libraries and carries the original notices in both native tarballs and AAR
 assets. Windows links the static SDK into FFmpeg. Apple folds all eight SDK
