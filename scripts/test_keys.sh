@@ -105,6 +105,11 @@ VERSIONS = {
         },
     },
 }
+for decoder in ("davs2", "lcevc_dec", "xevd"):
+    VERSIONS["components"][decoder] = {
+        "kind": "git", "version": "1.0.0", "url": f"https://example.invalid/{decoder}",
+        "ref": "1.0.0", "commit": "1" * 40, "platforms": ["apple"],
+    }
 
 PACKAGE_TEMPLATE = '''// swift-tools-version:5.9
 let package = Package(
@@ -304,6 +309,29 @@ with tempfile.TemporaryDirectory() as tmp:
     check(added["FFmpeg"] == before["FFmpeg"], "SAB patches do not move FFmpeg")
     patch.write_text("changed renderer patch\n")
     check(keys(repo)["libmpv"] != added["libmpv"], "SAB patch bytes move libmpv")
+
+# An Apple decoder merged into Libavcodec changes only FFmpeg's package key.
+with tempfile.TemporaryDirectory() as tmp:
+    repo = make_repo(tmp)
+    original = keys(repo)
+    path = repo / "versions.json"
+    pins = json.loads(path.read_text())
+    for decoder in ("davs2", "lcevc_dec", "xevd"):
+        before = keys(repo)
+        pins["components"][decoder]["commit"] = "2" * 40
+        path.write_text(json.dumps(pins))
+        check(keys(repo)["FFmpeg"] != before["FFmpeg"], f"{decoder} source moves Apple's FFmpeg key")
+    pool = repo / "patches/xevd/pool"
+    pool.mkdir(parents=True)
+    patch = pool / "timeline.patch"
+    patch.write_text("EVC timeline patch\n")
+    (pool.parent / "series.common").write_text("timeline.patch\n")
+    patched = keys(repo)
+    patch.write_text("Changed EVC timeline patch\n")
+    changed = keys(repo)
+    check(patched["FFmpeg"] != changed["FFmpeg"], "XEVD patch bytes move Apple's FFmpeg key")
+    check(all(changed[name] == original[name] for name in ("libass", "libmpv")),
+          "embedded decoder sources and patches leave the other Apple package keys alone")
 
 # 2. The committed manifest describes the published apple assets.
 committed = root / "artifacts.json"

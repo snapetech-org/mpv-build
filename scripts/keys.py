@@ -192,6 +192,7 @@ VERSIONS_PATH = Path("versions.json")
 PATCHES_ROOT = Path("patches")
 
 CHECKSUM_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+APPLE_FFMPEG_EMBEDDED_COMPONENTS = ("davs2", "lcevc_dec", "xevd")
 
 # The artifact-name -> versions.json component rule, including its alias table,
 # lives in scripts/patches.py: `check` needs it to compare the Swift driver's
@@ -602,7 +603,8 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         return _artifact_key_inputs(root, group, artifact)
 
     component = canonical_component(artifact)
-    pins = resolved_pins(load_versions(root), component, group.name)
+    versions = load_versions(root)
+    pins = resolved_pins(versions, component, group.name)
     toolchain_path = _toolchain_file(root, group)
 
     text = [
@@ -615,8 +617,15 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         # The Swift renderer and Rust core are folded into libmpv.a, and only
         # into it, so their build script keys libmpv rather than the group.
         text.append("component=spatialaudiobridge")
-        text.extend(_pin_lines(resolved_pins(load_versions(root), "spatialaudiobridge", group.name)))
+        text.extend(_pin_lines(resolved_pins(versions, "spatialaudiobridge", group.name)))
         text.append(f"spatial-driver={_sha256_file(root / 'scripts/build_spatial.py')}")
+    if group.name == "apple" and artifact == "FFmpeg":
+        # The Swift build merges these static archives into Libavcodec.
+        for dependency in APPLE_FFMPEG_EMBEDDED_COMPONENTS:
+            text.append(f"component={dependency}")
+            text.extend(_pin_lines(resolved_pins(versions, dependency, group.name)))
+            for name, digest in patch_entries(root, dependency, group.name):
+                text.append(f"patch={dependency}/{name}:{digest}")
     text += [
         # Every build is GPL: the apple driver hardcodes --enable-gpl/-Dgpl=true
         # and the group.json builds have no flag matrix, so these two lines are
