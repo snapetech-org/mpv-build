@@ -31,6 +31,7 @@ do {
         BuildVulkan(),
         ZipBaseBuild(library: .libshaderc),
         ZipBaseBuild(library: .lcms2),
+        BuildJPEGXL(),
         ZipBaseBuild(library: .libplacebo),
         ZipBaseBuild(library: .libdav1d),
         BuildFFMPEG(),
@@ -98,7 +99,7 @@ enum Versions {
 enum Library: String, CaseIterable {
     case libmpv, FFmpeg, libshaderc, vulkan, lcms2, libdovi, openssl, libunibreak, libfreetype,
         libfribidi, libharfbuzz, libass, libplacebo, libdav1d, libuchardet, libbluray, libluajit,
-        libuavs3d, libxevd, libdavs2, liblcevcdec
+        libuavs3d, libxevd, libdavs2, liblcevcdec, libjxl
 
     /// Component name in `versions.json` and `patches/`. The only mapping
     /// between Swift raw values and canonical component names.
@@ -183,7 +184,7 @@ enum Library: String, CaseIterable {
             // Apple folds XEVD into Libavcodec, so consumers do not need a
             // separately published binary target for this private dependency.
             return []
-        case .liblcevcdec:
+        case .liblcevcdec, .libjxl:
             return []
         case .libdavs2:
             // Apple folds davs2 into Libavcodec for the same reason.
@@ -424,6 +425,31 @@ private class BuildLCEVC: BaseBuild {
     }
 }
 
+private class BuildJPEGXL: BaseBuild {
+    init() {
+        super.init(library: .libjxl)
+    }
+
+    override func frameworks() throws -> [String] { [] }
+
+    override func build(platform: PlatformType, arch: ArchType) throws {
+        let prefix = thinDir(platform: platform, arch: arch)
+        try FileManager.default.createDirectory(at: prefix, withIntermediateDirectories: true)
+        var env = environment(platform: platform, arch: arch)
+        env["BUILD_SUFFIX"] = "-\(platform.rawValue)-\(arch.rawValue)"
+        env["JXL_LCMS2_PREFIX"] = thinDir(library: .lcms2, platform: platform, arch: arch).path
+        try Utility.launch(path: "/bin/bash", arguments: [
+            (URL.currentDirectory + ["..", "scripts", "build_jpegxl.sh"]).path,
+            directoryURL.path, prefix.path, "8",
+            "-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=\(arch.cpuFamily)",
+            "-DCMAKE_OSX_ARCHITECTURES=\(arch.rawValue)", "-DCMAKE_OSX_SYSROOT=\(platform.isysroot)",
+            "-DCMAKE_C_COMPILER_TARGET=\(platform.deploymentTarget(arch))",
+            "-DCMAKE_CXX_COMPILER_TARGET=\(platform.deploymentTarget(arch))",
+            "-DCMAKE_MACOSX_RPATH=ON",
+        ], currentDirectoryURL: directoryURL, environment: env)
+    }
+}
+
 private class BuildXEVD: BaseBuild {
     init() {
         super.init(library: .libxevd)
@@ -641,7 +667,11 @@ private class BuildFFMPEG: BaseBuild {
                            "pixel_processing", "common", "extract"].map {
             sdkPrefix + ["lib", "liblcevc_dec_\($0).a"]
         }
-        for archive in sdkArchives {
+        let jxlPrefix = thinDir(library: .libjxl, platform: platform, arch: arch)
+        let jxlArchives = ["jxl", "jxl_threads", "jxl_cms", "hwy", "brotlienc", "brotlidec", "brotlicommon"].map {
+            jxlPrefix + ["lib", "lib\($0).a"]
+        }
+        for archive in sdkArchives + jxlArchives {
             guard FileManager.default.fileExists(atPath: archive.path) else {
                 throw NSError(domain: "BuildFFMPEG", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Missing bundled SDK archive: \(archive.path)"])
@@ -657,9 +687,11 @@ private class BuildFFMPEG: BaseBuild {
                 prefix.path, dependency.canonicalName,
             ])
         }
-        let sdkNotices = sdkPrefix + ["share", "licenses", "pleazyng-codecs", "lcevc_dec"]
-        try? FileManager.default.removeItem(at: notices + "lcevc_dec")
-        try FileManager.default.copyItem(at: sdkNotices, to: notices + "lcevc_dec")
+        for (source, name) in [(sdkPrefix, "lcevc_dec"), (jxlPrefix, "libjxl")] {
+            let sourceNotices = source + ["share", "licenses", "pleazyng-codecs", name]
+            try? FileManager.default.removeItem(at: notices + name)
+            try FileManager.default.copyItem(at: sourceNotices, to: notices + name)
+        }
         let mergedArchive = prefix + ["lib", "libavcodec.merged.a"]
         guard FileManager.default.fileExists(atPath: codecArchive.path),
             FileManager.default.fileExists(atPath: xevdArchive.path),
@@ -679,12 +711,18 @@ private class BuildFFMPEG: BaseBuild {
             arguments: [
                 "-static", "-o", mergedArchive.path, codecArchive.path,
                 xevdArchive.path, davs2Archive.path,
-            ] + sdkArchives.map { $0.path },
+            ] + (sdkArchives + jxlArchives).map { $0.path },
             currentDirectoryURL: directoryURL,
             environment: environment(platform: platform, arch: arch)
         )
         try FileManager.default.removeItem(at: codecArchive)
         try FileManager.default.moveItem(at: mergedArchive, to: codecArchive)
+        if platform == .macos, arch.executable {
+            try Utility.launch(path: python, arguments: [
+                (URL.currentDirectory + ["..", "scripts", "test_jpegxl_decode.py"]).path,
+                (prefix + ["bin", "ffprobe"]).path,
+            ], currentDirectoryURL: directoryURL)
+        }
 
         let lldbFile = URL.currentDirectory + "LLDBInitFile"
         if let data = FileManager.default.contents(atPath: lldbFile.path),
@@ -754,6 +792,7 @@ private class BuildFFMPEG: BaseBuild {
             arguments.append("--enable-optimizations")
         }
         arguments.append("--enable-gpl")
+        arguments.append("--enable-libjxl")
         // arguments += Build.ffmpegConfiguers
         arguments.append("--disable-large-tests")
         arguments.append("--ignore-tests=TESTS")

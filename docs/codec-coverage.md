@@ -167,15 +167,14 @@ requires a retry of that same segment during initial playback and separately
 checks seeking. This covers fragment recovery. Adaptive rendition switching,
 live-edge recovery and physical output remain separate.
 
-The previous Linux x86_64 inventory has no JPEG XL or AC-4 decoder.
-New Linux and Android recipes link static libjxl 0.11.2 with its pinned
-Brotli, Highway and Little CMS dependencies. Linux checks both JPEG XL codec
-IDs and runs the still and animated reference cases. The local pinned FFmpeg
-probe decoded one 256×256 still and 36 frames of the 128×96 animation with this
-static library. The existing Windows recipe also enables libjxl. Apple package
-integration and physical device playback require separate work. AC-4, AV2,
-10-bit AVS2, and MPEG-H still depend on a compatible implementation or
-the playback device/server's own support.
+The Linux and Android recipes build libjxl 0.11.2 with the pinned Brotli,
+Highway and Little CMS sources. Windows also enables libjxl. The Apple recipe
+builds libjxl, Brotli and Highway for each slice and links the matching
+Little CMS framework already in the SwiftPM product. Libavcodec carries the
+private archives and their notices. The macOS host build must decode the
+256×256 still and all 36 frames of the 128×96 animation. Apple publication
+and device playback are pending. MPEG-H, AC-4 and AV2 still require native
+decoder integration in the shipped packages.
 
 The manual Windows codec qualification workflow runs the binary-hash inventory
 and same reference fixtures against the published x64 and ARM64 DLLs on

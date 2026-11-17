@@ -105,11 +105,13 @@ VERSIONS = {
         },
     },
 }
-for decoder in ("davs2", "lcevc_dec", "xevd"):
+for decoder in ("davs2", "lcevc_dec", "libjxl", "xevd"):
     VERSIONS["components"][decoder] = {
         "kind": "git", "version": "1.0.0", "url": f"https://example.invalid/{decoder}",
         "ref": "1.0.0", "commit": "1" * 40, "platforms": ["apple"],
     }
+
+VERSIONS["components"]["lcms2"] = {**VERSIONS["components"]["libplacebo"], "version": "2.17.0"}
 
 PACKAGE_TEMPLATE = '''// swift-tools-version:5.9
 let package = Package(
@@ -169,6 +171,7 @@ def pcm_receipt_problems(*args, **kwargs):
     return []
 
 if __name__ == "__main__":'''))
+    (repo / "scripts/build_jpegxl.sh").write_text("# JPEG XL build\n")
     (repo / "scripts/build_spatial.py").write_text("# source build\n")
     # keys.py reads the series format through patches.py, so the fixture carries
     # it too; the sandbox mirrors the real scripts/ layout.
@@ -316,7 +319,7 @@ with tempfile.TemporaryDirectory() as tmp:
     original = keys(repo)
     path = repo / "versions.json"
     pins = json.loads(path.read_text())
-    for decoder in ("davs2", "lcevc_dec", "xevd"):
+    for decoder in ("davs2", "lcevc_dec", "libjxl", "xevd"):
         before = keys(repo)
         pins["components"][decoder]["commit"] = "2" * 40
         path.write_text(json.dumps(pins))

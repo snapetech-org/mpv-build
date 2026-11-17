@@ -583,7 +583,7 @@
       "ref": "v0.11.2",
       "commit": "332feb17d17311c748445f7ee75c4fb55cc38530",
       "provenance": "JPEG XL Project release v0.11.2, with pinned Brotli, Highway and Little CMS gitlinks taken from that release tree.",
-      "platforms": ["linux", "android"]
+      "platforms": ["linux", "android", "apple"]
     },
     "libxml2": {
       "kind": "git",

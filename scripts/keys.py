@@ -192,7 +192,7 @@ VERSIONS_PATH = Path("versions.json")
 PATCHES_ROOT = Path("patches")
 
 CHECKSUM_RE = re.compile(r"\A[0-9a-f]{64}\Z")
-APPLE_FFMPEG_EMBEDDED_COMPONENTS = ("davs2", "lcevc_dec", "xevd")
+APPLE_FFMPEG_EMBEDDED_COMPONENTS = ("davs2", "lcevc_dec", "libjxl", "xevd")
 
 # The artifact-name -> versions.json component rule, including its alias table,
 # lives in scripts/patches.py: `check` needs it to compare the Swift driver's
@@ -620,6 +620,8 @@ def key_inputs(root: Path, group: Group, artifact: str) -> str:
         text.extend(_pin_lines(resolved_pins(versions, "spatialaudiobridge", group.name)))
         text.append(f"spatial-driver={_sha256_file(root / 'scripts/build_spatial.py')}")
     if group.name == "apple" and artifact == "FFmpeg":
+        text.append(f"jpegxl-driver={_sha256_file(root / 'scripts/build_jpegxl.sh')}")
+        text.extend(_pin_lines(resolved_pins(versions, "lcms2", group.name)))
         # The Swift build merges these static archives into Libavcodec.
         for dependency in APPLE_FFMPEG_EMBEDDED_COMPONENTS:
             text.append(f"component={dependency}")
