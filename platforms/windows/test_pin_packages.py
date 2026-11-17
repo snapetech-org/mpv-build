@@ -86,6 +86,61 @@ def read_tree(root):
             if path.is_file()}
 
 
+class CachedPatchTest(unittest.TestCase):
+    def test_patch_content_changes_the_key_without_moving_the_source_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            pool = repo / 'patches/widget/pool'
+            pool.mkdir(parents=True)
+            (pool.parent / 'series.windows').write_text('fix.patch\n')
+            patch = pool / 'fix.patch'
+            patch.write_text('old patch')
+            first = pin_packages.source_patch_key(repo, 'widget')
+            patch.write_text('new patch')
+            self.assertNotEqual(first, pin_packages.source_patch_key(repo, 'widget'))
+            self.assertEqual(pin_packages.source_patch_key(repo, 'absent'), '-')
+
+    def test_warm_source_and_build_reset_only_when_patch_identity_changes(self):
+        driver = (HERE / 'build.sh').read_text()
+        functions = driver[driver.index('drop_stamps() {'):driver.index('\ninvalidate_stale_pins\n')]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / 'work'
+            source = work / 'src/lcevc_dec'
+            source.mkdir(parents=True)
+            subprocess.run(['git', 'init', '-q', str(source)], check=True)
+            (source / 'header.h').write_text('pristine')
+            subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+            pin = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+            build = root / 'build'
+            stamp = build / 'lcevc_dec-prefix/src/lcevc_dec-stamp/built'
+            helper = root / 'helper'
+            helper.mkdir()
+            def run(key):
+                (helper / 'pin_packages.py').write_text(
+                    'print(' + repr(f'lcevc_dec lcevc_dec {pin} unused {key}') + ')\n')
+                subprocess.run(['bash', '-euo', 'pipefail', '-c',
+                                'HERE="$1"; WORK="$2"; BUILD="$3"; ' + functions +
+                                '\ninvalidate_stale_pins', 'test', str(helper), str(work), str(build)],
+                               check=True, stdout=subprocess.DEVNULL)
+            stamp.parent.mkdir(parents=True)
+            stamp.touch()
+            (source / 'header.h').write_text('obsolete patched header')
+            run('first')
+            self.assertEqual((source / 'header.h').read_text(), 'pristine')
+            self.assertFalse(stamp.exists())
+            (source / 'header.h').write_text('current patched header')
+            stamp.touch()
+            run('first')
+            self.assertEqual((source / 'header.h').read_text(), 'current patched header')
+            self.assertTrue(stamp.exists())
+            run('changed')
+            self.assertEqual((source / 'header.h').read_text(), 'pristine')
+            self.assertFalse(stamp.exists())
+
+
 class PinPackagesTest(unittest.TestCase):
     def test_lcevc_cannot_be_enabled_without_its_sdk_dependency(self):
         text = pin_packages.enable_ffmpeg_xevd((TESTDATA / 'ffmpeg.cmake').read_text())

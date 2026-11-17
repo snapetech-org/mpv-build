@@ -66,6 +66,7 @@ at CHECK_GIT_ORIGINAL).
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -196,6 +197,18 @@ def resolve_series(repo, component):
     # the other platform builders. A FEL source must never get legacy patches.
     return [name for path in _patch_tools.series_files(component, GROUP, root=repo)
             for name in read_series(path)]
+
+
+def source_patch_key(repo, component):
+    """Invalidate cached worktree patches even when the upstream pin is unchanged."""
+    names = resolve_series(repo, component)
+    if not names:
+        return "-"
+    digest = hashlib.sha256()
+    for name in names:
+        digest.update(name.encode() + b"\0")
+        digest.update((repo / "patches" / component / "pool" / name).read_bytes())
+    return digest.hexdigest()
 
 
 def stage_patches(repo, component, packages_dir):
@@ -586,7 +599,7 @@ def main(argv):
     parser.add_argument(
         "--print-pins",
         action="store_true",
-        help="print the pinned-source inventory (component, source dir, commit, url) and exit",
+        help="print the pinned-source inventory (component, source dir, commit, url, patch key) and exit",
     )
     parser.add_argument(
         "--print-winbuild-pin",
@@ -603,7 +616,7 @@ def main(argv):
     # reachable resolver instead of an in-shell copy per consumer.
     if args.print_pins:
         for component, source_dir, pins in pinned_sources(versions):
-            print(f"{component}\t{source_dir}\t{pins['commit']}\t{pins['url']}")
+            print(f"{component}\t{source_dir}\t{pins['commit']}\t{pins['url']}\t{source_patch_key(repo, component)}")
         return 0
     if args.print_winbuild_pin:
         pins = resolved_pins(versions, WINBUILD_COMPONENT)

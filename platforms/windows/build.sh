@@ -295,7 +295,7 @@ invalidate_stale_pins() {
   # key moved, and the download step above never re-examines a source it
   # already completed.
   python3 "$HERE/pin_packages.py" --print-pins \
-    | while read -r component source_name pinned _; do
+    | while read -r component source_name pinned source_url patch_key; do
     local src="$WORK/src/$source_name" family
     case "$component" in
       mingw-w64) family="__sysroot_world__" ;;
@@ -329,6 +329,21 @@ invalidate_stale_pins() {
       else
         echo "==> $component stamps present without a source; purging: $family"
         purge_component "$family"
+      fi
+    fi
+    if [[ "$patch_key" != "-" && -d "$src/.git" ]]; then
+      local marker="$BUILD/.source-patches/$source_name" expected="$pinned:$patch_key"
+      if [[ ! -f "$marker" || "$(cat "$marker")" != "$expected" ]]; then
+        echo "==> $component patch series changed or untracked; resetting cached source and build"
+        git -C "$src" reset --hard -q "$pinned"
+        git -C "$src" clean -qdf
+        if [[ "$family" == "__sysroot_world__" ]]; then
+          purge_sysroot_world
+        else
+          purge_component "$family"
+        fi
+        mkdir -p "$(dirname "$marker")"
+        printf '%s\n' "$expected" > "$marker"
       fi
     fi
   done
