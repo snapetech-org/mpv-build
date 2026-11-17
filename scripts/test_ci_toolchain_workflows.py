@@ -311,7 +311,12 @@ assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
 
 apple = job_section(PUBLISH, "build-apple")
 assert 'runs-on: xcode-27' in apple
-assert 'runs-on: xcode-27' in job_section(PUBLISH, 'publish-apple')
+apple_publish = job_section(PUBLISH, "publish-apple")
+assert "runs-on: xcode-27" in apple_publish
+assert (
+    "- name: Verify the real AVFoundation shader implementation in every slice\n"
+    "        if: contains(format(',{0},', needs.plan.outputs.stale_apple), ',libmpv,')\n"
+) in apple_publish
 assert "max-parallel: 6" in apple, "independent Apple platform builds must run in parallel"
 assert '"group":"private-apple-builds"' not in apple
 assert "Install Apple build tools on the hosted runner" in apple
