@@ -73,8 +73,8 @@ JPEGXL_FIXTURES = {
 }
 
 EVC_TIMELINE = Fixture(
-    'evc-two-sequences.evc', FIXTURES['evc-main.evc'].url, FIXTURES['evc-main.evc'].sha256,
-    (352, 288), 'yuv420p10', 23.8, None, repetitions=2,
+    'evc-two-sequences.mp4', FIXTURES['evc-main.evc'].url, FIXTURES['evc-main.evc'].sha256,
+    (352, 288), 'yuv420p10', 23.8, '12.0', repetitions=2,
 )
 
 
@@ -93,6 +93,7 @@ def main():
     parser.add_argument('--worker', type=Path)
     parser.add_argument('--with-jpegxl', action='store_true')
     parser.add_argument('--with-evc-timeline', action='store_true')
+    parser.add_argument('--ffmpeg', default='ffmpeg')
     args = parser.parse_args()
     fixtures = dict(FIXTURES)
     if args.with_jpegxl:
@@ -105,6 +106,7 @@ def main():
             args.library, args.worker, 'video',
             expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
             seek_position=fixture.seek, expected_pixel_format=fixture.pixels,
+            seek_tolerance=.25 if fixture == EVC_TIMELINE else None,
             extra_options={'untimed': 'yes', 'vd-lavc-threads': '1'} if fixture.name.startswith('evc-')
             else {'untimed': 'yes'},
         )
@@ -123,7 +125,18 @@ def main():
             path = root / fixture.name
             receipt = root / (fixture.name + '.json')
             try:
-                download(fixture, path)
+                if fixture == EVC_TIMELINE:
+                    elementary = path.with_suffix('.evc')
+                    download(fixture, elementary)
+                    mux = subprocess.run([
+                        args.ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error',
+                        '-f', 'evc', '-framerate', '25', '-i', str(elementary),
+                        '-map', '0:v:0', '-c', 'copy', str(path),
+                    ], text=True, capture_output=True, timeout=30)
+                    if mux.returncode:
+                        raise RuntimeError(mux.stderr[-4000:])
+                else:
+                    download(fixture, path)
                 command = [sys.executable, __file__, str(args.library.resolve()),
                            '--worker', str(path), '--output', str(receipt), *flags]
                 result = subprocess.run(command, text=True, capture_output=True, timeout=45)

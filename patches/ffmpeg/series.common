@@ -28,3 +28,6 @@
 0045-encryption-info-append-side-data.patch
 0046-mov-append-pssh-init-info.patch
 0047-rtsp-limit-redirects.patch
+
+# Reset the XEVD decoder and its delayed packet queue at random access.
+0048-libxevd-reset-for-seeking.patch

@@ -1,2 +1,6 @@
 # FEL support is bundled; runtime Settings select reconstruction.
 0900-fel-common-integration.patch
+# Align the wrapper with the stable pin while preserving the FEL driver name,
+# then apply the shared delayed-packet and seek implementation.
+0049-fel-align-libxevd-wrapper.patch
+0048-libxevd-reset-for-seeking.patch
