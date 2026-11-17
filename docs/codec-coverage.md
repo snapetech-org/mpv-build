@@ -54,11 +54,11 @@ passed the corpus and LCEVC reconstruction gates described below.
 The pinned Android NDK 29.0.14206865 is available locally: all four ABI SDK
 clients and final shared FFmpeg libraries link successfully. Hosted run
 43983813338 passed both Linux architectures, all four Android ABIs, the Android
-AAR, and Linux/Android publication. Windows x86_64 built, but its publication
-manifest check rejected the artifact after `main` advanced during the run.
-Windows ARM64 failed in the LCEVC source build with x86 MMX intrinsic errors.
-That run started before the Windows cache-key fix at `4235371`, so it does not
-qualify the current Windows ARM64 source state.
+AAR, and Linux/Android publication. Windows x86_64 built, but Windows publication failed because the required
+ARM64 binary and symbols were absent after its build failed. Windows ARM64
+failed in the LCEVC source build with x86 MMX intrinsic errors. That run
+started before the Windows cache-key fix at `4235371`, so it does not qualify
+the current Windows ARM64 source state.
 
 Current `main` invalidates cached Windows source and build state when resolved
 patches change. Its cache-invalidation regression tests pass locally. A fresh
