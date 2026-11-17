@@ -139,19 +139,26 @@ The Linux release inventory now requires APV. A second gate checks the exact
 packaged library against eight SHA-256 pinned FATE and AVS project fixtures:
 APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, AVS3 8/10-bit, and still and animated JPEG XL.
 The reports check decoded dimensions and pixel format. APV, AVS2 and both AVS3
-vectors also exercise a seek. The EVC and VVC elementary streams cover decode
-only. Passing these cases does not measure conformance against reference pixels.
+vectors also exercise a seek. The EVC and VVC elementary streams cover
+decoding. The existing Linux x64 library also completed a seek in a locally
+remuxed VVC MP4 with two random access points. The corresponding EVC replay
+failed to advance beyond the first sequence. Reference pixel conformance
+remains unmeasured.
 
 The existing Linux x86_64 package at key `89098dd65662` passed all six reference
-cases and the 44 generated fixtures outside the DASH gate. Its measured
+cases and 51 corpus checks outside the DASH gate, including four passthrough
+checks. Its measured
 inventory includes HLS but lacks the DASH demuxer. New Linux and Android
 recipes build pinned libxml2 statically and enable the FFmpeg DASH demuxer.
 Linux publication requires a DASH decode and seek in addition to HLS.
 Apple and Windows already enable FFmpeg's libxml2 integration. Native TV
-players have separate streaming stacks. The existing x86_64 package also passed the PGS, VobSub and DVB overlay
-cases. Each check seeks to an active bitmap cue and compares software RGBA
-pixels with subtitles enabled and omitted. Manifest tests are local VOD examples;
-network reconnection, adaptive switching, and physical output are separate.
+players have separate streaming stacks. The PGS, VobSub and DVB overlay
+checks each seek to an active bitmap cue and compare software RGBA pixels
+with subtitles enabled and omitted. The HLS gate serves a generated fragmented
+MP4 programme over loopback HTTP with a discontinuity marker and one HTTP 503. It
+requires a retry of that same segment during initial playback and separately
+checks seeking. This covers fragment recovery. Adaptive rendition switching,
+live-edge recovery and physical output remain separate.
 
 The previous Linux x86_64 inventory has no JPEG XL or AC-4 decoder.
 New Linux and Android recipes link static libjxl 0.11.2 with its pinned
@@ -167,6 +174,24 @@ The manual Windows codec qualification workflow runs the binary-hash inventory
 and same reference fixtures against the published x64 and ARM64 DLLs on
 matching hosted Windows runners. It produces separate evidence from the
 Linux release gate and the Windows packaging checks.
+
+The generated AC-3, E-AC-3, DTS core and TrueHD samples also run with
+passthrough requested. The gate verifies the selected IEC 61937 format after
+decode and seek, separately from the existing PCM tests. It ran successfully
+on the existing Linux x64 artifact. A receiver, audio device and HDMI route
+still need physical qualification.
+
+## Linux disc title playback
+
+The Linux recipe statically links the pinned VideoLAN DVD and Blu-ray title
+readers and requires both native disc protocols in the release inventory. The
+DVD gate authors a small unencrypted VIDEO_TS tree, opens its first title
+through mpv, and verifies chapter discovery, decoding and seeking. The gate
+passed on the Debian reference libmpv with its existing disc readers. The
+pinned DVD and Blu-ray archives also built and linked locally. Blu-ray title
+playback and optical drive behavior have not been verified on the new bundle.
+The build targets title playback. Interactive DVD or BD-J menus and encrypted
+media are out of the title fixture's scope.
 
 ## LCEVC reconstruction evidence
 

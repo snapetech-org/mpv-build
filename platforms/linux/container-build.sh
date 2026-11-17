@@ -51,7 +51,7 @@ fi
 DEPS='
 build-essential git curl ca-certificates python3 pkg-config
 cmake meson ninja-build nasm autoconf automake libtool xz-utils zstd
-binutils zip ffmpeg
+binutils zip ffmpeg dvdauthor
 libfreetype-dev libfribidi-dev libharfbuzz-dev libfontconfig-dev
 libgnutls28-dev libunistring-dev libva-dev
 libdisplay-info-dev libdrm-dev libvulkan-dev libwayland-dev wayland-protocols
@@ -79,8 +79,10 @@ if [ -n "${KEY:-}" ]; then
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/check_music_dsp_filters.py "$dsp_library"
   inventory_dir="${OUT_DIR:-$PWD/dist/release}"
   mkdir -p "$inventory_dir"
-  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_inventory.py "$dsp_library" --require h264 --require hevc --require av1 --require apv --require jpegxl --require jpegxl_anim --require vp9 --require mpeg2video --require vc1 --require mpeg4 --require vvc --require evc --require avs2 --require avs3 --output "$inventory_dir/codec-inventory-${ARCH:-$(uname -m)}.json"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_inventory.py "$dsp_library" --require-protocol dvd --require-protocol bd --require h264 --require hevc --require av1 --require apv --require jpegxl --require jpegxl_anim --require vp9 --require mpeg2video --require vc1 --require mpeg4 --require vvc --require evc --require avs2 --require avs3 --output "$inventory_dir/codec-inventory-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_playback_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --expect-dash --with-bitmap --output "$inventory_dir/codec-playback-${ARCH:-$(uname -m)}.json"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_stream_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --output "$inventory_dir/codec-playback-hls-recovery-${ARCH:-$(uname -m)}.json"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_disc_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --output "$inventory_dir/codec-playback-dvd-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_reference_smoke.py "$dsp_library" --with-jpegxl --output "$inventory_dir/codec-playback-reference-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/lcevc_playback_smoke.py "$dsp_library" --output "$inventory_dir/codec-playback-lcevc-${ARCH:-$(uname -m)}.json"
   bash platforms/linux/package.sh

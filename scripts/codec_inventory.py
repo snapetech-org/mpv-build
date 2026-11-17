@@ -61,7 +61,7 @@ def decode_node(node, depth=0):
     return dict(zip(keys, values))
 
 
-def validate_inventory(properties, required=()):
+def validate_inventory(properties, required=(), required_protocols=()):
     decoders = properties.get('decoder-list')
     if not isinstance(decoders, list) or not decoders:
         raise ValueError('loaded engine reported no decoders')
@@ -79,10 +79,13 @@ def validate_inventory(properties, required=()):
     for key in ('demuxer-lavf-list', 'protocol-list'):
         if not isinstance(properties.get(key), list) or not properties[key] or not all(isinstance(x, str) for x in properties[key]):
             raise ValueError('missing native ' + key)
+    missing_protocols = set(required_protocols) - set(properties['protocol-list'])
+    if missing_protocols:
+        raise ValueError('loaded engine omits required protocols: ' + ', '.join(sorted(missing_protocols)))
     return {codec: sorted(drivers) for codec, drivers in sorted(by_codec.items())}
 
 
-def inspect(library, required=()):
+def inspect(library, required=(), required_protocols=()):
     path = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         with os.add_dll_directory(str(path.parent)):
@@ -119,7 +122,7 @@ def inspect(library, required=()):
                 properties[key] = decode_node(node)
             finally:
                 lib.mpv_free_node_contents(c.byref(node))
-        codecs = validate_inventory(properties, required)
+        codecs = validate_inventory(properties, required, required_protocols)
         with path.open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         return {'schemaVersion': 1, 'evidence': 'runtime-enumeration', 'executionQualified': False,
@@ -135,8 +138,9 @@ def main():
     parser.add_argument('library')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--require', action='append', default=[])
+    parser.add_argument('--require-protocol', action='append', default=[])
     args = parser.parse_args()
-    result = json.dumps(inspect(args.library, args.require), indent=2, sort_keys=True) + '\n'
+    result = json.dumps(inspect(args.library, args.require, args.require_protocol), indent=2, sort_keys=True) + '\n'
     if args.output:
         args.output.write_text(result)
     else:

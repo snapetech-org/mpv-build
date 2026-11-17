@@ -13,6 +13,10 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'vvc'):
             validate_inventory(self.properties([('h264', 'h264')]), ['h264', 'vvc'])
 
+    def test_missing_disc_protocol_fails_release_requirement(self):
+        with self.assertRaisesRegex(ValueError, 'required protocols: bd, dvd'):
+            validate_inventory(self.properties([('h264', 'h264')]), required_protocols=['dvd', 'bd'])
+
     def test_hardware_only_av1_is_not_a_software_floor(self):
         with self.assertRaisesRegex(ValueError, 'software fallback'):
             validate_inventory(self.properties([('av1', 'av1')]), ['av1'])

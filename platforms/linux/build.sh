@@ -347,6 +347,8 @@ main() {
   checkout_verified_ref "$LIBJXL_URL" "$LIBJXL_REF" "$LIBJXL_COMMIT" "$tree"
   "$REPO_ROOT/scripts/build_jpegxl.sh" "$tree" "$prefix" "$jobs"
 
+  "$REPO_ROOT/scripts/build_disc_readers.sh" "$VERSIONS_MANIFEST" "$srcdir" "$prefix" "$jobs"
+
   # ─── Step 2: nv-codec-headers (ffnvcodec, headers only) ────────────────────
   # NVIDIA hardware decoding (ffmpeg's nvdec hwaccel, mpv's cuda hwdec and its
   # GL interop) compiles against ffnvcodec: headers plus a pkg-config file,
@@ -558,6 +560,8 @@ main() {
     -Dbuild-date=false \
     -Dlua=enabled \
     -Djavascript=enabled \
+    -Ddvdnav=enabled \
+    -Dlibbluray=enabled \
     -Dcplugins=disabled \
     -Dmanpage-build=disabled \
     -Djack=disabled \

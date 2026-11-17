@@ -145,6 +145,14 @@ if [ "$found_pkgconfig" -eq 0 ]; then
 fi
 
 # Statically linked SDKs still owe their copyright notices to the final package.
+for pair in dvdread:libdvdread dvdnav:libdvdnav libbluray:libbluray; do
+  if [[ -f "$PREFIX/lib/pkgconfig/${pair%:*}.pc" ]]; then
+    test -s "$PREFIX/share/licenses/pleazyng-codecs/${pair#*:}/COPYING"
+  fi
+done
+if [[ -f "$PREFIX/lib/pkgconfig/libbluray.pc" ]]; then
+  test -s "$PREFIX/share/licenses/pleazyng-codecs/libbluray/COPYING.libudfread"
+fi
 if [[ -f "$PREFIX/lib/pkgconfig/libjxl.pc" ]]; then
   for notice in LICENSE PATENTS LICENSE.brotli LICENSE.highway LICENSE.lcms notice-manifest.json; do
     test -s "$PREFIX/share/licenses/pleazyng-codecs/libjxl/$notice"

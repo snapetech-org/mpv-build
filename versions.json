@@ -536,6 +536,30 @@
       ],
       "overrides": {}
     },
+    "libdvdread": {
+      "kind": "archive",
+      "version": "7.1.1",
+      "url": "https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz",
+      "sha256": "a0d47876548bec806774bbf8dbf20bb19ba139464383156b32eb8e59915b90a9",
+      "provenance": "VideoLAN release archive, verified against its independently published SHA-256 sidecar.",
+      "platforms": ["linux"]
+    },
+    "libdvdnav": {
+      "kind": "archive",
+      "version": "7.0.0",
+      "url": "https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz",
+      "sha256": "a2a18f5ad36d133c74bf9106b6445806fa253b09141a46392550394b647b221e",
+      "provenance": "VideoLAN release archive, verified against its independently published SHA-256 sidecar.",
+      "platforms": ["linux"]
+    },
+    "libbluray_linux": {
+      "kind": "archive",
+      "version": "1.5.0",
+      "url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz",
+      "sha256": "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2",
+      "provenance": "VideoLAN release archive, verified against its independently published SHA-256 sidecar.",
+      "platforms": ["linux"]
+    },
     "libjxl": {
       "kind": "git",
       "version": "0.11.2",

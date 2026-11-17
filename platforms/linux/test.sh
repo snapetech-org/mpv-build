@@ -231,6 +231,21 @@ git -C "$video_decoder_repository" commit --quiet -m video-decoder
 git -C "$video_decoder_repository" -c tag.gpgsign=false tag release
 video_decoder_commit="$(git -C "$video_decoder_repository" rev-parse HEAD)"
 
+# Generate source-shaped local archives and exercise the exact SHA-256 path.
+for library in libdvdread libdvdnav libbluray; do
+  disc_tree="$temporary/$library-0.0.1"
+  mkdir -p "$disc_tree"
+  printf 'test disc reader notice\n' > "$disc_tree/COPYING"
+  if [[ "$library" == libbluray ]]; then
+    mkdir -p "$disc_tree/contrib/libudfread"
+    cp "$disc_tree/COPYING" "$disc_tree/contrib/libudfread/COPYING"
+  fi
+  tar -cJf "$disc_tree.tar.xz" -C "$temporary" "$library-0.0.1"
+done
+read -r dvdread_sha _ < <(sha256sum "$temporary/libdvdread-0.0.1.tar.xz")
+read -r dvdnav_sha _ < <(sha256sum "$temporary/libdvdnav-0.0.1.tar.xz")
+read -r bluray_sha _ < <(sha256sum "$temporary/libbluray-0.0.1.tar.xz")
+
 # The stub manifest mirrors versions.json: linux pins live in overrides.linux
 # wherever the real file keeps them there (libplacebo, whose base pin is the
 # apple prebuilt), and those base fields carry broken values on purpose - a
@@ -241,6 +256,9 @@ cat >"$manifest" <<JSON
 {
   "components": {
     "lcevc_dec": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
+    "libdvdread": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libdvdread-0.0.1.tar.xz", "sha256":"$dvdread_sha"},
+    "libdvdnav": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libdvdnav-0.0.1.tar.xz", "sha256":"$dvdnav_sha"},
+    "libbluray_linux": {"kind":"archive", "version":"0.0.1", "url":"file://$temporary/libbluray-0.0.1.tar.xz", "sha256":"$bluray_sha"},
     "libjxl": {"kind":"git", "version":"0.11.2", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "libxml2": {"kind":"git", "version":"2.15.4", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "xevd": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
@@ -394,6 +412,8 @@ mpv_meson="$(recorded_call meson "mpv-$mpv_version")" ||
 [ "$(sed -n 3p "$mpv_meson")" = "setup" ] ||
   fail "mpv's first meson call is no longer 'setup'"
 
+assert_argument "$mpv_meson" "-Ddvdnav=enabled" "mpv's meson setup"
+assert_argument "$mpv_meson" "-Dlibbluray=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dwayland=enabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dx11=disabled" "mpv's meson setup"
 assert_argument "$mpv_meson" "-Dvaapi=enabled" "mpv's meson setup"

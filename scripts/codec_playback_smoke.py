@@ -65,6 +65,8 @@ AUDIO = (
 )
 
 
+PASSTHROUGH_CODECS = {'ac3', 'eac3', 'dts', 'truehd'}
+
 BITMAP_SUBTITLES = (
     ('pgs-bitmap', 'pgs_sub.sup', '0.2'),
     ('vobsub-bitmap', 'vobsub.idx', '-132.2'),
@@ -92,7 +94,7 @@ class EndFile(c.Structure):
 
 
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
-            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None, expected_bitmap=False):
+            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None, expected_bitmap=False, source_uri=None, minimum_chapters=None):
     library = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         import os
@@ -193,7 +195,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
                 raise ValueError('native option rejected: ' + key)
         if lib.mpv_initialize(ctx) < 0:
             raise ValueError('native initialization failed')
-        command('loadfile', str(Path(source).resolve()))
+        command('loadfile', source_uri if source_uri else str(Path(source).resolve()))
         first = finish(require_restart=True)
         params = prop('video-out-params' if kind == 'video' else 'audio-params')
         if not isinstance(params, dict) or not params:
@@ -204,6 +206,10 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
             decoded = prop('video-params')
             if not isinstance(decoded, dict) or decoded.get('pixelformat') != expected_pixel_format:
                 raise ValueError(f'unexpected decoded pixel format: {decoded}')
+        if minimum_chapters is not None:
+            chapter_count = prop('chapters')
+            if not isinstance(chapter_count, int) or chapter_count < minimum_chapters:
+                raise ValueError(f'Expected at least {minimum_chapters} chapters, found {chapter_count}')
         second = None
         if seek_position is not None:
             while lib.mpv_wait_event(ctx, 0).contents.event_id:
@@ -285,6 +291,8 @@ def generate(ffmpeg, root, *, expect_dash=False, with_bitmap=False):
                         '-f', 'lavfi', '-i', 'sine=frequency=997:sample_rate=48000:duration=2',
                         '-ac', '2', '-strict', 'experimental', '-c:a', encoder, str(path)], check=True, timeout=30)
         fixtures.append((name, path, 'audio'))
+        if name in PASSTHROUGH_CODECS:
+            fixtures.append((f'passthrough-{name}', path, 'passthrough'))
 
     captions = root / 'captions.srt'
     captions.write_text('1\n00:00:00,250 --> 00:00:01,250\nPleazyng caption Ω\n', encoding='utf-8')
@@ -325,7 +333,7 @@ def main():
     parser.add_argument('--expect-dash', action='store_true')
     parser.add_argument('--with-bitmap', action='store_true')
     parser.add_argument('--worker', type=Path)
-    parser.add_argument('--kind', choices=['video', 'audio'])
+    parser.add_argument('--kind', choices=['video', 'audio', 'passthrough'])
     args = parser.parse_args()
     if args.worker:
         name = args.worker.stem
@@ -335,11 +343,23 @@ def main():
              if case == name and pixels.endswith(('10le', '12le'))),
             None,
         )
-        result = json.dumps(execute(
+        passthrough = args.kind == 'passthrough'
+        options = {'untimed': 'yes'} if args.kind != 'audio' else {}
+        if passthrough:
+            if name not in PASSTHROUGH_CODECS:
+                raise ValueError('Unexpected passthrough test codec')
+            options['audio-spdif'] = name
+        result = execute(
             args.library, args.worker, args.kind, expected_subtitle=expected_subtitle,
             expected_pixel_format=expected_pixel_format, expected_bitmap=name in {case[0] for case in BITMAP_SUBTITLES},
-            extra_options={'untimed': 'yes'} if args.kind == 'video' else None,
-        ))
+            extra_options=options, minimum_position=1.5 if passthrough else None,
+        )
+        if passthrough:
+            expected = f'spdif-{name}'
+            if result['output'].get('format') != expected:
+                raise ValueError(f'Expected {expected} packetization, got {result["output"]}')
+            result['physicalAudioOutputQualified'] = False
+        result = json.dumps(result)
         if args.output:
             args.output.write_text(result, encoding='utf-8')
         else:
