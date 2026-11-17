@@ -1,0 +1,14 @@
+diff --git a/src/common/include/LCEVC/common/neon.h b/src/common/include/LCEVC/common/neon.h
+--- a/src/common/include/LCEVC/common/neon.h
++++ b/src/common/include/LCEVC/common/neon.h
+@@ -24,7 +24,7 @@
+-#ifdef _WIN32
++#if defined(_MSC_VER) && !defined(__clang__)
+ #include <arm64_neon.h>
+-#else /* !_WIN32 */
++#else /* Clang/GCC use the standard ARM intrinsics header, including Windows. */
+ #include <arm_neon.h>
+-#endif /* _WIN32 */
++#endif
+ 
+ /*------------------------------------------------------------------------------*/

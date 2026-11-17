@@ -1,2 +1,3 @@
 0001-windows-thread-error-codes.patch
 0002-mingw-architecture-safe-clock-intrinsic.patch
+0003-clang-windows-arm-neon-header.patch

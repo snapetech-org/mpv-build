@@ -160,6 +160,13 @@ class PinPackagesTest(unittest.TestCase):
         self.assertIn("+#ifdef _MSC_VER", patch)
         self.assertIn("+#include <intrin.h>", patch)
 
+    def test_windows_clang_uses_standard_arm_intrinsics_header(self):
+        name = '0003-clang-windows-arm-neon-header.patch'
+        self.assertIn(name, pin_packages.resolve_series(REPO, 'lcevc_dec'))
+        patch = (REPO / 'patches/lcevc_dec/pool' / name).read_text()
+        self.assertIn('+#if defined(_MSC_VER) && !defined(__clang__)', patch)
+        self.assertIn(' #include <arm_neon.h>', patch)
+
     def test_ffmpeg_xevd_dependency_and_wrapper_are_added_together(self):
         text = (TESTDATA / "ffmpeg.cmake").read_text(encoding="utf-8")
         enabled = pin_packages.enable_ffmpeg_xevd(text)
