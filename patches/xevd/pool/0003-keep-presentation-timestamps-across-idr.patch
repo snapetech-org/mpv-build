@@ -1,0 +1,44 @@
+diff --git a/src_base/xevd.c b/src_base/xevd.c
+index 3115f25..9692190 100644
+--- a/src_base/xevd.c
++++ b/src_base/xevd.c
+@@ -2024,7 +2024,10 @@ int xevd_dec_nalu(XEVD_CTX * ctx, XEVD_BITB * bitb, XEVD_STAT * stat)
+         }
+         ctx->pic->imgb->ts[XEVD_TS_DTS] = bitb->ts[XEVD_TS_DTS];
+
+-        int coding_delay = ctx->poc.poc_val - (int)ctx->pic_cnt; // number of frames between coding and presentation
++        /* IDR resets picture order count but the decode counter keeps advancing. */
++        if (nalu->nal_unit_type_plus1 - 1 == XEVD_NUT_IDR)
++            ctx->ts.idr_pic_cnt = ctx->pic_cnt;
++        int coding_delay = ctx->poc.poc_val - (int)(ctx->pic_cnt - ctx->ts.idr_pic_cnt);
+         ctx->pic->imgb->ts[XEVD_TS_PTS] = bitb->ts[XEVD_TS_DTS] + coding_delay * ctx->ts.frame_duration_time;
+
+         for (int i=0; i<XEVD_NDATA_NUM; i++) {
+diff --git a/src_base/xevd_def.h b/src_base/xevd_def.h
+index 0d425ff..9631de2 100644
+--- a/src_base/xevd_def.h
++++ b/src_base/xevd_def.h
+@@ -1194,6 +1194,7 @@ typedef struct _XEVD_TIME_STAMP
+ {
+     XEVD_MTIME         frame_first_dts;
+     XEVD_MTIME         frame_duration_time;
++    u32                idr_pic_cnt;
+ } XEVD_TIME_STAMP;
+
+ #include "xevd_bsr.h"
+diff --git a/src_main/xevdm.c b/src_main/xevdm.c
+index b290180..b774256 100644
+--- a/src_main/xevdm.c
++++ b/src_main/xevdm.c
+@@ -3264,7 +3264,10 @@ int xevd_dec_nalu(XEVD_CTX * ctx, XEVD_BITB * bitb, XEVD_STAT * stat)
+         }
+         ctx->pic->imgb->ts[XEVD_TS_DTS] = bitb->ts[XEVD_TS_DTS];
+
+-        int coding_delay = ctx->poc.poc_val - (int)ctx->pic_cnt; // number of frames between coding and presentation
++        /* IDR resets picture order count but the decode counter keeps advancing. */
++        if (nalu->nal_unit_type_plus1 - 1 == XEVD_NUT_IDR)
++            ctx->ts.idr_pic_cnt = ctx->pic_cnt;
++        int coding_delay = ctx->poc.poc_val - (int)(ctx->pic_cnt - ctx->ts.idr_pic_cnt);
+         ctx->pic->imgb->ts[XEVD_TS_PTS] = bitb->ts[XEVD_TS_DTS] + coding_delay * ctx->ts.frame_duration_time;
+
+         for (int i=0; i<XEVD_NDATA_NUM; i++) {

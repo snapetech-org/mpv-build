@@ -30,6 +30,7 @@ class Fixture:
     pixels: str | None
     min_end: float
     seek: str | None
+    repetitions: int = 1
 
 
 FIXTURES = {
@@ -71,12 +72,18 @@ JPEGXL_FIXTURES = {
     )
 }
 
+EVC_TIMELINE = Fixture(
+    'evc-two-sequences.evc', FIXTURES['evc-main.evc'].url, FIXTURES['evc-main.evc'].sha256,
+    (352, 288), 'yuv420p10', 23.8, None, repetitions=2,
+)
+
+
 def download(fixture, path):
     with urlopen(fixture.url, timeout=45) as response:
         data = response.read(MAX_FIXTURE_BYTES + 1)
     if len(data) > MAX_FIXTURE_BYTES or hashlib.sha256(data).hexdigest() != fixture.sha256:
         raise ValueError(f'{fixture.name}: reference fixture hash mismatch')
-    path.write_bytes(data)
+    path.write_bytes(data * fixture.repetitions)
 
 
 def main():
@@ -85,9 +92,15 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--worker', type=Path)
     parser.add_argument('--with-jpegxl', action='store_true')
+    parser.add_argument('--with-evc-timeline', action='store_true')
     args = parser.parse_args()
+    fixtures = dict(FIXTURES)
+    if args.with_jpegxl:
+        fixtures.update(JPEGXL_FIXTURES)
+    if args.with_evc_timeline:
+        fixtures[EVC_TIMELINE.name] = EVC_TIMELINE
     if args.worker:
-        fixture = (FIXTURES | JPEGXL_FIXTURES)[args.worker.name]
+        fixture = fixtures[args.worker.name]
         report = execute(
             args.library, args.worker, 'video',
             expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
@@ -101,21 +114,28 @@ def main():
     results = {}
     with tempfile.TemporaryDirectory(prefix='codec-reference-') as temporary:
         root = Path(temporary)
-        fixtures = FIXTURES | JPEGXL_FIXTURES if args.with_jpegxl else FIXTURES
+        flags = []
+        if args.with_jpegxl:
+            flags.append('--with-jpegxl')
+        if args.with_evc_timeline:
+            flags.append('--with-evc-timeline')
         for fixture in fixtures.values():
             path = root / fixture.name
             receipt = root / (fixture.name + '.json')
             try:
                 download(fixture, path)
                 command = [sys.executable, __file__, str(args.library.resolve()),
-                           '--worker', str(path), '--output', str(receipt)]
+                           '--worker', str(path), '--output', str(receipt), *flags]
                 result = subprocess.run(command, text=True, capture_output=True, timeout=45)
                 if result.returncode:
                     raise RuntimeError((result.stdout + result.stderr)[-4000:])
                 case = json.loads(receipt.read_text(encoding='utf-8'))
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
                 case = {'error': str(error)}
-            results[fixture.name] = {**case, 'fixtureUrl': fixture.url, 'fixtureSha256': fixture.sha256}
+            results[fixture.name] = {
+                **case, 'fixtureUrl': fixture.url, 'fixtureSha256': fixture.sha256,
+                'fixtureRepetitions': fixture.repetitions,
+            }
             print(f'{fixture.name}: ' + (case.get('error') or 'decode passed; seek ' + case['seek']), flush=True)
 
     with args.library.open('rb') as stream:

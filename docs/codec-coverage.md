@@ -141,9 +141,13 @@ APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, AVS3 8/10-bit, and still an
 The reports check decoded dimensions and pixel format. APV, AVS2 and both AVS3
 vectors also exercise a seek. The EVC and VVC elementary streams cover
 decoding. The existing Linux x64 library also completed a seek in a locally
-remuxed VVC MP4 with two random access points. The corresponding EVC replay
-failed to advance beyond the first sequence. Reference pixel conformance
-remains unmeasured.
+remuxed VVC MP4 with two random access points. The previous XEVD implementation
+restarted presentation timestamps at the second IDR. The common XEVD patch
+keeps each sequence on the original decode timeline. With the pinned FFmpeg
+source it produced 600 consecutive frames from the repeated EVC sample in
+both MP4 and elementary stream form. The Linux release also checks the full
+timeline through libmpv. EVC seeking within an already open player and
+reference pixel conformance remain unqualified.
 
 The existing Linux x86_64 package at key `89098dd65662` passed all six reference
 cases and 51 corpus checks outside the DASH gate, including four passthrough

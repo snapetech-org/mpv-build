@@ -83,7 +83,7 @@ if [ -n "${KEY:-}" ]; then
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_playback_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --expect-dash --with-bitmap --output "$inventory_dir/codec-playback-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_stream_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --output "$inventory_dir/codec-playback-hls-recovery-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_disc_smoke.py "$dsp_library" --ffmpeg /usr/bin/ffmpeg --output "$inventory_dir/codec-playback-dvd-${ARCH:-$(uname -m)}.json"
-  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_reference_smoke.py "$dsp_library" --with-jpegxl --output "$inventory_dir/codec-playback-reference-${ARCH:-$(uname -m)}.json"
+  LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/codec_reference_smoke.py "$dsp_library" --with-jpegxl --with-evc-timeline --output "$inventory_dir/codec-playback-reference-${ARCH:-$(uname -m)}.json"
   LD_LIBRARY_PATH="$dsp_prefix/lib:$dsp_prefix/lib/$(gcc -dumpmachine):${LD_LIBRARY_PATH:-}" python3 scripts/lcevc_playback_smoke.py "$dsp_library" --output "$inventory_dir/codec-playback-lcevc-${ARCH:-$(uname -m)}.json"
   bash platforms/linux/package.sh
 fi
