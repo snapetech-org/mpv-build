@@ -310,7 +310,8 @@ aar_script = (ROOT / "platforms/android/lib/build-aar.sh").read_text()
 assert aar_script.index('command -v "$tool"') < aar_script.index('./gradlew')
 
 apple = job_section(PUBLISH, "build-apple")
-assert 'runs-on: macos-26' in apple
+assert 'runs-on: xcode-27' in apple
+assert 'runs-on: xcode-27' in job_section(PUBLISH, 'publish-apple')
 assert "max-parallel: 6" in apple, "independent Apple platform builds must run in parallel"
 assert '"group":"private-apple-builds"' not in apple
 assert "Install Apple build tools on the hosted runner" in apple
