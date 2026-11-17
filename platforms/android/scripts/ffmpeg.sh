@@ -27,8 +27,8 @@ cpuflags=
 	--target-os=android --enable-cross-compile --cross-prefix=$ndk_triple- --cc=$CC \
 	--arch=${ndk_triple%%-*} --cpu=$cpu --pkg-config=pkg-config --pkg-config-flags=--static --nm=llvm-nm \
 	--extra-cflags="-I$prefix_dir/include $cpuflags" --extra-ldflags="-L$prefix_dir/lib" \
-	--extra-libs=-ldovi \
-	--enable-{jni,mediacodec,openssl,libdav1d,libdovi,libxevd,libuavs3d,libdavs2,liblcevc-dec,libxml2} --disable-vulkan \
+	--extra-libs="-ldovi -lc++_shared -llog" \
+	--enable-{jni,mediacodec,openssl,libdav1d,libdovi,libxevd,libuavs3d,libdavs2,liblcevc-dec,libxml2,libjxl} --disable-vulkan \
 	--disable-static --enable-shared --enable-{gpl,version3} \
 	--disable-{stripping,doc,programs} \
 	--enable-{decoders,demuxers,parsers,bsfs} \

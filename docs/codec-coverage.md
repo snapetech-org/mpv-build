@@ -107,13 +107,13 @@ application license as replacing those terms. Sources: [LCEVCdec 4.3.1](https://
 ## Generated-media release check
 
 `scripts/codec_playback_smoke.py /absolute/path/to/libmpv.so --output report.json`
-generates 45 short playback fixtures using the host FFmpeg, then decodes and
+generates 48 short playback fixtures using the host FFmpeg, then decodes and
 seeks each through the supplied libmpv in its own bounded worker process. It
 forces software decoding. The video cases include AVC/HEVC/AV1/VP8/VP9, 10-bit
 examples, MPEG-2/4, WMV2, ProRes, FFV1, HuffYUV, JPEG, Theora, FLV, QuickTime RLE
 and Cinepak. Audio includes AAC, MP3, Opus, Vorbis, FLAC, ALAC, AC-3/E-AC-3,
 24-bit PCM, WavPack, DTS core, TrueHD, WMA and MPEG Layer II. Native playback
-also exercises local fMP4 HLS and DASH VOD, timed SubRip/ASS/WebVTT tracks,
+also exercises local fMP4 HLS and DASH VOD, timed SubRip/ASS/WebVTT tracks, PGS/VobSub/DVB software overlays,
 interlaced MPEG-2, and 10/12-bit AVC, HEVC, AV1 and VP9 vectors with decoded
 pixel-format checks. Audio output must contain the expected nonempty PCM
 duration across initial playback and seeking; packet timestamp heuristics alone
@@ -136,8 +136,8 @@ built library must pass this gate independently before its release.
 ## Reference vectors and DASH
 
 The Linux release inventory now requires APV. A second gate checks the exact
-packaged library against six SHA-256 pinned FATE and AVS project fixtures:
-APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, and AVS3 8/10-bit.
+packaged library against eight SHA-256 pinned FATE and AVS project fixtures:
+APV 4:2:2 10-bit, VVC Main 10, EVC Main, AVS2 8-bit, AVS3 8/10-bit, and still and animated JPEG XL.
 The reports check decoded dimensions and pixel format. APV, AVS2 and both AVS3
 vectors also exercise a seek. The EVC and VVC elementary streams cover decode
 only. Passing these cases does not measure conformance against reference pixels.
@@ -148,11 +148,18 @@ inventory includes HLS but lacks the DASH demuxer. New Linux and Android
 recipes build pinned libxml2 statically and enable the FFmpeg DASH demuxer.
 Linux publication requires a DASH decode and seek in addition to HLS.
 Apple and Windows already enable FFmpeg's libxml2 integration. Native TV
-players have separate streaming stacks. Manifest tests are local VOD examples;
+players have separate streaming stacks. The existing x86_64 package also passed the PGS, VobSub and DVB overlay
+cases. Each check seeks to an active bitmap cue and compares software RGBA
+pixels with subtitles enabled and omitted. Manifest tests are local VOD examples;
 network reconnection, adaptive switching, and physical output are separate.
 
-The existing Linux x86_64 inventory has no JPEG XL or AC-4 decoder.
-JPEG XL requires a packaged libjxl build and playback fixtures. AC-4, AV2,
+The previous Linux x86_64 inventory has no JPEG XL or AC-4 decoder.
+New Linux and Android recipes link static libjxl 0.11.2 with its pinned
+Brotli, Highway and Little CMS dependencies. Linux checks both JPEG XL codec
+IDs and runs the still and animated reference cases. The local pinned FFmpeg
+probe decoded one 256×256 still and 36 frames of the 128×96 animation with this
+static library. The existing Windows recipe also enables libjxl. Apple package
+integration and physical device playback require separate work. AC-4, AV2,
 10-bit AVS2, and MPEG-H still depend on a compatible implementation or
 the playback device/server's own support.
 

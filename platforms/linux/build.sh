@@ -50,6 +50,10 @@ import json
 import sys
 
 SPECS = """
+LIBJXL_VERSION libjxl version
+LIBJXL_URL libjxl url
+LIBJXL_REF libjxl ref
+LIBJXL_COMMIT libjxl commit
 LIBXML2_VERSION libxml2 version
 LIBXML2_URL libxml2 url
 LIBXML2_REF libxml2 ref
@@ -148,7 +152,7 @@ PY
   done <<< "$dump"
 }
 
-resolve_pins libxml2:git lcevc_dec:git xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
+resolve_pins libjxl:git libxml2:git lcevc_dec:git xevd:git davs2:git uavs3d:git wayland-protocols:git dav1d:git nv-codec-headers:git ffmpeg:git shaderc:git vulkan-headers:git vulkan-loader:git libplacebo:git libass:git mpv:git
 
 checkout_verified_ref() {
   local url="$1"
@@ -339,6 +343,10 @@ main() {
     "$REPO_ROOT/scripts/build_video_decoder.sh" "$decoder" "$tree" "$prefix" "$jobs"
   done
 
+  tree="$srcdir/libjxl-$LIBJXL_VERSION"
+  checkout_verified_ref "$LIBJXL_URL" "$LIBJXL_REF" "$LIBJXL_COMMIT" "$tree"
+  "$REPO_ROOT/scripts/build_jpegxl.sh" "$tree" "$prefix" "$jobs"
+
   # ─── Step 2: nv-codec-headers (ffnvcodec, headers only) ────────────────────
   # NVIDIA hardware decoding (ffmpeg's nvdec hwaccel, mpv's cuda hwdec and its
   # GL interop) compiles against ffnvcodec: headers plus a pkg-config file,
@@ -403,6 +411,7 @@ main() {
     --enable-nvdec \
     --enable-libdav1d \
     --enable-liblcevc-dec \
+    --enable-libjxl \
     --enable-libxml2 \
     --extra-cflags="-I$prefix/include" \
     --enable-libxevd \

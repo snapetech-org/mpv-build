@@ -207,6 +207,22 @@ mkdir -p "$video_decoder_repository/build/linux" "$video_decoder_repository/sour
 cp -- "$stub_extra/configure" "$video_decoder_repository/build/linux/configure"
 printf '#define XBUILD_TIME "unfixed"\n' > "$video_decoder_repository/source/version.h"
 printf "test libxml2 notice\n" > "$video_decoder_repository/Copyright"
+printf "test root license\n" > "$video_decoder_repository/LICENSE"
+printf "test patent terms\n" > "$video_decoder_repository/PATENTS"
+# The JPEG XL checkout pins all three native dependency gitlinks. Stand in
+# for each dependency with a tiny local repo, including files staged as notices.
+jpegxl_dependency="$temporary/jpegxl-dependency"
+init_repository "$jpegxl_dependency"
+printf 'test dependency license\n' > "$jpegxl_dependency/LICENSE"
+git -C "$jpegxl_dependency" add LICENSE
+git -C "$jpegxl_dependency" commit --quiet -m license
+for dependency in brotli highway lcms; do
+  git -C "$video_decoder_repository" -c protocol.file.allow=always submodule add --quiet     "file://$jpegxl_dependency" "third_party/$dependency"
+done
+export GIT_ALLOW_PROTOCOL=file
+for library in libjxl libjxl_cms libjxl_threads; do
+  printf 'Libs.private: -lm\n' > "$temporary/prefix/lib/pkgconfig/$library.pc"
+done
 printf "test copyright terms\n" > "$video_decoder_repository/COPYING"
 printf "test additional licensing information\n" > "$video_decoder_repository/LICENSE.md"
 git -C "$video_decoder_repository" add .
@@ -225,6 +241,7 @@ cat >"$manifest" <<JSON
 {
   "components": {
     "lcevc_dec": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
+    "libjxl": {"kind":"git", "version":"0.11.2", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "libxml2": {"kind":"git", "version":"2.15.4", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "xevd": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
     "davs2": {"kind":"git", "version":"0.0.1", "url":"file://$video_decoder_repository", "ref":"release", "commit":"$video_decoder_commit"},
@@ -408,6 +425,7 @@ ffmpeg_configure="$(recorded_call configure "ffmpeg-$ffmpeg_version")" ||
   fail "the build plan never configured ffmpeg"
 assert_argument "$ffmpeg_configure" "--enable-vaapi" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-libdav1d" "ffmpeg's configure"
+assert_argument "$ffmpeg_configure" "--enable-libjxl" "ffmpeg's configure"
 assert_argument "$ffmpeg_configure" "--enable-libxml2" "ffmpeg's configure"
 for decoder in xevd davs2 uavs3d; do
   assert_argument "$ffmpeg_configure" "--enable-lib$decoder" "ffmpeg's configure"

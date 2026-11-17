@@ -20,6 +20,7 @@
     "platforms/android/scripts/video_decoder.sh",
     "scripts/prepare_android_qairt.py",
     "scripts/inspect_pcm_package.py",
+    "scripts/build_jpegxl.sh",
     "scripts/build_video_decoder.sh",
     "scripts/fix_lcevc_pkgconfig.py",
     "scripts/stage_decoder_notices.py"
@@ -32,6 +33,7 @@
         "libass",
         "libplacebo",
         "dav1d",
+        "libjxl",
         "libxml2",
         "xevd",
         "uavs3d",

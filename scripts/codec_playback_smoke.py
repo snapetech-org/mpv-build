@@ -19,6 +19,8 @@ import sys
 import tempfile
 import time
 
+from urllib.request import urlopen
+
 from codec_inventory import Node, decode_node
 
 
@@ -63,6 +65,23 @@ AUDIO = (
 )
 
 
+BITMAP_SUBTITLES = (
+    ('pgs-bitmap', 'pgs_sub.sup', '0.2'),
+    ('vobsub-bitmap', 'vobsub.idx', '-132.2'),
+    ('dvb-bitmap', 'dvbsubtest_filter.ts', '-79695.2'),
+)
+SUBTITLE_SOURCE_HASHES = {
+    'pgs_sub.sup': 'ce6d8ed89cf557e34b90d49c5ce955731935c485b93892f69ab276cfe0c36c27',
+    'vobsub.idx': 'c4d073e2bbf515409e9ee8bf32114b81c1a11178d3bf0d52d88ebab0615525e2',
+    'vobsub.sub': '5f6ac43324e5a35c6e525aa0c76bafa9dd965a17ce0880fd7eb69e19b6853c8b',
+    'dvbsubtest_filter.ts': '93ad6d0be649bb29697275ff522a983d475a1e58ab070271f912b86799e04a86',
+}
+
+
+class ByteArray(c.Structure):
+    _fields_ = [('data', c.c_void_p), ('size', c.c_size_t)]
+
+
 class Event(c.Structure):
     _fields_ = [('event_id', c.c_int), ('error', c.c_int),
                 ('reply_userdata', c.c_uint64), ('data', c.c_void_p)]
@@ -73,7 +92,7 @@ class EndFile(c.Structure):
 
 
 def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_position=None,
-            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None):
+            seek_position="0.5", extra_options=None, expected_pixel_format=None, expected_subtitle=None, expected_bitmap=False):
     library = Path(library).resolve(strict=True)
     if sys.platform == 'win32':
         import os
@@ -85,6 +104,8 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
     lib.mpv_set_option_string.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p]
     lib.mpv_initialize.argtypes = [c.c_void_p]
     lib.mpv_command.argtypes = [c.c_void_p, c.POINTER(c.c_char_p)]
+    if expected_bitmap:
+        lib.mpv_command_ret.argtypes = [c.c_void_p, c.POINTER(c.c_char_p), c.POINTER(Node)]
     lib.mpv_get_property.argtypes = [c.c_void_p, c.c_char_p, c.c_int, c.c_void_p]
     lib.mpv_free_node_contents.argtypes = [c.POINTER(Node)]
     lib.mpv_terminate_destroy.argtypes = [c.c_void_p]
@@ -111,6 +132,27 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
         finally:
             lib.mpv_free_node_contents(c.byref(node))
 
+    def screenshot(mode):
+        result = Node()
+        argv = (c.c_char_p * 4)(b'screenshot-raw', mode.encode(), b'rgba', None)
+        if lib.mpv_command_ret(ctx, argv, c.byref(result)) < 0:
+            raise ValueError(f'could not capture a software screenshot in {mode} mode')
+        try:
+            if result.format != 8 or not result.u.list:
+                raise ValueError('screenshot returned no pixel data')
+            entries = result.u.list.contents
+            fields = {entries.keys[i].decode(): entries.values[i] for i in range(entries.num)}
+            width, height, stride = (fields[key].u.int64 for key in ('w', 'h', 'stride'))
+            pixels = fields['data']
+            if pixels.format != 9:
+                raise ValueError('screenshot returned an unexpected pixel payload')
+            array = c.cast(pixels.u.pointer, c.POINTER(ByteArray)).contents
+            if (width, height) != expected_dimensions or stride < width * 4 or array.size < stride * height:
+                raise ValueError('screenshot returned an unexpected frame layout')
+            return b''.join(c.string_at(array.data + stride * row, width * 4) for row in range(height))
+        finally:
+            lib.mpv_free_node_contents(c.byref(result))
+
     def finish(require_restart=False):
         deadline = time.monotonic() + 12
         restarted = not require_restart
@@ -134,13 +176,14 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
                 return position
         raise TimeoutError('native decode/seek did not finish')
 
+    verify_subtitle = expected_subtitle is not None or expected_bitmap
     try:
         options = {'config': 'no', 'terminal': 'no', 'vo': 'null', 'ao': 'null',
                            'hwdec': 'no', 'idle': 'yes', 'keep-open': 'yes',
                            'audio-display': 'no', 'ytdl': 'no', 'load-scripts': 'no',
                            'osc': 'no'}
         options.update(extra_options or {})
-        if expected_subtitle:
+        if verify_subtitle:
             options['sid'] = '1'
         if kind == 'audio':
             options.update({'ao': 'pcm', 'ao-pcm-file': str(pcm), 'audio-format': 's16',
@@ -165,22 +208,29 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
         if seek_position is not None:
             while lib.mpv_wait_event(ctx, 0).contents.event_id:
                 pass
-            if expected_subtitle:
+            if verify_subtitle:
                 command('set', 'pause', 'yes')
             command('seek', seek_position, 'absolute+exact')
-            if expected_subtitle:
+            if verify_subtitle:
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
                     lib.mpv_wait_event(ctx, .02)
-                    if expected_subtitle in (prop('sub-text') or ''):
+                    if expected_bitmap:
+                        cue = prop('sub-start')
+                        if isinstance(cue, (float, int)) and 0 < cue <= float(seek_position):
+                            break
+                    elif expected_subtitle in (prop('sub-text') or ''):
                         break
                 else:
-                    raise ValueError('selected timed text was not decoded at the seek position')
+                    raise ValueError('selected subtitle cue was not decoded at the seek position')
+            if expected_bitmap and screenshot('subtitles') == screenshot('video'):
+                raise ValueError('the bitmap subtitle did not change the rendered pixels')
             command('set', 'pause', 'no')
-            second = finish(require_restart=not expected_subtitle)
+            second = finish(require_restart=not verify_subtitle)
         report = {'decode': 'passed', 'seek': 'passed' if second is not None else 'not-exercised', 'firstEnd': first,
                   'seekEnd': second, 'output': params,
                   'subtitleTextVerified': expected_subtitle is not None,
+                  'bitmapSubtitlePixelsVerified': expected_bitmap,
                   'hardwareDecoder': prop('hwdec-current'),
                   'hardwareDecoding': prop('hwdec-current') not in (None, '', 'no')}
     finally:
@@ -206,7 +256,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
     return report
 
 
-def generate(ffmpeg, root, *, expect_dash=False):
+def generate(ffmpeg, root, *, expect_dash=False, with_bitmap=False):
     fixtures = []
     for name, encoder, container, pixels, extra in VIDEO:
         path = root / f'{name}.{container}'
@@ -248,6 +298,22 @@ def generate(ffmpeg, root, *, expect_dash=False):
                         '-i', str(root / 'opus.ogg'), '-i', str(captions), '-map', '0:v:0', '-map', '1:a:0',
                         '-map', '2:s:0', '-c', 'copy', '-c:s', codec, str(path)], check=True, timeout=30)
         fixtures.append((name, path, 'video'))
+    if with_bitmap:
+        for name, digest in SUBTITLE_SOURCE_HASHES.items():
+            with urlopen(f'https://fate-suite.ffmpeg.org/sub/{name}', timeout=45) as response:
+                data = response.read(256 * 1024 + 1)
+            if len(data) > 256 * 1024 or hashlib.sha256(data).hexdigest() != digest:
+                raise ValueError(f'bitmap subtitle fixture hash mismatch: {name}')
+            (root / name).write_bytes(data)
+        for name, source, offset in BITMAP_SUBTITLES:
+            path = root / f'{name}.mkv'
+            timestamp_mode = ('-copyts',) if name == 'dvb-bitmap' else ()
+            trim = ('-ss', '0') if name == 'dvb-bitmap' else ()
+            subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', *timestamp_mode,
+                            '-i', str(root / 'h264.mkv'), '-itsoffset', offset, '-i', str(root / source),
+                            '-map', '0:v:0', '-map', '1:s:0', '-c', 'copy', *trim, '-t', '2', str(path)],
+                           check=True, timeout=30)
+            fixtures.append((name, path, 'video'))
     return fixtures
 
 
@@ -257,6 +323,7 @@ def main():
     parser.add_argument('--ffmpeg', default='ffmpeg')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--expect-dash', action='store_true')
+    parser.add_argument('--with-bitmap', action='store_true')
     parser.add_argument('--worker', type=Path)
     parser.add_argument('--kind', choices=['video', 'audio'])
     args = parser.parse_args()
@@ -270,7 +337,7 @@ def main():
         )
         result = json.dumps(execute(
             args.library, args.worker, args.kind, expected_subtitle=expected_subtitle,
-            expected_pixel_format=expected_pixel_format,
+            expected_pixel_format=expected_pixel_format, expected_bitmap=name in {case[0] for case in BITMAP_SUBTITLES},
             extra_options={'untimed': 'yes'} if args.kind == 'video' else None,
         ))
         if args.output:
@@ -281,7 +348,7 @@ def main():
     results = {}
     with tempfile.TemporaryDirectory(prefix='codec-playback-') as directory:
         root = Path(directory)
-        for name, path, kind in generate(args.ffmpeg, root, expect_dash=args.expect_dash):
+        for name, path, kind in generate(args.ffmpeg, root, expect_dash=args.expect_dash, with_bitmap=args.with_bitmap):
             worker_report = root / 'worker.json'
             worker_report.unlink(missing_ok=True)
             try:
@@ -293,6 +360,10 @@ def main():
             except subprocess.TimeoutExpired:
                 results[name] = {'error': 'native worker timed out'}
             results[name]['fixtureSha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if name in {case[0] for case in BITMAP_SUBTITLES}:
+                source = next(case[1] for case in BITMAP_SUBTITLES if case[0] == name)
+                filenames = (source, 'vobsub.sub') if source == 'vobsub.idx' else (source,)
+                results[name]['subtitleSourceSha256'] = {file: SUBTITLE_SOURCE_HASHES[file] for file in filenames}
             if name in ('mpd', 'm3u8'):
                 results[name]['segmentsSha256'] = {
                     asset.name: hashlib.sha256(asset.read_bytes()).hexdigest()

@@ -145,6 +145,11 @@ if [ "$found_pkgconfig" -eq 0 ]; then
 fi
 
 # Statically linked SDKs still owe their copyright notices to the final package.
+if [[ -f "$PREFIX/lib/pkgconfig/libjxl.pc" ]]; then
+  for notice in LICENSE PATENTS LICENSE.brotli LICENSE.highway LICENSE.lcms notice-manifest.json; do
+    test -s "$PREFIX/share/licenses/pleazyng-codecs/libjxl/$notice"
+  done
+fi
 if [[ -f "$PREFIX/lib/pkgconfig/libxml-2.0.pc" ]]; then
   test -s "$PREFIX/share/licenses/pleazyng-codecs/libxml2/Copyright"
 fi

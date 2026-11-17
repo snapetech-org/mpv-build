@@ -39,7 +39,7 @@ def bundle(aar: Path, natives: Path):
         if not xml_notice.is_file() or not 0 < xml_notice.stat().st_size <= 64 * 1024:
             raise ValueError(f'{abi}: missing or invalid libxml2 copyright notice')
         notices[f'{abi}/libxml2/Copyright'] = xml_notice.read_bytes()
-        for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec'):
+        for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
             directory = license_root / component
             manifest = directory / 'notice-manifest.json'
             if not manifest.is_file():
@@ -47,6 +47,10 @@ def bundle(aar: Path, natives: Path):
             hashes = json.loads(manifest.read_text())['files']
             if component == 'lcevc_dec' and not {'LICENSE.md', 'COPYING'} <= hashes.keys():
                 raise ValueError(f'{abi}: incomplete LCEVC licensing information')
+            if component == 'libjxl' and not {
+                'LICENSE', 'PATENTS', 'LICENSE.brotli', 'LICENSE.highway', 'LICENSE.lcms'
+            } <= hashes.keys():
+                raise ValueError(f'{abi}: incomplete JPEG XL licensing information')
             for name, digest in hashes.items():
                 relative = PurePosixPath(name)
                 if (relative.is_absolute() or '..' in relative.parts or

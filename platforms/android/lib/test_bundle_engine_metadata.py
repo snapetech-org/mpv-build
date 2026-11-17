@@ -27,11 +27,12 @@ class BundledEngineTests(unittest.TestCase):
             xml_notice = self.natives / abi / 'share/licenses/pleazyng-codecs/libxml2/Copyright'
             xml_notice.parent.mkdir(parents=True)
             xml_notice.write_bytes(b'libxml2 terms')
-            for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec'):
+            for component in ('xevd', 'davs2', 'uavs3d', 'lcevc_dec', 'libjxl'):
                 directory = self.natives / abi / 'share/licenses/pleazyng-codecs' / component
                 directory.mkdir(parents=True)
                 hashes = {}
-                for name in ('LICENSE.md', 'COPYING'):
+                names = ('LICENSE', 'PATENTS', 'LICENSE.brotli', 'LICENSE.highway', 'LICENSE.lcms') if component == 'libjxl' else ('LICENSE.md', 'COPYING')
+                for name in names:
                     data = b'original SDK terms'
                     (directory / name).write_bytes(data)
                     hashes[name] = hashlib.sha256(data).hexdigest()

@@ -28,7 +28,7 @@ case "$component" in
 		fi
 
 		;;
-	libxml2)
+	libxml2|libjxl)
 		options=()
 		;;
 	davs2)
@@ -58,7 +58,11 @@ export ANDROID_ABI="$prefix_name"
 export CMAKE_INSTALL_PREFIX=/usr/local
 export DESTDIR="$prefix_dir"
 
-if [[ "$component" == davs2 ]]; then
+if [[ "$component" == libjxl ]]; then
+	../../../../scripts/build_jpegxl.sh "$PWD" "$prefix_dir" "$cores" \
+		-DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
+		-DANDROID_ABI="$prefix_name" -DANDROID_PLATFORM=android-25 -DANDROID_STL=c++_shared
+elif [[ "$component" == davs2 ]]; then
 	../../../../scripts/build_video_decoder.sh \
 		"$component" "$PWD" "$prefix_dir" "$cores"
 else

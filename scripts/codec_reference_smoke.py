@@ -27,7 +27,7 @@ class Fixture:
     url: str
     sha256: str
     dimensions: tuple[int, int]
-    pixels: str
+    pixels: str | None
     min_end: float
     seek: str | None
 
@@ -59,6 +59,18 @@ FIXTURES = {
 }
 
 
+JPEGXL_FIXTURES = {
+    fixture.name: fixture
+    for fixture in (
+        Fixture('jpegxl-still.jxl', f'{FATE}/jxl/lenna-256.jxl',
+                '005bd5fdc89a263ee8a6d65872d3dd85560498bab7a3896dc0948b49dd2802b7',
+                (256, 256), 'rgb24', 0, None),
+        Fixture('jpegxl-animation.jxl', f'{FATE}/jxl/newton.jxl',
+                '809f336609ed3ae2db11a80f1cb1491e67e073cfc686d3778cb00474c3e93f48',
+                (128, 96), 'rgba', .7, None),
+    )
+}
+
 def download(fixture, path):
     with urlopen(fixture.url, timeout=45) as response:
         data = response.read(MAX_FIXTURE_BYTES + 1)
@@ -72,9 +84,10 @@ def main():
     parser.add_argument('library', type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--worker', type=Path)
+    parser.add_argument('--with-jpegxl', action='store_true')
     args = parser.parse_args()
     if args.worker:
-        fixture = FIXTURES[args.worker.name]
+        fixture = (FIXTURES | JPEGXL_FIXTURES)[args.worker.name]
         report = execute(
             args.library, args.worker, 'video',
             expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
@@ -88,7 +101,8 @@ def main():
     results = {}
     with tempfile.TemporaryDirectory(prefix='codec-reference-') as temporary:
         root = Path(temporary)
-        for fixture in FIXTURES.values():
+        fixtures = FIXTURES | JPEGXL_FIXTURES if args.with_jpegxl else FIXTURES
+        for fixture in fixtures.values():
             path = root / fixture.name
             receipt = root / (fixture.name + '.json')
             try:
