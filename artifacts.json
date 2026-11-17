@@ -578,13 +578,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-windows",
       "libraries": {
         "libmpv-windows": {
-          "key": "a740b33276c5",
+          "key": "5f626d6477a1",
           "prebuilt": {
             "aarch64": {
-              "asset": "libmpv-windows-a740b33276c5-aarch64.zip",
+              "asset": "libmpv-windows-5f626d6477a1-aarch64.zip",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "82e079bdd94ddd6281ae7a83a8c1c315d60aa25ff6d68be41399b4751acecf13",
+                "artifactSha256": "8bd612abfc88ea420a54095838387bcf1faec38a6022e30e9e66920870e03213",
                 "binaries": [
                   "libmpv-2.dll"
                 ],
@@ -594,7 +594,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "libmpv-2.dll": "218e94eb043c8f4981fd426f3cb642b294696732f1192cf2e69f146509b4df2c"
+                  "libmpv-2.dll": "45cf112fc815842bd85081a70e254e3c8173a54095cafe1b45e1d3eed2df07f4"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -617,13 +617,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "82e079bdd94ddd6281ae7a83a8c1c315d60aa25ff6d68be41399b4751acecf13"
+              "checksum": "8bd612abfc88ea420a54095838387bcf1faec38a6022e30e9e66920870e03213"
             },
             "x86_64": {
-              "asset": "libmpv-windows-a740b33276c5-x86_64.zip",
+              "asset": "libmpv-windows-5f626d6477a1-x86_64.zip",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "78a8db7b5a274fb6f414bb5ba06d10f1a1f118bf083712f9d062819dea742b47",
+                "artifactSha256": "d6b9d903e6280e01c1c83a387e5996ba3d4bc8141ae7481da74b8dc134caba0f",
                 "binaries": [
                   "libmpv-2.dll"
                 ],
@@ -633,7 +633,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "libmpv-2.dll": "1d99c85c8311c8a19b795cb618388b618edd377d363dc6bd0c5a41eb172c0cc7"
+                  "libmpv-2.dll": "17401de8aab182fdbc7712b2e7d226921586cb59a793d966f3542bdac745f67c"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -656,17 +656,17 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "78a8db7b5a274fb6f414bb5ba06d10f1a1f118bf083712f9d062819dea742b47"
+              "checksum": "d6b9d903e6280e01c1c83a387e5996ba3d4bc8141ae7481da74b8dc134caba0f"
             }
           },
           "symbols": {
             "aarch64": {
-              "asset": "libmpv-windows-a740b33276c5-aarch64-symbols.zip",
-              "checksum": "eced5a16aec9bb812c8a12fe6913b843c106a1a4f3bc830b664a4adb8cdbaaa1"
+              "asset": "libmpv-windows-5f626d6477a1-aarch64-symbols.zip",
+              "checksum": "da1cd8281bead9febb830dbaaa6ca16c656e946fcfa64c87bcfac534e1d93230"
             },
             "x86_64": {
-              "asset": "libmpv-windows-a740b33276c5-x86_64-symbols.zip",
-              "checksum": "07bc3496990f94cdc30644f7898e277f8d347bfbf19991ab070a26ec7bd3fdad"
+              "asset": "libmpv-windows-5f626d6477a1-x86_64-symbols.zip",
+              "checksum": "e87faf3ec2047aaf8e3537581723a9e4a20340a31b2581b9c945e3065e1bb6bd"
             }
           }
         }
