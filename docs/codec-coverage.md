@@ -79,6 +79,8 @@ Aditya Teltia's decoder and low-overhead OBU demuxer, plus the downstream
 AV02 IVF reader, multi-picture timestamp handling and seek path. On Linux
 the FourPeople reference produced 130 matching 480×270 frames from both
 containers. Seeking the IVF to one second reproduced the final 70 frames.
+The 8-bit FourPeople and 10-bit 1080p RitualDance output both matched the
+published AVM reference-decoder digests for every frame.
 Hosted package validation, other AV2 containers and physical device playback
 remain open. The app negotiates from the loaded engine's decoder list.
 [FFmpeg integration proposal](https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/23018).

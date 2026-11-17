@@ -38,6 +38,10 @@ class Fixture:
 FIXTURES = {
     fixture.name: fixture
     for fixture in (
+        Fixture('av2-ritualdance.ivf',
+                'https://github.com/EwoutH/AV2/releases/download/samples-v1/RitualDance_1920x1080_60fps_10bit_420_qp160_120f.ivf',
+                'd55a99386094f17e97bef7239eec6d6fe3e564460b59d39dd94e14aa14200ae1',
+                (1920, 1080), 'yuv420p10', 1.9, '1', decode_timeout=90),
         Fixture('av2-fourpeople.ivf',
                 'https://github.com/EwoutH/AV2/releases/download/samples-v1/FourPeople_480x270_60_qp210_130f.ivf',
                 'e7fd3676044bd69a9b96e8702ffac88cb2e5f7735e131a659f522812c008a0f5',
