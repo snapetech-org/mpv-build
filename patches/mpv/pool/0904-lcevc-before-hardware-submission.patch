@@ -36,25 +36,24 @@ diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
  static enum AVPixelFormat get_format_hwdec(struct AVCodecContext *avctx,
                                             const enum AVPixelFormat *pix_fmt);
  static int hwdec_opt_help(struct mp_log *log, const m_option_t *opt,
-@@ -1178,5 +1178,18 @@ static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
-     if (!ctx->avctx)
-         return AVERROR_EOF;
+@@ -1183,6 +1204,17 @@
  
-     prepare_decoding(vd);
+     mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
+ 
++    // Probe before full hardware decoders can discard in-band enhancement.
++    // EAGAIN leaves this packet pending for the existing software retry path.
 +    if (ctx->use_hwdec && pkt && lcevc_reconstruction_available() &&
-+        (avctx->codec_id == AV_CODEC_ID_H264 || avctx->codec_id == AV_CODEC_ID_HEVC))
++        packet_has_lcevc(avctx, ctx->avpkt))
 +    {
-+        mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
-+        // Full hardware decoders such as MediaCodec can discard in-band SEI.
-+        // Detect signalling before they consume it or keyframe logic drops it.
-+        if (packet_has_lcevc(avctx, ctx->avpkt)) {
-+            MP_INFO(vd, "LCEVC signalling requires software decoding before hardware submission.\n");
-+            ctx->lcevc_requires_software = true;
-+            ctx->hwdec_failed = true;
-+            return AVERROR(EAGAIN);
-+        }
++        MP_INFO(vd, "LCEVC signalling requires software decoding before hardware submission.\n");
++        ctx->lcevc_requires_software = true;
++        ctx->hwdec_failed = true;
++        return AVERROR(EAGAIN);
 +    }
- 
++
+     int ret = avcodec_send_packet(avctx, pkt ? ctx->avpkt : NULL);
+     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+         return ret;
 @@ -1312,7 +1344,7 @@
      // leaves the enhancement side data on frames it did not reconstruct.
      // Replay the probing packets through software instead of presenting the
