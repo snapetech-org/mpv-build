@@ -72,6 +72,7 @@ for arch in "${archs[@]}"; do
 		cp "prefix/$prefix_name/lib/$lib" "$staging/lib/"
 	done
 	cp "$toolchain/sysroot/usr/lib/$ndk_triple/libc++_shared.so" "$staging/lib/"
+	python3 scripts/check_elf_imports.py "$staging/lib" "$toolchain" "$prefix_name"
 	for header in "${headers[@]}"; do
 		cp "prefix/$prefix_name/include/mpv/$header" "$staging/include/mpv/"
 	done

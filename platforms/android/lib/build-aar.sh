@@ -94,6 +94,7 @@ unzip -q "$aar" 'jni/*' -d "$work/aar"
 mkdir -p "$work/out"
 for shipped_dir in "$work/aar/jni/"*/; do
 	abi="$(basename "$shipped_dir")"
+	python3 "$root/platforms/android/scripts/check_elf_imports.py" "$shipped_dir" "$toolchain" "$abi"
 	mkdir -p "$work/debug/$abi"
 	pairs=()
 	for shipped in "$shipped_dir"*.so; do

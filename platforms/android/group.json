@@ -11,6 +11,7 @@
     "platforms/android/include/libdovi/rpu_parser.h",
     "platforms/android/include/loadarch.sh",
     "platforms/android/include/path.sh",
+    "platforms/android/scripts/check_elf_imports.py",
     "platforms/android/scripts/configure.sh",
     "platforms/android/scripts/ffmpeg.sh",
     "platforms/android/scripts/libdovi.sh",

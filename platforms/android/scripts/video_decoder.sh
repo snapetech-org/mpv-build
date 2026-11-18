@@ -68,6 +68,13 @@ if [[ "$component" == libjxl ]]; then
 		-DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
 		-DANDROID_ABI="$prefix_name" -DANDROID_PLATFORM=android-25 -DANDROID_STL=c++_shared \
 		"${jpegxl_arch_args[@]}"
+	# Brotli installs only static archives in this prefix. FreeType's WOFF2
+	# dependency is discovered with ordinary pkg-config and later linked into
+	# shared libmpv. Its decoder must carry libbrotlicommon on that link.
+	for pc in "$prefix_dir"/lib/pkgconfig/libbrotli{dec,enc}.pc; do
+		grep -q '^Requires\.private: libbrotlicommon ' "$pc"
+		"${SED:-sed}" -i 's/^Requires\.private: libbrotlicommon /Requires: libbrotlicommon /' "$pc"
+	done
 elif [[ "$component" == davs2 ]]; then
 	../../../../scripts/build_video_decoder.sh \
 		"$component" "$PWD" "$prefix_dir" "$cores"

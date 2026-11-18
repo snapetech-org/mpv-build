@@ -28,6 +28,8 @@ table () {
 components="openssl dav1d dav2d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl ffmpeg freetype fribidi harfbuzz libunibreak libass lua libplacebo mpv"
 
 dep_ffmpeg="openssl dav1d dav2d libdovi xevd uavs3d davs2 lcevc_dec libxml2 libjxl"
+# The Android prefix supplies the static Brotli decoder used for WOFF2 via libjxl.
+dep_freetype="libjxl"
 dep_libass="freetype fribidi harfbuzz libunibreak"
 dep_mpv="ffmpeg libass lua libplacebo"
 dep_libmpv_android="mpv"
@@ -60,7 +62,9 @@ args_libplacebo="-Dvulkan=disabled -Ddemos=false -Dopengl=enabled -Dgl-proc-addr
 # No build date: mpv would stamp __DATE__/__TIME__ into libmpv.so, and a
 # rebuild of a published content key has to reproduce its bytes (keys.py
 # publish-assets checks). The linux driver passes the same flag.
-args_mpv="--default-library shared -Diconv=disabled -Dlua=enabled -Dlibmpv=true -Dcplayer=false -Dmanpage-build=disabled -Dbuild-date=false -Dgl=enabled -Degl=enabled -Degl-android=enabled -Dplain-gl=enabled"
+# A shared libmpv must resolve all required imports at link time. Upstream
+# otherwise permits unresolved symbols that Android rejects at dlopen().
+args_mpv="--default-library shared -Db_lundef=true -Diconv=disabled -Dlua=enabled -Dlibmpv=true -Dcplayer=false -Dmanpage-build=disabled -Dbuild-date=false -Dgl=enabled -Degl=enabled -Degl-android=enabled -Dplain-gl=enabled"
 
 args_libass="--enable-libunibreak --disable-require-system-font-provider"
 
