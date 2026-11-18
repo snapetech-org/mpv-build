@@ -7,8 +7,10 @@ sudo rm -f /etc/apt/sources.list.d/google-chrome*.list
 export DEBIAN_FRONTEND=noninteractive
 
 # Hosted runners have stalled on both Azure and EC2 regional Ubuntu mirrors.
+# Hosted images can select the region through a separate APT mirror list.
 # Preserve the Ubuntu suite, signing configuration and third-party sources.
-for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+for source in /etc/apt/apt-mirrors.txt /etc/apt/sources.list \
+  /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
   [[ -f "$source" ]] || continue
   if grep -Eq 'https?://(azure|([a-z0-9-]+\.)?ec2)\.archive\.ubuntu\.com/ubuntu([/[:space:]]|$)' "$source"; then
     sudo sed -E -i \
