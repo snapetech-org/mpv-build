@@ -109,12 +109,18 @@ application license as replacing those terms. Sources: [LCEVCdec 4.3.1](https://
 ## Generated-media release check
 
 `scripts/codec_playback_smoke.py /absolute/path/to/libmpv.so --output report.json`
-generates 48 short playback fixtures using the host FFmpeg, then decodes and
+generates short playback fixtures using the host FFmpeg, then decodes and
 seeks each through the supplied libmpv in its own bounded worker process. It
 forces software decoding. The video cases include AVC/HEVC/AV1/VP8/VP9, 10-bit
 examples, MPEG-2/4, WMV2, ProRes, FFV1, HuffYUV, JPEG, Theora, FLV, QuickTime RLE
-and Cinepak. Audio includes AAC, MP3, Opus, Vorbis, FLAC, ALAC, AC-3/E-AC-3,
-24-bit PCM, WavPack, DTS core, TrueHD, WMA and MPEG Layer II. Native playback
+and Cinepak. Editing and capture cases cover DNxHR LB, 10-bit CineForm, PAL DV,
+Ut Video, v210, FFmpeg HuffYUV and YUV4MPEG. Archive cases cover Microsoft
+Video 1, Microsoft MPEG-4 v3, Flash Screen Video and DOSBox ZMBV. Audio includes AAC, MP3, Opus, Vorbis, FLAC, ALAC, AC-3/E-AC-3,
+24-bit PCM, WavPack, DTS core, TrueHD, WMA, MPEG Layer II, TTA, IMA and
+Microsoft ADPCM, and G.711 A-law and μ-law. All 68 release-mode checks passed
+against the published Linux x86_64 library from native source `85d395c`
+(SHA-256 `e2ddc904315f5270f24d2d37fc0869849038afa059562dcc4be43f3744f5cfba`).
+Native playback
 also exercises local fMP4 HLS and DASH VOD, timed SubRip/ASS/WebVTT tracks, PGS/VobSub/DVB software overlays,
 interlaced MPEG-2, and 10/12-bit AVC, HEVC, AV1 and VP9 vectors with decoded
 pixel-format checks. Audio output must contain the expected nonempty PCM

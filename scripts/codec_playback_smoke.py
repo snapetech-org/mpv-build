@@ -53,7 +53,21 @@ VIDEO = (
     ('flv1', 'flv', 'flv', 'yuv420p', ()),
     ('qtrle', 'qtrle', 'mov', 'rgb24', ()),
     ('cinepak', 'cinepak', 'avi', 'rgb24', ()),
+    ('dnxhr-lb', 'dnxhd', 'mov', 'yuv422p', ('-profile:v', 'dnxhr_lb')),
+    ('cineform', 'cfhd', 'mov', 'yuv422p10le', ()),
+    ('dv-pal', 'dvvideo', 'dv', 'yuv420p', ()),
+    ('utvideo', 'utvideo', 'avi', 'gbrp', ()),
+    ('v210', 'v210', 'mov', 'yuv422p10le', ()),
+    ('ffvhuff', 'ffvhuff', 'mkv', 'yuv422p', ()),
+    ('msvideo1', 'msvideo1', 'avi', 'rgb555le', ()),
+    ('msmpeg4v3', 'msmpeg4', 'avi', 'yuv420p', ()),
+    ('flash-screen', 'flashsv', 'flv', 'bgr24', ()),
+    ('dosbox-capture', 'zmbv', 'avi', 'bgr0', ()),
+    ('yuv4mpeg', 'wrapped_avframe', 'y4m', 'yuv420p', ('-f', 'yuv4mpegpipe')),
 )
+# DNxHR and PAL DV have coded-size constraints unlike the small synthetic cases.
+VIDEO_SIZES = {'dnxhr-lb': (640, 360), 'dv-pal': (720, 576)}
+
 AUDIO = (
     ('aac', 'aac', 'm4a'), ('mp3', 'libmp3lame', 'mp3'),
     ('opus', 'libopus', 'ogg'), ('vorbis', 'libvorbis', 'ogg'),
@@ -62,6 +76,9 @@ AUDIO = (
     ('pcm', 'pcm_s24le', 'wav'), ('wavpack', 'wavpack', 'wv'),
     ('dts', 'dca', 'dts'), ('truehd', 'truehd', 'mka'),
     ('wmav2', 'wmav2', 'asf'), ('mp2', 'mp2', 'mka'),
+    ('true-audio', 'tta', 'tta'), ('adpcm-ima', 'adpcm_ima_wav', 'wav'),
+    ('adpcm-ms', 'adpcm_ms', 'wav'), ('g711-alaw', 'pcm_alaw', 'wav'),
+    ('g711-mulaw', 'pcm_mulaw', 'wav'),
 )
 
 
@@ -286,8 +303,9 @@ def generate(ffmpeg, root, *, expect_dash=False, with_bitmap=False):
     fixtures = []
     for name, encoder, container, pixels, extra in VIDEO:
         path = root / f'{name}.{container}'
+        width, height = VIDEO_SIZES.get(name, (128, 96))
         subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-y',
-                        '-f', 'lavfi', '-i', 'testsrc2=size=128x96:rate=25:duration=2',
+                        '-f', 'lavfi', '-i', f'testsrc2=size={width}x{height}:rate=25:duration=2',
                         '-an', '-c:v', encoder, '-threads', '1', '-pix_fmt', pixels,
                         *extra, str(path)], check=True, timeout=90)
         fixtures.append((name, path, 'video'))
@@ -371,6 +389,7 @@ def main():
             options['audio-spdif'] = name
         result = execute(
             args.library, args.worker, args.kind, expected_subtitle=expected_subtitle,
+            expected_dimensions=VIDEO_SIZES.get(name, (128, 96)),
             expected_pixel_format=expected_pixel_format, expected_bitmap=name in {case[0] for case in BITMAP_SUBTITLES},
             extra_options=options, minimum_position=1.5 if passthrough else None,
         )
