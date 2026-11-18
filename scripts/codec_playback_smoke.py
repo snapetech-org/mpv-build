@@ -239,7 +239,7 @@ def execute(library, source, kind, *, expected_dimensions=(128, 96), minimum_pos
                 command('set', 'pause', 'yes')
             command('seek', seek_position, 'absolute+exact')
             if seek_tolerance is not None:
-                deadline = time.monotonic() + 5
+                deadline = time.monotonic() + decode_timeout
                 while time.monotonic() < deadline:
                     event = lib.mpv_wait_event(ctx, .02).contents
                     if event.event_id != 21 or prop('eof-reached') is not False:

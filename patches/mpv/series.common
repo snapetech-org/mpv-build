@@ -42,3 +42,4 @@
 # Preserve LCEVC enhancement instead of silently presenting hardware base frames.
 0903-lcevc-hardware-base-fallback.patch
 0904-lcevc-before-hardware-submission.patch
+0215-preroll-exact-avs-broadcast-seeks.patch

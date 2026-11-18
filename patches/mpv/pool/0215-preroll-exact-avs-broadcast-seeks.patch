@@ -1,0 +1,18 @@
+--- a/player/playloop.c
++++ b/player/playloop.c
+@@ -368,5 +368,15 @@
+     if (hr_seek) {
+         double hr_seek_offset = opts->hr_seek_demuxer_offset;
++        // AVS broadcast indexes can point at a picture whose leading frames
++        // require the previous random-access point. Start decoding earlier
++        // while leaving the presentation target and keyframe-only seeks intact.
++        struct track *video = mpctx->current_track[0][STREAM_VIDEO];
++        if (hr_seek_offset == 0 && play_dir > 0 && video &&
++            video->demuxer == mpctx->demuxer && video->stream && video->stream->codec) {
++            const char *codec = video->stream->codec->codec;
++            if (codec && (strcmp(codec, "avs2") == 0 || strcmp(codec, "avs3") == 0))
++                hr_seek_offset = 2.0;
++        }
+         // Always try to compensate for possibly bad demuxers in "special"
+         // situations where we need more robustness from the hr-seek code, even
+         // if the user doesn't use --hr-seek-demuxer-offset.

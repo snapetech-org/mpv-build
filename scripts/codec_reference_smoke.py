@@ -33,6 +33,7 @@ class Fixture:
     seek: str | None
     repetitions: int = 1
     decode_timeout: int = 12
+    seek_tolerance: float | None = None
 
 
 FIXTURES = {
@@ -62,13 +63,13 @@ FIXTURES = {
                 (416, 240), 'yuv420p', 1.5, '0.25'),
         Fixture('avs2-main10.mkv', f'{AVS2_SAMPLES}/CCTV4K.AVS2-10bit.AC3.CB.08-27-6s.mkv',
                 '60d2902afcc3b716bb075bb26a4a889fe1c98af9ac94fc80f07ec0a36809e7ef',
-                (3840, 2160), 'yuv420p10', 5.2, '2', decode_timeout=120),
+                (3840, 2160), 'yuv420p10', 5.2, '2', decode_timeout=120, seek_tolerance=.055),
         Fixture('avs3-8.ts', f'{AVS3}/TS/City_1280x720_60_ra/test.ts',
                 '265b35090844f4a9bac98611a986a9aca9ab4a1584400c48b808c640c85713cc',
-                (1280, 720), 'yuv420p', 9, '2'),
+                (1280, 720), 'yuv420p', 9, '2', decode_timeout=45, seek_tolerance=.055),
         Fixture('avs3-10.ts', f'{AVS3}/TS/MarketPlace_1920x1080_60_10bit_ra/test.ts',
                 '0b49d812779d971449a2f1f5680449771250f6459e1834cb9610a9ff3d3c88d8',
-                (1920, 1080), 'yuv420p10', 9, '2'),
+                (1920, 1080), 'yuv420p10', 9, '2', decode_timeout=45, seek_tolerance=.055),
     )
 }
 
@@ -87,7 +88,7 @@ JPEGXL_FIXTURES = {
 
 EVC_TIMELINE = Fixture(
     'evc-two-sequences.mp4', FIXTURES['evc-main.evc'].url, FIXTURES['evc-main.evc'].sha256,
-    (352, 288), 'yuv420p10', 23.8, '12.0', repetitions=2,
+    (352, 288), 'yuv420p10', 23.8, '12.0', repetitions=2, seek_tolerance=.25,
 )
 
 
@@ -119,7 +120,7 @@ def main():
             args.library, args.worker, 'video',
             expected_dimensions=fixture.dimensions, minimum_position=fixture.min_end,
             seek_position=fixture.seek, expected_pixel_format=fixture.pixels, decode_timeout=fixture.decode_timeout,
-            seek_tolerance=.25 if fixture == EVC_TIMELINE else None,
+            seek_tolerance=fixture.seek_tolerance,
             extra_options={'untimed': 'yes', 'vd-lavc-threads': '1'} if fixture.name.startswith('evc-')
             else {'untimed': 'yes', 'aid': 'no'},
         )
@@ -152,7 +153,8 @@ def main():
                     download(fixture, path)
                 command = [sys.executable, __file__, str(args.library.resolve()),
                            '--worker', str(path), '--output', str(receipt), *flags]
-                result = subprocess.run(command, text=True, capture_output=True, timeout=2 * fixture.decode_timeout + 21)
+                phases = 3 if fixture.seek_tolerance is not None else 2
+                result = subprocess.run(command, text=True, capture_output=True, timeout=phases * fixture.decode_timeout + 21)
                 if result.returncode:
                     raise RuntimeError((result.stdout + result.stderr)[-4000:])
                 case = json.loads(receipt.read_text(encoding='utf-8'))

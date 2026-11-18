@@ -247,6 +247,15 @@ cross-compiled clients have not been executed on Android devices.
 
 ### AVS reference reconstruction and Android ABI coverage
 
+The 4K AVS2 Main 10 Matroska sample and both AVS3 broadcast transport
+streams decode past a two-second seek. With the default mpv seek policy
+their first displayed positions were 2.16, 3.20 and 2.217 seconds. For a
+precise forward seek in AVS2/AVS3, mpv now asks the demuxer to start two
+seconds earlier and decodes forward to the requested presentation time.
+An explicit nonzero demuxer offset retains its configured value. The release
+check pauses, seeks, captures a decoded frame within 55 milliseconds of the
+target and resumes through EOF for each of those three reference files.
+
 The pinned native Linux decoders were built locally and linked into the pinned
 FFmpeg on 2026-11-16. Full decoded YUV matched the upstream reference MD5 for
 AVS2 8-bit BQSquare (`cf9babd3440b696c998179071a608b85`), AVS3 8-bit City
