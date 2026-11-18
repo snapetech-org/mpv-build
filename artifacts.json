@@ -4,13 +4,13 @@
       "assetBase": "https://github.com/snapetech-org/mpv-build/releases/download/binaries-android",
       "libraries": {
         "libmpv-android": {
-          "key": "8583d2c85191",
+          "key": "673a986d905b",
           "prebuilt": {
             "arm64-v8a": {
-              "asset": "libmpv-android-8583d2c85191-arm64-v8a.tar.gz",
+              "asset": "libmpv-android-673a986d905b-arm64-v8a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "e7cf4514a4a081079a11338b8c334a1303a466ec492b1a2c42d3bbc8ef94e685",
+                "artifactSha256": "5331d1d08e7ff394a17dc2baca47ae12d1d84bec0892b8ed27d067769e9d246d",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -20,7 +20,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/libmpv.so": "88b2735fc43a766bbd479512df33b1e31779b5776c990f7283284863eae7878f"
+                  "lib/libmpv.so": "14ac30064390cb5c3097eec25ece2749f52a1ee41adf00a8ad01e9e1186b7d91"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -43,13 +43,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "e7cf4514a4a081079a11338b8c334a1303a466ec492b1a2c42d3bbc8ef94e685"
+              "checksum": "5331d1d08e7ff394a17dc2baca47ae12d1d84bec0892b8ed27d067769e9d246d"
             },
             "armeabi-v7a": {
-              "asset": "libmpv-android-8583d2c85191-armeabi-v7a.tar.gz",
+              "asset": "libmpv-android-673a986d905b-armeabi-v7a.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "c74f1ca8b729b84c7c5be8f13a3beadbef49e0fc4e2e6ae48a791cf417d0f4f3",
+                "artifactSha256": "1425489293adc49d6858cf6afd844a46cb3d2a25f49f802e8749f2210bf13a8b",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -59,7 +59,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/libmpv.so": "92d8c856fede57ddd7a0dc56f06c7fa47ae83bccd17afcd5461b8e75ff18465f"
+                  "lib/libmpv.so": "47cef3d81e187d7951ea5df5046ecb13e1b4865798e292f7a8829b8c5f084c60"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -79,13 +79,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "c74f1ca8b729b84c7c5be8f13a3beadbef49e0fc4e2e6ae48a791cf417d0f4f3"
+              "checksum": "1425489293adc49d6858cf6afd844a46cb3d2a25f49f802e8749f2210bf13a8b"
             },
             "x86": {
-              "asset": "libmpv-android-8583d2c85191-x86.tar.gz",
+              "asset": "libmpv-android-673a986d905b-x86.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "1808c5144f4e8375705f355fa93d284fd32bbe9a31aac05a2795d7b684d95a0f",
+                "artifactSha256": "db8cc4c67287e03440db3521738316358322cf04cc4401ccc3b017e161803235",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -95,7 +95,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/libmpv.so": "8d99e6f5c3d89e455d67136ea7765841c6181b35937ff4171825a59ec21d4dcf"
+                  "lib/libmpv.so": "0f9e44664ae4b48256bb88d163c46c2dea0e4f5cc0fa8385ed4a5b2f87019cf5"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -115,13 +115,13 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "1808c5144f4e8375705f355fa93d284fd32bbe9a31aac05a2795d7b684d95a0f"
+              "checksum": "db8cc4c67287e03440db3521738316358322cf04cc4401ccc3b017e161803235"
             },
             "x86_64": {
-              "asset": "libmpv-android-8583d2c85191-x86_64.tar.gz",
+              "asset": "libmpv-android-673a986d905b-x86_64.tar.gz",
               "capabilities": {
                 "appleSlices": [],
-                "artifactSha256": "2e649d2571b5384bd47adfbbd993d44896ba74e4d277e9e5d0d4169be9a1042f",
+                "artifactSha256": "c31a83bad3f30d51c60d7f4a0dac92f4f4556edaba12a67fe4083414b0bfda99",
                 "binaries": [
                   "lib/libmpv.so"
                 ],
@@ -131,7 +131,7 @@
                   ]
                 },
                 "binarySha256": {
-                  "lib/libmpv.so": "4ad93dfd961910764724b2cb7db6ee30a6050084816aaaf74e11742bc90a926b"
+                  "lib/libmpv.so": "ad7569de76f95e59db8e8061c710651f5cde98c44d9346ba00491c9742a4cbe0"
                 },
                 "executionQualified": false,
                 "felEngineId": "plezyng-dv-fel-v1",
@@ -151,15 +151,15 @@
                 ],
                 "symbol": "mpv_plezy_audio_tap_read_next"
               },
-              "checksum": "2e649d2571b5384bd47adfbbd993d44896ba74e4d277e9e5d0d4169be9a1042f"
+              "checksum": "c31a83bad3f30d51c60d7f4a0dac92f4f4556edaba12a67fe4083414b0bfda99"
             }
           }
         },
         "mpv-android": {
-          "asset": "mpv-android-2c3eac114e23.aar",
+          "asset": "mpv-android-f29ec6874ad4.aar",
           "capabilities": {
             "appleSlices": [],
-            "artifactSha256": "47979e14eab2797b22664772249736efba9dc1ac711cb87da8ffdacca8f45a76",
+            "artifactSha256": "c97d43b78258bbeb4b7f365b384e7d60944888c947c1d397b5e469645a705692",
             "binaries": [
               "jni/arm64-v8a/libmpv.so",
               "jni/armeabi-v7a/libmpv.so",
@@ -181,10 +181,10 @@
               ]
             },
             "binarySha256": {
-              "jni/arm64-v8a/libmpv.so": "a7a687662bc5a36624364ea7868af07a2eae286669ae7ee81c0ff24ff2e962b5",
-              "jni/armeabi-v7a/libmpv.so": "806c8ebd8466e4e3bb2b90f157f021ec471bb65652357f086a32ccf43fd6ce22",
-              "jni/x86/libmpv.so": "5bcd4ad45306716c39f795add4edad752b0a32c9b6712e057d05a24dc48d6e1d",
-              "jni/x86_64/libmpv.so": "d1425a38fe589fb606a5b271406063d82e5577f933aee1bab5126505f1b9b8b2"
+              "jni/arm64-v8a/libmpv.so": "67e23953544ba21010e95ba1b13cea217c5732ad66309e94949d6f051e403773",
+              "jni/armeabi-v7a/libmpv.so": "6c34606dcb346cebac60796b4c9da3a3a3f09aa50a5832c94caeef6cb16c7981",
+              "jni/x86/libmpv.so": "2726c206825eabca570e2ab2062241e21ccd66eeb5ca9012a6cdac6e45e0f0b1",
+              "jni/x86_64/libmpv.so": "8347ae62e561da89a760a4554ad88c29a3cac8c510816c1309b3a697f4459550"
             },
             "executionQualified": false,
             "felEngineId": "plezyng-dv-fel-v1",
@@ -216,24 +216,24 @@
             ],
             "symbol": "mpv_plezy_audio_tap_read_next"
           },
-          "checksum": "47979e14eab2797b22664772249736efba9dc1ac711cb87da8ffdacca8f45a76",
-          "key": "2c3eac114e23",
+          "checksum": "c97d43b78258bbeb4b7f365b384e7d60944888c947c1d397b5e469645a705692",
+          "key": "f29ec6874ad4",
           "symbols": {
             "arm64-v8a": {
-              "asset": "mpv-android-2c3eac114e23-arm64-v8a-symbols.zip",
-              "checksum": "18cf9860f6f65f0a82c52377bb04de9e511500f146a34cbd279886c80a3b358b"
+              "asset": "mpv-android-f29ec6874ad4-arm64-v8a-symbols.zip",
+              "checksum": "d814f071091e6b4e5c8c0c41ad3acafd2607c6ba87d8326d97b242b38393200d"
             },
             "armeabi-v7a": {
-              "asset": "mpv-android-2c3eac114e23-armeabi-v7a-symbols.zip",
-              "checksum": "315d161037380b6f51032a436f4dc44f6709db94913b60023769ae817d4e5e12"
+              "asset": "mpv-android-f29ec6874ad4-armeabi-v7a-symbols.zip",
+              "checksum": "aaeec389eaa46b68e2cf269e00cfbc4e8b4172966380ada41f81b6fccb259fb1"
             },
             "x86": {
-              "asset": "mpv-android-2c3eac114e23-x86-symbols.zip",
-              "checksum": "2bcebb64aff06967caae07c784b812a7024d4195830f64ef408404b32bdb0d04"
+              "asset": "mpv-android-f29ec6874ad4-x86-symbols.zip",
+              "checksum": "cff34073e8088af22149efb0e0bba954e8bdcb5584fbd4e85feb7ca1a2d65721"
             },
             "x86_64": {
-              "asset": "mpv-android-2c3eac114e23-x86_64-symbols.zip",
-              "checksum": "b9a00479dda4869c4b5ce67a89183b6e7180f24a49ce68b5511bd0161694eb28"
+              "asset": "mpv-android-f29ec6874ad4-x86_64-symbols.zip",
+              "checksum": "5d3aef96c86c1ce65092f5d72bdb7a6303e10b11c6ad5b76c46932749eb7fe44"
             }
           }
         }
