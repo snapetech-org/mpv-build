@@ -184,6 +184,18 @@
       ],
       "overrides": {}
     },
+    "mujs": {
+      "kind": "git",
+      "version": "21768ba7c0b7",
+      "url": "https://github.com/ArtifexSoftware/mujs.git",
+      "ref": "master",
+      "commit": "21768ba7c0b7d82633c987a3f02c7e97eeec7919",
+      "provenance": "MuJS source pinned from the ArtifexSoftware mirror for Windows builds. The hosted runner could not resolve the Codeberg URL in the winbuild recipe.",
+      "platforms": [
+        "windows"
+      ],
+      "overrides": {}
+    },
     "dav1d": {
       "kind": "git",
       "version": "1.5.4",

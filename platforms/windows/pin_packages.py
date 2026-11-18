@@ -113,6 +113,7 @@ EXTRA_COMPONENTS = {
     "nv-codec-headers": "packages/nvcodec-headers.cmake",
     "openssl": "packages/openssl.cmake",
     "libaribcaption": "packages/libaribcaption.cmake",
+    "mujs": "packages/mujs.cmake",
     "dav2d": "packages/dav2d.cmake",
     "xevd": "packages/xevd.cmake",
     "lcevc_dec": "packages/lcevc_dec.cmake",
