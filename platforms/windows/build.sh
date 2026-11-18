@@ -224,7 +224,7 @@ fi
 # stamp path. Surface the actual errors on any failure past this point.
 dump_step_logs() {
   echo "==> build failed; dumping step logs written during this run" >&2
-  find "$BUILD" -name '*.log' -path '*-stamp/*' -newer "$BUILD/.run-started" 2> /dev/null \
+  find "$BUILD" -name '*.log' \( -path '*-stamp/*' -o -path '*/x264-build/config.log' \) -newer "$BUILD/.run-started" 2> /dev/null \
     | while read -r log; do
         printf '\n===== %s =====\n' "$log" >&2
         tail -80 "$log" >&2
@@ -391,7 +391,8 @@ ninja -C "$BUILD" rustup
 # A restored target can have a completed wrapper stamp from a host archive
 # which lacked llvm-rc. Rebuild that wrapper before Autoconf probes for RC.
 windres="$BUILD/install/bin/$ARCH-w64-mingw32-windres"
-if [[ ! -x "$windres" ]]; then
+target_strings="$BUILD/install/bin/$ARCH-w64-mingw32-strings"
+if [[ ! -x "$windres" || ! -x "$target_strings" ]]; then
   purge_component llvm-wrapper
 fi
 ninja -C "$BUILD" llvm-wrapper
@@ -463,6 +464,10 @@ else
   find "$BUILD/packages/mpv-prefix/src/mpv-stamp" -type f ! -iname '*.cmake' -size 0c -delete 2> /dev/null || true
 fi
 rm -rf "$BUILD"/mpv-*
+# x264 finds endianness by scanning the raw COFF bytes. Use the build
+# host's strings, whose -a scans the entire file regardless of target format.
+STRINGS="$(command -v strings)"
+export STRINGS
 ninja -C "$BUILD" mpv
 
 DEV_DIR="$(find "$BUILD" -maxdepth 1 -type d -name 'mpv-dev-*' | head -n 1)"
