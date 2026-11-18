@@ -395,10 +395,15 @@ ninja -C "$BUILD" rustup
 # which lacked llvm-rc. Rebuild that wrapper before Autoconf probes for RC.
 windres="$BUILD/install/bin/$ARCH-w64-mingw32-windres"
 target_strings="$BUILD/install/bin/$ARCH-w64-mingw32-strings"
-if [[ ! -x "$windres" || ! -x "$target_strings" ]]; then
+if [[ ! -x "$windres" ]]; then
   purge_component llvm-wrapper
 fi
 ninja -C "$BUILD" llvm-wrapper
+# x264 accepts STRINGS, while davs2 invokes the target-prefixed tool.
+# Both probes scan raw COFF bytes, which the host strings can handle.
+STRINGS="$(command -v strings)"
+export STRINGS
+ln -sfn "$STRINGS" "$target_strings"
 link_probe="$BUILD/toolchain-link-check"
 mkdir -p "$link_probe"
 printf '1 RCDATA { 0x1234 }\n' > "$link_probe/resource.rc"
@@ -420,6 +425,15 @@ if [[ -f "$pthreads_makefile" ]] && ! grep -Eq '^RC[[:blank:]]*=[[:blank:]]*[^[:
   purge_component winpthreads
 fi
 RC="$windres" ninja -C "$BUILD" llvm-clang
+
+# Exercise the same compile-and-scan check as davs2 before building packages.
+printf '%s\n' 'int i[2] = {0x42494745,0}; double f[2] = {0x1.0656e6469616ep+102,0};' > "$link_probe/endian.c"
+"$BUILD/install/bin/$ARCH-w64-mingw32-gcc" -c "$link_probe/endian.c" -o "$link_probe/endian.obj"
+endian_markers="$("$target_strings" -a "$link_probe/endian.obj")"
+if [[ "$endian_markers" != *EGIB* || "$endian_markers" != *naidnePF* ]]; then
+  echo "error: strings did not detect little-endian markers in $ARCH COFF" >&2
+  exit 1
+fi
 
 # Verify this target's CRT/C++ runtime and resource layout before dependencies.
 cat > "$link_probe/consumer.cpp" <<'CPP'
@@ -467,10 +481,6 @@ else
   find "$BUILD/packages/mpv-prefix/src/mpv-stamp" -type f ! -iname '*.cmake' -size 0c -delete 2> /dev/null || true
 fi
 rm -rf "$BUILD"/mpv-*
-# x264 finds endianness by scanning the raw COFF bytes. Use the build
-# host's strings, whose -a scans the entire file regardless of target format.
-STRINGS="$(command -v strings)"
-export STRINGS
 ninja -C "$BUILD" mpv
 
 DEV_DIR="$(find "$BUILD" -maxdepth 1 -type d -name 'mpv-dev-*' | head -n 1)"
