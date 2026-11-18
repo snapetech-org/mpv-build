@@ -99,11 +99,11 @@ class HostCacheTest(unittest.TestCase):
             prefix = Path(temporary) / 'install'
             (prefix / 'bin').mkdir(parents=True)
             (prefix / 'bin/llvm').write_bytes(b'host compiler')
-            for name in ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj'):
+            for name in ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj'):
                 (prefix / 'bin' / name).symlink_to('llvm')
             discovered = installed_tool_names('-- Installing: /old/cache/install/bin/llvm\n', prefix)
             self.assertTrue({f'bin/{name}' for name in
-                             ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj')}
+                             ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj')}
                             .issubset(discovered))
 
     def test_regular_host_files_and_relative_aliases_extract(self):

@@ -21,7 +21,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 2
 MAX_BYTES = 512 * 1024 * 1024
-REQUIRED = ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj')
+REQUIRED = ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj')
 
 
 def sha(path):
