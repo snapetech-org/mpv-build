@@ -333,8 +333,11 @@ invalidate_stale_pins() {
     fi
     if [[ "$patch_key" != "-" && -d "$src/.git" ]]; then
       local marker="$BUILD/.source-patches/$source_name" expected="$pinned:$patch_key"
-      if [[ ! -f "$marker" || "$(cat "$marker")" != "$expected" ]]; then
-        echo "==> $component patch series changed or untracked; resetting cached source and build"
+      # A failed run can save a pristine checkout next to the marker and
+      # stamps from a patched build. Check the checkout as well as the marker.
+      if [[ ! -f "$marker" || "$(cat "$marker")" != "$expected" ]] ||
+        git -C "$src" diff --quiet HEAD --; then
+        echo "==> $component patches changed or are missing; resetting cached source and build"
         git -C "$src" reset --hard -q "$pinned"
         git -C "$src" clean -qdf
         if [[ "$family" == "__sysroot_world__" ]]; then
