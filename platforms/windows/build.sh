@@ -388,11 +388,36 @@ if [[ "$HOST_LLVM_ONLY" == 1 ]]; then
   exit 0
 fi
 ninja -C "$BUILD" rustup
-ninja -C "$BUILD" llvm-clang
-
-# Verify this target's CRT/C++ runtime and resource layout before dependencies.
+# A restored target can have a completed wrapper stamp from a host archive
+# which lacked llvm-rc. Rebuild that wrapper before Autoconf probes for RC.
+windres="$BUILD/install/bin/$ARCH-w64-mingw32-windres"
+if [[ ! -x "$windres" ]]; then
+  purge_component llvm-wrapper
+fi
+ninja -C "$BUILD" llvm-wrapper
 link_probe="$BUILD/toolchain-link-check"
 mkdir -p "$link_probe"
+printf '1 RCDATA { 0x1234 }\n' > "$link_probe/resource.rc"
+"$windres" --no-preprocess -i "$link_probe/resource.rc" -o "$link_probe/resource.obj"
+python3 - "$link_probe/resource.obj" "$ARCH" <<'PY'
+from pathlib import Path
+import sys
+machine = {'x86_64': b'\x64\x86', 'aarch64': b'\x64\xaa'}[sys.argv[2]]
+if Path(sys.argv[1]).read_bytes()[:2] != machine:
+    raise SystemExit(f'windres did not produce {sys.argv[2]} COFF')
+PY
+
+# Old fallback caches also retain a successful configure stamp and a
+# generated Makefile with "RC = ". Importing the missing host tool cannot
+# change that Makefile. Reconfigure just winpthreads when this is observed.
+pthreads_makefile="$BUILD/toolchain/winpthreads-prefix/src/winpthreads-build/Makefile"
+if [[ -f "$pthreads_makefile" ]] && ! grep -Eq '^RC[[:blank:]]*=[[:blank:]]*[^[:blank:]]' "$pthreads_makefile"; then
+  echo "==> reconfiguring winpthreads after restoring its missing resource compiler"
+  purge_component winpthreads
+fi
+RC="$windres" ninja -C "$BUILD" llvm-clang
+
+# Verify this target's CRT/C++ runtime and resource layout before dependencies.
 cat > "$link_probe/consumer.cpp" <<'CPP'
 #include <windows.h>
 #include <string>
