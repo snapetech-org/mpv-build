@@ -21,7 +21,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 2
 MAX_BYTES = 512 * 1024 * 1024
-REQUIRED = ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj')
+# The pinned winbuild llvm-wrapper.cmake links its target-prefixed resource
+# compiler and binutils to these host tools. Old donor caches kept only llvm.
+CROSS_TOOL_ALIASES = ('llvm-ranlib', 'llvm-dlltool', 'llvm-rc', 'llvm-objcopy',
+                      'llvm-size', 'llvm-strings', 'llvm-readelf', 'llvm-addr2line')
+REQUIRED = ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj', *CROSS_TOOL_ALIASES)
 
 
 def sha(path):
@@ -112,7 +116,7 @@ def installed_tool_names(installed, prefix):
 
 def restore_archive_tool_aliases(prefix):
     """Restore aliases missing from older donors and verify multicall dispatch."""
-    for name in ('llvm-ranlib', 'llvm-dlltool'):
+    for name in CROSS_TOOL_ALIASES:
         path = prefix / 'bin' / name
         if path.exists() or path.is_symlink():
             continue
@@ -124,9 +128,22 @@ def restore_archive_tool_aliases(prefix):
                     definition.write_text('LIBRARY probe.dll\nEXPORTS\nprobe\n')
                     run([path, '-m', 'arm64', '-d', definition,
                          '-l', definition.with_suffix('.lib')])
+            elif name == 'llvm-rc':
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    resource = root / 'probe.rc'
+                    resource.write_text('1 RCDATA { 0x1234 }\n')
+                    # The real wrapper chooses GNU windres mode and ARM64
+                    # from its executable name. Exercise that exact route.
+                    compiler = root / 'aarch64-w64-mingw32-windres'
+                    compiler.symlink_to(path.resolve())
+                    output = root / 'probe.obj'
+                    run([compiler, '--no-preprocess', '-i', resource, '-o', output])
+                    if output.read_bytes()[:2] != b'\x64\xaa':
+                        raise ValueError('LLVM resource compiler did not produce ARM64 COFF')
             else:
                 run([path, '--help'])
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, ValueError, subprocess.CalledProcessError):
             path.unlink()
             raise
 

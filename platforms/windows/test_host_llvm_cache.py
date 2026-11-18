@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from host_llvm_cache import consume, installed_tool_names, llvm_recipe_sha256, prepare, unpack
+from host_llvm_cache import CROSS_TOOL_ALIASES, consume, installed_tool_names, llvm_recipe_sha256, prepare, restore_archive_tool_aliases, unpack
 
 
 class HostCacheTest(unittest.TestCase):
@@ -99,12 +99,32 @@ class HostCacheTest(unittest.TestCase):
             prefix = Path(temporary) / 'install'
             (prefix / 'bin').mkdir(parents=True)
             (prefix / 'bin/llvm').write_bytes(b'host compiler')
-            for name in ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj'):
+            for name in ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-nm', 'llvm-readobj', *CROSS_TOOL_ALIASES):
                 (prefix / 'bin' / name).symlink_to('llvm')
             discovered = installed_tool_names('-- Installing: /old/cache/install/bin/llvm\n', prefix)
             self.assertTrue({f'bin/{name}' for name in
-                             ('clang', 'clang++', 'ld.lld', 'llvm-ar', 'llvm-ranlib', 'llvm-dlltool', 'llvm-nm', 'llvm-readobj')}
+                             ('llvm-ranlib', 'llvm-dlltool', 'llvm-rc', 'llvm-objcopy',
+                              'llvm-size', 'llvm-strings', 'llvm-readelf', 'llvm-addr2line')}
                             .issubset(discovered))
+
+    def test_resource_alias_requires_an_arm64_coff_resource(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary)
+            tools = prefix / 'bin'
+            tools.mkdir()
+            (tools / 'llvm').write_bytes(b'fixture')
+            for name in CROSS_TOOL_ALIASES:
+                if name != 'llvm-rc':
+                    (tools / name).symlink_to('llvm')
+
+            def wrong_architecture(command):
+                self.assertEqual(command[0].name, 'aarch64-w64-mingw32-windres')
+                Path(command[-1]).write_bytes(b'\x64\x86')
+
+            with patch('host_llvm_cache.run', side_effect=wrong_architecture):
+                with self.assertRaisesRegex(ValueError, 'ARM64 COFF'):
+                    restore_archive_tool_aliases(prefix)
+            self.assertFalse((tools / 'llvm-rc').is_symlink())
 
     def test_regular_host_files_and_relative_aliases_extract(self):
         with tempfile.TemporaryDirectory() as temporary:
