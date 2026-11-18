@@ -34,6 +34,7 @@ CHECKOUT_FILES.update({Path(r).name: r for r in pin_packages.EXTRA_COMPONENTS.va
 CHECKOUT_FILES["CMakeLists.txt"] = "packages/CMakeLists.txt"
 CHECKOUT_FILES["custom_steps.cmake"] = "cmake/custom_steps.cmake"
 CHECKOUT_FILES["davs2.cmake"] = "packages/davs2.cmake"
+CHECKOUT_FILES["openal-soft.cmake"] = "packages/openal-soft.cmake"
 CHECKOUT_FILES["highway.cmake"] = "packages/highway.cmake"
 CHECKOUT_FILES["llvm-libcxx.cmake"] = "toolchain/llvm/llvm-libcxx.cmake"
 COMPONENT_FILES = {c: f"{c}.cmake" for c in pin_packages.COMPONENTS}
@@ -377,6 +378,9 @@ class PinPackagesTest(unittest.TestCase):
         self.assertEqual(package_list.count("    xevd\n"), 1)
         self.assertIn("        xevd\n", self.package_text("ffmpeg"))
         self.assertIn("        --enable-libxevd\n", self.package_text("ffmpeg"))
+        openal = (self.winbuild / "packages/openal-soft.cmake").read_text(encoding="utf-8")
+        self.assertIn("-DALSOFT_ENABLE_MODULES=OFF\n        -DCMAKE_CXX_SCAN_FOR_MODULES=OFF", openal)
+
         highway = (self.winbuild / "packages/highway.cmake").read_text(encoding="utf-8")
         self.assertIn(pin_packages.HIGHWAY_TESTS_STANDALONE, highway)
         self.assertIn("-nostdinc++", (self.winbuild / "toolchain/llvm/llvm-libcxx.cmake").read_text())

@@ -31,6 +31,7 @@
 #   4649b91fa340471263d52ef23fcd5dd0ff520dc60e91df564ce1059c4be27c9e  svtav1.cmake
 #   ada268ec2e56867a085e66f491e4bdce80bc2ccf84e591ecef75030ee04cab9f  nvcodec-headers.cmake
 #   79cd848d11ebb59ccc55db4fa237e94d600428bbd9ae255c9abeb613ca4be8fc  openssl.cmake
+#   7dfbca2848cbba0ff98d87b3fe4b29931ed9dddef59ccc8eb531c22aea00f5ab  openal-soft.cmake
 #   0a8183fbcb5eb2c9ed6eec17ffd3e47d33663c484f5834b5a32e235ae3d772a2  davs2.cmake
 #   a66502a1e55c8ba94f8d8ef9641e983e9da3e0832ffae287007cfd1cccae65c6  libaribcaption.cmake
 #

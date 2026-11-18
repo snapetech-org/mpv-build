@@ -696,6 +696,17 @@ def main(argv):
         highway.write_text(configured, encoding="utf-8")
     print("disabled Highway's unused GoogleTest dependency")
 
+    openal = packages_dir / "openal-soft.cmake"
+    openal_text = openal.read_text(encoding="utf-8")
+    modules_off = "        -DALSOFT_ENABLE_MODULES=OFF\n"
+    scanning_off = "        -DCMAKE_CXX_SCAN_FOR_MODULES=OFF\n"
+    if openal_text.count(modules_off) != 1:
+        fail("packages/openal-soft.cmake: re-audit the module configuration")
+    # Winbuild's compiler has no dependency scanner. CMake can opt C++20
+    # sources into scanning independently of OpenAL's own module option.
+    if scanning_off not in openal_text:
+        openal.write_text(openal_text.replace(modules_off, modules_off + scanning_off), encoding="utf-8")
+
     custom_steps = winbuild / "cmake" / "custom_steps.cmake"
     if not custom_steps.is_file():
         fail(f"{custom_steps}: missing")
