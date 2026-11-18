@@ -118,7 +118,14 @@ def restore_archive_tool_aliases(prefix):
             continue
         path.symlink_to('llvm')
         try:
-            run([path, '--help'])
+            if name == 'llvm-dlltool':
+                with tempfile.TemporaryDirectory() as temporary:
+                    definition = Path(temporary) / 'probe.def'
+                    definition.write_text('LIBRARY probe.dll\nEXPORTS\nprobe\n')
+                    run([path, '-m', 'arm64', '-d', definition,
+                         '-l', definition.with_suffix('.lib')])
+            else:
+                run([path, '--help'])
         except (OSError, subprocess.CalledProcessError):
             path.unlink()
             raise
