@@ -413,14 +413,14 @@ main() {
     --disable-doc \
     --disable-encoders \
     --disable-muxers \
-    --enable-muxer=spdif \
+    --enable-muxer=spdif,mpegts,matroska \
     --disable-devices \
     --enable-decoders \
     --enable-demuxers \
     --enable-parsers \
     --enable-bsfs \
     --disable-filters \
-    --enable-filter=aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
+    --enable-filter=alimiter,adelay,amix,asetpts,atrim,aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
     --enable-gnutls \
     --enable-vaapi \
     --enable-ffnvcodec \

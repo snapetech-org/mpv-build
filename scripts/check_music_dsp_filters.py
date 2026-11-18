@@ -10,6 +10,7 @@ import time
 import wave
 
 REQUIRED = ('aecho', 'aformat', 'aresample', 'asetrate', 'aspectralstats',
+            'adelay', 'alimiter', 'amix', 'asetpts', 'atrim',
             'atempo', 'bass', 'equalizer', 'stereowiden', 'treble', 'volume')
 
 
@@ -20,6 +21,11 @@ def verify(library):
     missing = [name for name in REQUIRED if not lib.avfilter_get_by_name(name.encode())]
     if missing:
         raise ValueError('linked FFmpeg omits music filters: ' + ', '.join(missing))
+    lib.av_guess_format.argtypes = [c.c_char_p, c.c_char_p, c.c_char_p]
+    lib.av_guess_format.restype = c.c_void_p
+    for container in ('mpegts', 'matroska'):
+        if not lib.av_guess_format(container.encode(), None, None):
+            raise ValueError(f'linked FFmpeg omits recording muxer: {container}')
     lib.mpv_create.restype = c.c_void_p
     lib.mpv_set_option_string.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p]
     lib.mpv_initialize.argtypes = [c.c_void_p]
