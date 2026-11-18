@@ -110,6 +110,20 @@ def installed_tool_names(installed, prefix):
     return names
 
 
+def restore_archive_tool_aliases(prefix):
+    """Restore aliases missing from older donors and verify multicall dispatch."""
+    for name in ('llvm-ranlib', 'llvm-dlltool'):
+        path = prefix / 'bin' / name
+        if path.exists() or path.is_symlink():
+            continue
+        path.symlink_to('llvm')
+        try:
+            run([path, '--help'])
+        except (OSError, subprocess.CalledProcessError):
+            path.unlink()
+            raise
+
+
 def export(args):
     # Keep the lexical workspace path: cached CMake install logs name the
     # original /opt/actions-runner prefix while the hosted checkout is exposed
@@ -119,6 +133,7 @@ def export(args):
     stamps = Path(os.path.abspath(args.stamps))
     validate_source(args.source)
     installed = (stamps / 'llvm-install-out.log').read_text()
+    restore_archive_tool_aliases(prefix)
     names = {'bin/llvm'}
     names.update(installed_tool_names(installed, prefix))
     for alias in re.findall(r'^-- Creating ([-+.\w]+)$', installed, re.MULTILINE):
