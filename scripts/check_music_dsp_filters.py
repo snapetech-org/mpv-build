@@ -21,6 +21,8 @@ def verify(library):
     missing = [name for name in REQUIRED if not lib.avfilter_get_by_name(name.encode())]
     if missing:
         raise ValueError('linked FFmpeg omits music filters: ' + ', '.join(missing))
+    if not lib.avfilter_get_by_name(b'minterpolate'):
+        raise ValueError('linked FFmpeg omits the motion-compensation filter')
     lib.av_guess_format.argtypes = [c.c_char_p, c.c_char_p, c.c_char_p]
     lib.av_guess_format.restype = c.c_void_p
     for container in ('mpegts', 'matroska'):

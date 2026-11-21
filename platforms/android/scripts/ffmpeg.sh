@@ -34,7 +34,7 @@ cpuflags=
 	--enable-{decoders,demuxers,parsers,bsfs} \
 	--disable-{muxers,encoders,devices,filters} \
 	--enable-muxer=spdif,mpegts,matroska \
-	--enable-filter=adelay,amix,asetpts,atrim,aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,loudnorm,acompressor,alimiter \
+	--enable-filter=adelay,amix,asetpts,atrim,aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,minterpolate,loudnorm,acompressor,alimiter \
 	--disable-v4l2-m2m
 
 make -j$cores

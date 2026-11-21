@@ -18,6 +18,7 @@ class MusicDspBuildTest(unittest.TestCase):
                 enabled = set()
                 for value in re.findall(r'--enable-filter=([a-z0-9_,*]+)', source):
                     enabled.update(value.split(','))
+                self.assertIn('minterpolate', enabled)
                 self.assertFalse(set(REQUIRED) - enabled, f'{path}: missing {set(REQUIRED) - enabled}')
 
     def test_public_apple_build_rebuilds_changed_dsp_dependencies(self):

@@ -420,7 +420,7 @@ main() {
     --enable-parsers \
     --enable-bsfs \
     --disable-filters \
-    --enable-filter=alimiter,adelay,amix,asetpts,atrim,aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,format,loudnorm,null,scale \
+    --enable-filter=alimiter,adelay,amix,asetpts,atrim,aecho,aformat,aresample,asetrate,aspectralstats,atempo,bass,equalizer,stereowiden,treble,volume,bwdif,decimate,fieldmatch,minterpolate,format,loudnorm,null,scale \
     --enable-gnutls \
     --enable-vaapi \
     --enable-ffnvcodec \

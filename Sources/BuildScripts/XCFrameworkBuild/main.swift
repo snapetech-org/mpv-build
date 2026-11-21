@@ -950,7 +950,7 @@ private class BuildFFMPEG: BaseBuild {
         "--enable-filter=atrim",
         "--enable-filter=bwdif", "--enable-filter=decimate", "--enable-filter=delogo",
         "--enable-filter=equalizer", "--enable-filter=estdif",
-        "--enable-filter=fieldmatch",
+        "--enable-filter=fieldmatch", "--enable-filter=minterpolate",
         "--enable-filter=firequalizer", "--enable-filter=format", "--enable-filter=fps",
         "--enable-filter=hflip", "--enable-filter=hwdownload", "--enable-filter=hwmap",
         "--enable-filter=hwupload",
